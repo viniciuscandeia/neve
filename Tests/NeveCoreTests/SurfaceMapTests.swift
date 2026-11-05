@@ -245,3 +245,25 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
     #expect(f.update(windows: [win(1, 800, 200, 1000, 200)], dt: 0.1) == 0)
 }
+
+@Test func windowTopWithoutHeadroomBelowMenuBarGetsNoSurface() {
+    let f = makeField()   // visibleTop 780
+    f.update(windows: [win(1, 100, 575, 300, 200), win(2, 500, 540, 300, 200)])   // tops 775 (5pt) and 740 (40pt)
+    #expect(f.pile(id: 1) == nil)
+    #expect(f.pile(id: 2) != nil)
+}
+
+@Test func columnUnderFrontWindowWithTwoPointsClearanceGetsNoDeposit() {
+    var p = Pile(columns: 50, inset: 0)
+    for b in 20..<30 { p.cap[b] = 2 }
+    #expect(!p.deposit(bin: 25, volume: 5))
+    #expect(p.heights.allSatisfy { $0 == 0 })
+    p.cap[25] = 10
+    #expect(p.deposit(bin: 25, volume: 5))
+}
+
+@Test func heightsNeverExceedLimitAfterManyDepositsNearAnEnd() {
+    var p = Pile(columns: 100, inset: Tuning.cornerInset, c0: 0, x0: 0, x1: 200)
+    for n in 0..<400 { p.deposit(bin: 3 + n % 4, volume: 3); p.deposit(bin: 96 - n % 4, volume: 3) }
+    for b in p.heights.indices { #expect(p.heights[b] <= p.limit(b) + 1e-4) }
+}
