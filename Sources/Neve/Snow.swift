@@ -14,6 +14,16 @@ enum Tuning {
     static let maxDebris = 600
 }
 
+/// Snow amount; `multiplier` scales the base flake count. Nevasca adds strong gusty wind.
+enum Intensity: Int, CaseIterable {
+    case leve, media, forte, nevasca
+    static let key = "intensity"
+    static var saved: Intensity { Intensity(rawValue: UserDefaults.standard.object(forKey: key) as? Int ?? 1) ?? .media }
+    var title: String { ["Leve", "Média", "Forte", "Nevasca"][rawValue] }
+    var multiplier: Float { [0.4, 1.0, 1.8, 3.0][rawValue] }
+    var windGain: Float { self == .nevasca ? 100 : 8 }   // peak sideways speed, points/s
+}
+
 // MARK: - Window list
 
 struct WindowInfo: Equatable {
@@ -156,7 +166,14 @@ final class SnowField {
     private var lastWindows: [WindowInfo] = []
     private let numCols: Int
     private let invBin = 1 / Tuning.binWidth
-    private let skyCount: Int
+    private let skyCount: Int      // sky pool size; the rest of `flakes` is background
+    private var skyLimit = 0        // active counts for the current intensity
+    private var bgLimit = 0
+    private var intensity = Intensity.media
+    private var lowPower = false
+    private var time: Float = 0
+    private var windGain: Float = 8
+    private var wind: Float = 0
     var pilesDirty = false
 
     var capacity: Int { flakes.count + Tuning.maxDebris }
@@ -168,10 +185,12 @@ final class SnowField {
         self.visibleTop = Float(visibleTop)
         numCols = max(1, Int((Float(size.width) / Tuning.binWidth).rounded(.up)))
         offsets = [Int32](repeating: 0, count: numCols + 1)
-        skyCount = Int(Float(flakeCount) * (1 - Tuning.backgroundFraction))
+        let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
+        skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
-        flakes.reserveCapacity(flakeCount)
-        for i in 0..<flakeCount { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
+        flakes.reserveCapacity(pool)
+        for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
+        setIntensity(.media, immediate: true)
         updateSurfaces(windows: [])
     }
 
@@ -193,13 +212,28 @@ final class SnowField {
         }
     }
 
+    private func isActive(_ i: Int) -> Bool { i < skyCount ? i < skyLimit : i - skyCount < bgLimit }
+
+    /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
+    func setIntensity(_ v: Intensity, immediate: Bool = false) {
+        intensity = v
+        let m = v.multiplier / Intensity.nevasca.multiplier
+        skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1))
+        bgLimit = Int(Float(flakes.count - skyCount) * m)
+        if immediate {
+            for i in flakes.indices where !isActive(i) { flakes[i].kind = .dormant }
+        }
+    }
+
     /// Low Power Mode: halve the colliding sky flakes.
     func setLowPower(_ on: Bool) {
-        let active = on ? skyCount / 2 : skyCount
-        for i in 0..<skyCount {
-            if i >= active { flakes[i].kind = .dormant }
-            else if flakes[i].kind == .dormant { flakes[i] = spawn(.sky, anywhere: true) }
-        }
+        lowPower = on
+        setIntensity(intensity)
+    }
+
+    /// Smooth gusts: slow sines with unrelated periods; sign flips over several seconds.
+    private func windShape() -> Float {
+        0.55 * sin(time * 2 * .pi / 37) + 0.3 * sin(time * 2 * .pi / 17 + 1.3) + 0.25 * sin(time * 2 * .pi / 9 + 2.1)
     }
 
     func clear() {
@@ -338,12 +372,18 @@ final class SnowField {
 
     func step(dt: Float) {
         let w = size.x
+        time += dt
+        windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
+        wind = windGain * windShape()
         for i in 0..<flakes.count {
             var f = flakes[i]
-            if f.kind == .dormant { continue }
+            if f.kind == .dormant {
+                if isActive(i), Float.random(in: 0..<1) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
+                continue
+            }
             let prevY = f.pos.y
             f.phase += f.freq * dt
-            f.pos.x += (f.vx + f.amp * cos(f.phase)) * dt
+            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt
             if f.pos.x < -10 { f.pos.x += w + 20 } else if f.pos.x > w + 10 { f.pos.x -= w + 20 }
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
@@ -351,13 +391,14 @@ final class SnowField {
             } else if f.pos.y < -f.size {
                 f = spawn(f.kind, anywhere: false)
             }
+            if !isActive(i), f.pos.y > size.y { f.kind = .dormant }   // just respawned: retire
             flakes[i] = f
         }
         var i = debris.count - 1
         while i >= 0 {
             var f = debris[i]
             let prevY = f.pos.y
-            f.vx -= f.vx * 1.5 * dt
+            f.vx -= (f.vx - wind * 0.6) * 1.5 * dt
             f.pos.x += f.vx * dt
             f.pos.y -= f.fall * dt
             if f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w

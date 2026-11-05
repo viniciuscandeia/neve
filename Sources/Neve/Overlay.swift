@@ -128,6 +128,7 @@ final class Overlay: NSObject {
         root.addSublayer(metalLayer)
 
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
+        field.setIntensity(Intensity.saved, immediate: true)
     }
 
     /// True when the Dock / menu bar geometry moved since creation.
@@ -138,6 +139,7 @@ final class Overlay: NSObject {
     func update(windows: [WindowInfo]) { field.update(windows: windows) }
     func clear() { field.clear() }
     func setLowPower(_ on: Bool) { field.setLowPower(on) }
+    func setIntensity(_ v: Intensity) { field.setIntensity(v) }
 
     func start() {
         window.orderFrontRegardless()

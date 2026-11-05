@@ -21,7 +21,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         clear.target = self
         toggleItem.state = .on
-        for i in [toggleItem, clear, .separator(), quit] { menu.addItem(i) }
+        let amount = NSMenuItem(title: "Quantidade", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        for v in Intensity.allCases {
+            let m = NSMenuItem(title: v.title, action: #selector(pickIntensity(_:)), keyEquivalent: "")
+            m.target = self
+            m.tag = v.rawValue
+            m.state = v == Intensity.saved ? .on : .off
+            sub.addItem(m)
+        }
+        amount.submenu = sub
+        for i in [toggleItem, amount, clear, .separator(), quit] { menu.addItem(i) }
         item.menu = menu
         statusItem = item
 
@@ -72,6 +82,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         enabled.toggle()
         toggleItem.state = enabled ? .on : .off
         refreshRunState()
+    }
+
+    @objc private func pickIntensity(_ sender: NSMenuItem) {
+        guard let v = Intensity(rawValue: sender.tag) else { return }
+        UserDefaults.standard.set(v.rawValue, forKey: Intensity.key)
+        for m in sender.menu?.items ?? [] { m.state = m == sender ? .on : .off }
+        for o in overlays { o.setIntensity(v) }
     }
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
