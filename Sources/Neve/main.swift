@@ -3,12 +3,6 @@ import AppKit
 import os
 import ServiceManagement
 
-/// UserDefaults keys of the on / off options. Defaults: Nevar and Boneco de neve on, the rest off.
-enum Pref: String {
-    case enabled, economy, ambient, behindWindows, stillSnow, snowman, walk, showInCaptures
-    var defaultValue: Bool { self == .enabled || self == .snowman || self == .walk }
-}
-
 /// Dev instance name (Info.plist `NeveInstance` or env `NEVE_INSTANCE`); nil for the user's app.
 let neveInstance: String? = Bundle.main.object(forInfoDictionaryKey: "NeveInstance") as? String ?? ProcessInfo.processInfo.environment["NEVE_INSTANCE"]
 

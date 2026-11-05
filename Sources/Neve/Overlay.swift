@@ -75,12 +75,6 @@ final class InteractView: NSView {
     override func mouseUp(with event: NSEvent) { onUp?(event) }
 }
 
-/// The user options an overlay renders; the controller owns them (UserDefaults) and pushes them to every overlay.
-struct OverlayPrefs: Equatable {
-    var economy = false, behind = false, still = false, snowman = true, walk = true, showInCaptures = false
-    var intensity = Intensity.media
-}
-
 /// Click-through snow window covering one screen (interactive only while ⌥ is held over snow or a snowball).
 @MainActor
 final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
