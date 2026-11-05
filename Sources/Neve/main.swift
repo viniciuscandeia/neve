@@ -50,6 +50,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         ws.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
+        nc.addObserver(self, selector: #selector(thermalChanged), name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
+        dock.onChange = { [weak self] in self?.refreshDock() }
         rebuildOverlays()
     }
 
@@ -69,7 +71,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if run {
             refreshDock()
             pollWindows()
-            let st = Timer.scheduledTimer(timeInterval: 3, target: self, selector: #selector(refreshDock), userInfo: nil, repeats: true)
+            let st = Timer.scheduledTimer(timeInterval: 30, target: self, selector: #selector(refreshDock), userInfo: nil, repeats: true)
             st.tolerance = 1
             slowTimer = st
             let t = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
@@ -81,7 +83,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Windows move with the mouse (drag/resize), so poll at 10Hz while a button is down, else ~2Hz.
     @objc private func pollTick() {
         idleTicks += 1
-        if NSEvent.pressedMouseButtons != 0 || idleTicks >= 5 { pollWindows() }
+        // Every overlay under a fullscreen app: just watch for it ending (~1Hz).
+        let idle = !overlays.isEmpty && overlays.allSatisfy(\.isFullscreen)
+        if idle ? idleTicks >= 10 : (NSEvent.pressedMouseButtons != 0 || idleTicks >= 5) { pollWindows() }
     }
 
     @objc private func pollWindows() {
@@ -89,8 +93,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         for o in overlays where o.geometryChanged { return rebuildOverlays() }
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
+        let covering = windows.map(\.frame)
         if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
-        for o in overlays { o.update(windows: windows) }
+        for o in overlays {
+            o.setFullscreen(covering.contains { o.covers($0) })
+            if !o.isFullscreen { o.update(windows: windows) }   // under fullscreen the list is just that app: keep piles untouched
+        }
     }
 
     @objc private func toggle() {
@@ -106,9 +114,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         for o in overlays { o.setIntensity(v) }
     }
 
-    /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on app launch/quit, screen changes, every 3s.
+    /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on Dock AX events, app launch/quit, screen changes, every 30s.
     @objc private func refreshDock() {
         axItem.isHidden = AXIsProcessTrusted()
+        dock.observe()
         guard let primary = NSScreen.screens.first else { return }
         dock.refresh(primaryHeight: primary.frame.height) { [weak self] in self?.pollWindows() }
     }
@@ -123,6 +132,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func clearSnow() { for o in overlays { o.clear() } }
     @objc private func suspend() { suspended = true; refreshRunState() }
     @objc private func resume() { suspended = false; refreshRunState() }
+    @objc private func thermalChanged() {
+        let hot = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        for o in overlays { o.setHot(hot) }
+    }
     @objc private func powerChanged() {
         let low = ProcessInfo.processInfo.isLowPowerModeEnabled
         for o in overlays { o.setLowPower(low) }

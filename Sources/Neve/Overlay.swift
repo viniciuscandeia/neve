@@ -68,6 +68,10 @@ final class Overlay: NSObject {
     private var bufferIndex = 0
     private let inFlight = DispatchSemaphore(value: 3)
     private var link: CADisplayLink?
+    private let pass = MTLRenderPassDescriptor()   // reused every frame; only the texture changes
+    private var run = false, fullscreen = false, hot = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+    private var occluded = false
+    private var lowPower = false
     private var lastTimestamp: CFTimeInterval = 0
     private var lastPathTime: CFTimeInterval = 0
     private let groundY: CGFloat
@@ -125,6 +129,7 @@ final class Overlay: NSObject {
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
         metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         metalLayer.framebufferOnly = true
         metalLayer.maximumDrawableCount = 2   // default 3 makes nextDrawable block the main thread and costs extra CPU
         metalLayer.isOpaque = false
@@ -132,6 +137,11 @@ final class Overlay: NSObject {
         metalLayer.frame = bounds
         metalLayer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
         root.addSublayer(metalLayer)
+
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
 
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
         field.setIntensity(Intensity.saved, immediate: true)
@@ -145,27 +155,52 @@ final class Overlay: NSObject {
     func update(windows: [WindowInfo]) { field.update(windows: windows) }
     func clear() { field.clear() }
     func dropPiles() { field.dropPiles() }
-    func setLowPower(_ on: Bool) { field.setLowPower(on) }
+    func setLowPower(_ on: Bool) {
+        lowPower = on
+        field.setLowPower(on)
+        link?.preferredFrameRateRange = frameRange
+    }
+    private var frameRange: CAFrameRateRange {
+        lowPower ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    }
+
+    /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
+    func covers(_ r: CGRect) -> Bool { r.insetBy(dx: -1, dy: -1).contains(screen.frame) }
+    var isFullscreen: Bool { fullscreen }
+    func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; apply() } }
+    func setHot(_ on: Bool) { if on != hot { hot = on; apply() } }
     func setIntensity(_ v: Intensity) { field.setIntensity(v) }
 
-    func start() {
-        window.orderFrontRegardless()
+    func start() { run = true; apply() }
+    func pause() { run = false; apply() }
+
+    /// Presents only when enabled, not under a fullscreen app, not thermally throttled. Piles are kept while paused.
+    private func apply() {
+        guard run && !fullscreen && !hot else {
+            link?.isPaused = true
+            window.orderOut(nil)
+            return
+        }
+        if !window.isVisible { occluded = false; window.orderFrontRegardless(); lastTimestamp = 0 }
         if link == nil {
             let l = view.displayLink(target: self, selector: #selector(tick(_:)))
-            l.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            l.preferredFrameRateRange = frameRange
             l.add(to: .main, forMode: .common)
             link = l
         }
-        lastTimestamp = 0
-        link?.isPaused = false
+        link?.isPaused = occluded
     }
 
-    func pause() {
-        link?.isPaused = true
-        window.orderOut(nil)
+    /// Only meaningful while ordered in (orderOut also reports "not visible"); pauses the link, never the window.
+    @objc private func occlusionChanged() {
+        guard window.isVisible else { return }
+        occluded = !window.occlusionState.contains(.visible)
+        if !occluded { lastTimestamp = 0 }
+        link?.isPaused = occluded
     }
 
     func teardown() {
+        NotificationCenter.default.removeObserver(self)
         link?.invalidate()
         link = nil
         window.orderOut(nil)
@@ -201,11 +236,7 @@ final class Overlay: NSObject {
         bufferIndex = (bufferIndex + 1) % buffers.count
         let count = field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
 
-        let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
             enc.setRenderPipelineState(gpu.pipeline)
