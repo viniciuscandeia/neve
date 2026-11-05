@@ -19,6 +19,9 @@ public enum Tuning {
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
+    static let pointerRadius: Float = 60     // falling snow avoids the cursor within this distance
+    static let pointerPush: Float = 450      // pt/s radial speed at point blank (scaled by (1 - d/R)^2)
+    static let pointerSwirl: Float = 250     // tangential counterpart
     static let debrisGravity: Float = 1400   // pt/s^2: packed snow accelerates instead of floating
     static let debrisTerminal: Float = 1700  // pt/s
     // Moving a window: the pile travels with it; `shed` (0...1) of it falls off, rising smoothly with speed.
@@ -200,7 +203,7 @@ public enum FlakeKind: UInt8 { case sky, background, debris, dormant }
 /// Plain-old-data flake (no references).
 public struct Flake {
     public var pos: SIMD2<Float>
-    var vx: Float
+    public var vx: Float
     public var fall: Float
     var phase: Float
     var amp: Float
@@ -279,6 +282,8 @@ public final class SnowField {
     private var windGain: Float = 8
     private var wind: Float = 0
     public var pilesDirty = false
+    private var pointer: SIMD2<Float>?
+    private var pointerVel: SIMD2<Float> = .zero
     private var pollDt: Float = 0.1        // seconds between the last two window polls
     private var lastPoll: CFAbsoluteTime = 0
     private var rng: SplitMix64
@@ -571,6 +576,37 @@ public final class SnowField {
         return n
     }
 
+    /// Cursor wipe: snow within `radius` of the segment a->b (local coords) above the cursor's lower edge is pushed off
+    /// as debris flying along the cursor's motion (`dt` = time the move took). The dragged window's pile is left alone.
+    public func sweep(from a: CGPoint, to b: CGPoint, radius: Float = 10, dt: Float = 1.0 / 60) {
+        let ax = Float(a.x), ay = Float(a.y), dx = Float(b.x) - ax, dy = Float(b.y) - ay
+        let len2 = dx * dx + dy * dy, r = radius
+        guard len2 > 0, dt > 0 else { return }
+        let v = (SIMD2(dx, dy) / dt).clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
+        let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
+        let first = debris.count
+        defer { for j in first..<debris.count { debris[j].phase = 0.5 } }
+        for si in surfaces.indices where surfaces[si].id != draggingID {
+            let s = surfaces[si]
+            guard hi >= s.edgeY - Tuning.maxPileHeight, lo <= s.edgeY + Tuning.maxPileHeight else { continue }
+            let c = s.c0
+            let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(s.pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
+            guard b0 <= b1 else { continue }
+            for k in b0...b1 {
+                let h = s.pile.heights[k]
+                guard h > 0.5 else { continue }
+                let x = (Float(c + k) + 0.5) * Tuning.binWidth, bottom = s.edgeY + s.pile.base[k], my = bottom + h / 2
+                let t = min(max(((x - ax) * dx + (my - ay) * dy) / len2, 0), 1)
+                let qx = ax + t * dx, qy = ay + t * dy
+                guard abs(qx - x) <= r, abs(qy - my) <= r + h / 2 else { continue }
+                let keep = min(max(qy - r - bottom, 0), h)
+                guard keep < h else { continue }
+                surfaces[si].pile.heights[k] = keep
+                _ = shedBin(col: c + k, edgeY: bottom, from: keep, amount: h - keep, velocity: v)
+            }
+        }
+    }
+
     /// Turns a whole pile into falling debris, inheriting some of the surface's motion.
     private func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
         var n = 0
@@ -618,6 +654,9 @@ public final class SnowField {
         return true
     }
 
+    /// Pointer position (local coords, nil = not on this screen) and velocity (pt/s): falling snow swirls around it.
+    public func setPointer(_ p: SIMD2<Float>?, velocity: SIMD2<Float>) { pointer = p; pointerVel = velocity }
+
     public func step(dt: Float) {
         let w = size.x
         time += dt
@@ -636,6 +675,18 @@ public final class SnowField {
             f.phase += f.freq * dt
             f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
+            if let p = pointer {
+                let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
+                if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {
+                    // Radial push plus a tangential swirl (always one side, so a flake dead above the pointer slides off),
+                    // stronger when close and when the pointer moves; decays smoothly to 0 at the radius.
+                    let dist = d2.squareRoot(), k = 1 - dist / Tuning.pointerRadius, k2 = k * k
+                    let gain = 1 + min((pointerVel.x * pointerVel.x + pointerVel.y * pointerVel.y).squareRoot() / 400, 2)
+                    let radial = Tuning.pointerPush * k2 * gain / dist, swirl = Tuning.pointerSwirl * k2 * gain / dist
+                    f.pos.x += (d.x * radial - d.y * swirl + pointerVel.x * 0.4 * k2) * dt
+                    f.pos.y += (d.y * radial + d.x * swirl + pointerVel.y * 0.4 * k2) * dt
+                }
+            }
             if f.pos.x < -10 { f.pos.x += w + 20 } else if f.pos.x > w + 10 { f.pos.x -= w + 20 }
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
                 f = spawn(.sky, anywhere: false)
@@ -652,12 +703,13 @@ public final class SnowField {
             var f = debris[i]
             let prevY = f.pos.y
             f.fade = min(1, f.fade + dt * 2.5)
+            f.phase -= dt   // swept-off snow cannot land back for a moment (see sweep)
             f.vx -= (f.vx - wind * 0.15) * 0.5 * dt
             f.fall = min(f.fall + Tuning.debrisGravity * dt, Tuning.debrisTerminal)
             f.pos.x += f.vx * dt
             f.pos.y -= f.fall * dt
             if f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w
-                || tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
+                || (f.phase <= 0 && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale)) {
                 debris[i] = debris[debris.count - 1]
                 debris.removeLast()
             } else {

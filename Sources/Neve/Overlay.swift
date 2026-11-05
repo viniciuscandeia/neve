@@ -103,6 +103,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
     private var pollMouse = NSEvent.mouseLocation
     private var forcePath = false
+    private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
     private var bufferIndex = 0
@@ -329,10 +330,20 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
         guard window.isVisible else { return }
-        let now = time
+        let now = time, resumed = lastTimestamp == 0
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
         if !still { field.step(dt: Float(dt)) }
+        // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
+        let cursor = NSEvent.mouseLocation
+        if !resumed, let prev = lastCursor, prev != cursor, NSEvent.pressedMouseButtons & 1 == 0 {
+            let o = frame.origin
+            field.sweep(from: CGPoint(x: prev.x - o.x, y: prev.y - o.y), to: CGPoint(x: cursor.x - o.x, y: cursor.y - o.y), dt: Float(dt))
+        }
+        let local = SIMD2(Float(cursor.x - frame.origin.x), Float(cursor.y - frame.origin.y))
+        let moved = lastCursor.map { SIMD2(Float(cursor.x - $0.x), Float(cursor.y - $0.y)) / Float(dt) } ?? .zero
+        field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
+        lastCursor = cursor
         let drag = field.draggingID
         if field.pilesDirty, forcePath || now - lastPathTime >= 1.0 / 15 {
             lastPathTime = now
