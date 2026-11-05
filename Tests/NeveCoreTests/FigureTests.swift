@@ -115,7 +115,8 @@ private func windowTop(_ f: SnowField, id: Int, h: Float = 12) {
     f.update(windows: [win(1, 800, 300, 300, 200)], dt: 0.05)   // fast move: knocked off
     #expect(f.figures.isEmpty && f.balls.count == 3 && f.balls.contains { $0.state == .falling })
     advance(f, 3)   // it lands on the ground as a stack again, which stands up as a figure
-    #expect(f.figures.count == 1 && f.figures[0].at == .surface(id: Tuning.groundID, x: f.figures[0].foot.x) && f.balls.isEmpty)
+    let stack = f.figures.filter(\.fromBalls)
+    #expect(stack.count == 1 && stack[0].surfaceID != nil && f.balls.isEmpty)   // it landed (on the moved window, in its way) and stands again
 }
 
 @Test func closingTheWindowDropsTheFigureAsBalls() {
@@ -194,7 +195,7 @@ private func windowTop(_ f: SnowField, id: Int, h: Float = 12) {
     let f = field()
     let id = stand(f, x: 300)
     let l = f.look(of: fig(f, id))
-    #expect(l.foot == fig(f, id).foot && l.radii == SIMD3(20, 14, 10) && l.built == 7 && l.newest >= 0 && l.newest <= 1)
+    #expect(abs(l.foot.y - (fig(f, id).foot.y - 0.2 * 20)) < 0.001 && l.foot.x == 300 && l.radii == SIMD3(20, 14, 10) && l.built == 7 && l.newest >= 0 && l.newest <= 1)
     #expect(!l.collapsing && !l.headless && l.fade == 1 && l.droop == 0)
     advance(f, 1)
     #expect(f.look(of: fig(f, id)).newest == 1)

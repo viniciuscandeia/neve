@@ -183,16 +183,16 @@ final class BallLayers {
         }
         var k = 0
         for f in field.figures where f.fromBalls && f.phase != .hidden && k < sets.count {
-            let l = field.look(of: f)
+            let l = field.look(of: f), cs = field.ballCenters(of: f)
             let e = reduceMotion ? 1 : l.newest, grow = 0.85 + 0.15 * e
-            for (c, r) in [(l.centers.0, l.radii.x), (l.centers.1, l.radii.y), (l.centers.2, l.radii.z)].prefix(l.headless ? 2 : 3) where gi < groups.count {
+            for (c, r) in [(cs.0, l.radii.x), (cs.1, l.radii.y), (cs.2, l.radii.z)].prefix(l.headless ? 2 : 3) where gi < groups.count {
                 put(groups[gi], at: c, radius: r)
                 gi += 1
             }
-            place(sets[k].arms, at: l.centers.1, radius: l.radii.y, alpha: e, grow: grow)
-            place(sets[k].mid, at: l.centers.1, radius: l.radii.y, alpha: e, grow: grow)
+            place(sets[k].arms, at: cs.1, radius: l.radii.y, alpha: e, grow: grow)
+            place(sets[k].mid, at: cs.1, radius: l.radii.y, alpha: e, grow: grow)
             if l.headless { sets[k].head.isHidden = true } else {
-                place(sets[k].head, at: l.centers.2, radius: l.radii.z, alpha: e, grow: grow, flip: CGFloat(l.facing))   // faces its foe
+                place(sets[k].head, at: cs.2, radius: l.radii.z, alpha: e, grow: grow, flip: CGFloat(l.facing))   // faces its foe
             }
             keys[k] = f.id
             pose(k, reduceMotion ? Flutter() : l.pose.flutter, facing: l.facing, force: true)

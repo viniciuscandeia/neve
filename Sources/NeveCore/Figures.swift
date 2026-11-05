@@ -6,16 +6,6 @@ public enum Phase: UInt8 { case building, idle, walking, fighting, cheering, col
 /// Where a figure stands: on a surface at x (a window top, the Dock bar, the ground), or in the air.
 public enum Attachment: Equatable { case surface(id: Int, x: Float), air }
 
-/// What the renderer needs to pose a figure, all derived by the simulation. Plan: maps onto the Rig's `Pose`.
-public struct FigurePose: Equatable {
-    public var hop: Float = 0       // points lifted (walk bounce, cheer jumps)
-    public var lean: Float = 0      // head offset, points (wind, walk sway, hit wobble)
-    public var squash: Float = 0    // reserved for the impact squash (Fase 4)
-    public var shake: Float = 0     // -0.7...0.7 hit wobble
-    public var flutter = Flutter()  // scarf and arms
-    public init() {}
-}
-
 /// Walking / fighting bookkeeping of one figure (not for rendering).
 struct Motion {
     var speed: Float = Tuning.walkSpeed
@@ -33,7 +23,7 @@ public struct Figure {
     public internal(set) var at = Attachment.air
     public internal(set) var foot: SIMD2<Float>                // x, and y of the pile top under it (resolved once per step)
     public internal(set) var facing: Float = 1                  // +-1
-    public internal(set) var pose = FigurePose()
+    public internal(set) var pose = Pose()
     public internal(set) var radii: SIMD3<Float>               // bottom, middle, head
     public internal(set) var built = Snowman.stageCount         // stages that have appeared (0...7)
     public internal(set) var progress: Float = 0                // 0...1 toward the next stage
@@ -54,21 +44,6 @@ public struct Figure {
     }
 }
 
-/// Everything a renderer reads about a figure (no rendering code here).
-public struct FigureLookData {
-    public var foot: SIMD2<Float>
-    public var radii: SIMD3<Float>
-    public var facing: Float
-    public var pose: FigurePose
-    public var built: Int
-    public var newest: Float        // 0...1 ease-out of the stage that just appeared (1 when settled)
-    public var fade: Float
-    public var collapsing: Bool
-    public var headless: Bool
-    public var droop: Float
-    public var centers: (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)   // stacked ball centres, hop and lean applied
-}
-
 struct Anchors {
     var base: SIMD2<Float>, body: SIMD2<Float>, head: SIMD2<Float>   // ball centres
     var arm: SIMD2<Float>                                             // throwing hand
@@ -83,11 +58,17 @@ extension SnowField {
 
     func figureIndex(_ id: Int) -> Int? { figures.firstIndex { $0.id == id } }
 
-    public func look(of f: Figure) -> FigureLookData {
-        let a = anchors(of: f), t = min(f.stageAge / 0.3, 1)
-        return FigureLookData(foot: f.foot, radii: f.radii, facing: f.facing, pose: f.pose, built: f.built, newest: t * (2 - t),
-                              fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop,
-                              centers: (a.base, a.body, a.head))
+    /// What the rig needs to draw the figure (foot = bottom of the base ball, before hop).
+    public func look(of f: Figure) -> SnowmanLook {
+        let t = min(f.stageAge / 0.3, 1)
+        return SnowmanLook(foot: SIMD2(f.foot.x, f.foot.y - (1 - SnowField.sink) * f.radii.x), radii: f.radii, facing: f.facing, pose: f.pose,
+                           built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop)
+    }
+
+    /// Centres of the three stacked balls (hop and lean applied), for renderers that draw balls themselves.
+    public func ballCenters(of f: Figure) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>) {
+        let a = anchors(of: f)
+        return (a.base, a.body, a.head)
     }
 
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
@@ -193,7 +174,7 @@ extension SnowField {
         if f.fromBalls { removeFigure(j); return }
         endFights(of: id)
         figures[j].phase = .collapsing; figures[j].phaseT = 0; figures[j].fade = 1
-        figures[j].fight = nil; figures[j].pose = FigurePose()
+        figures[j].fight = nil; figures[j].pose = Pose()
         snowmanCooldown = Tuning.snowmanCooldown
         figuresVersion &+= 1
     }
@@ -289,9 +270,9 @@ extension SnowField {
         var moving = false
         if animate, visible, f.built == Snowman.stageCount, f.stageAge >= 0.3, !f.headless {
             moving = walkStep(&f, sid: sid, dt: dt)
-        } else if f.motion.gait != 0 || f.motion.cheer > 0 || f.pose != FigurePose() {
+        } else if f.motion.gait != 0 || f.motion.cheer > 0 || f.pose != Pose() {
             f.motion = Motion(speed: f.motion.speed, nextIdle: f.motion.nextIdle, rest: f.motion.rest)   // standing still: rest pose
-            f.pose = FigurePose()
+            f.pose = Pose()
         }
         f.at = .surface(id: sid, x: f.foot.x)
         let phase: Phase = !visible ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering

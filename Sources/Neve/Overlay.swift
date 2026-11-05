@@ -368,37 +368,15 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// NEVE_PRIMS test path: the current sim state through `Rig` (read-only public APIs; P2-C replaces this with `writePrims`).
     private func writePrims(_ w: inout PrimWriter) {
         let hc = contrast > 0
-        let balls = field.balls
-        for b in balls where b.snowmanAge >= 0 {   // 3-stacks formed into a snowman
-            guard let (m, h) = field.snowmanChain(of: b) else { continue }
-            let t = reduceMotion ? 1 : min(b.snowmanAge / 0.3, 1), e = t * (2 - t)
-            let pose = Pose(flutter: reduceMotion ? Flutter() : field.pose(of: b.id))
-            let look = SnowmanLook(foot: SIMD2(b.pos.x, b.pos.y - b.radius), radii: SIMD3(b.radius, m.radius, h.radius),
-                                   facing: field.facing(of: b.id), pose: pose, built: 7, newest: e, fade: b.fade)
-            Rig.snowman(look, contrast: hc, into: &w)
-        }
-        for b in balls where !inFormedStack(b) {
+        for b in field.balls {
             Rig.ball(center: b.pos, radius: b.radius, rotation: b.rotation, fade: b.fade, squash: 0, contrast: hc, face: false, into: &w)
         }
-        if let m = field.snowman, let pos = field.snowmanPlacement() {
-            let s = m.scale, easing = !reduceMotion && m.stageAge < 0.35
-            let t = min(m.stageAge / 0.3, 1)
-            let look = SnowmanLook(foot: pos, radii: SIMD3(11.5, 8.5, 6.5) * s, facing: m.facing,
-                                   pose: Pose(lean: m.lean, flutter: reduceMotion ? Flutter() : m.pose),
-                                   built: m.stage, newest: easing ? t * (2 - t) : 1, fade: m.collapsing ? m.fade : 1, collapsing: m.collapsing)
+        for f in field.figures where f.phase != .hidden {
+            var look = field.look(of: f)
+            if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }
             Rig.snowman(look, contrast: hc, into: &w)
         }
-        for s in field.walk.shots { Rig.shot(pos: s.pos, radius: 3.6, alpha: 1, into: &w) }
-    }
-
-    private func inFormedStack(_ b: Snowball) -> Bool {
-        if b.snowmanAge >= 0, field.snowmanChain(of: b) != nil { return true }
-        guard let p = b.parent else { return false }
-        for r in field.balls where r.id == p {
-            if r.snowmanAge >= 0, field.snowmanChain(of: r) != nil { return true }
-            if let g = r.parent { for q in field.balls where q.id == g && q.snowmanAge >= 0 && field.snowmanChain(of: q) != nil { return true } }
-        }
-        return false
+        for s in field.shots { Rig.shot(pos: s.pos, radius: 3.6, alpha: 1, into: &w) }
     }
 
     private func render(_ drawable: CAMetalDrawable) {

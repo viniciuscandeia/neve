@@ -137,7 +137,7 @@ final class SnowmanLayers {
         struct View { var stage: Int, collapsing: Bool, fade: Float, stageAge: Float, scale: Float, lean: Float, facing: Float, pose: Flutter, headless: Bool }
         let m = View(stage: look.built, collapsing: look.collapsing, fade: look.fade, stageAge: fig.stageAge, scale: look.radii.x / 11.5,
                      lean: look.pose.lean, facing: look.facing, pose: look.pose.flutter, headless: look.headless)
-        let pos = SIMD2(look.foot.x, look.foot.y - 0.2 * look.radii.x + look.pose.hop)   // base of the bottom ball
+        let pos = SIMD2(look.foot.x, look.foot.y + look.pose.hop)   // base of the bottom ball
         let now = CACurrentMediaTime()
         let flutter = reduceMotion ? Flutter() : m.pose
         let fluttering = flutter != shownFlutter && now - lastFlutter >= 1 / 30   // scarf / arms: <= 30 Hz

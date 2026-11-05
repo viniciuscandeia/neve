@@ -60,7 +60,7 @@ private func ready(_ f: SnowField) { run(f, 0.6) }
         if calm { f.setCalm(true) } else { f.walkEnabled = false }
         run(f, 20)
         for k in [id, auto] {   // static pose, only idle / building phases
-            #expect(fig(f, k).foot.x == (k == id ? 300 : 700) && fig(f, k).phase == .idle && fig(f, k).pose == FigurePose())
+            #expect(fig(f, k).foot.x == (k == id ? 300 : 700) && fig(f, k).phase == .idle && fig(f, k).pose == Pose())
         }
         #expect(f.fights.isEmpty && f.shots.isEmpty)
     }
