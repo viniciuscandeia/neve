@@ -252,3 +252,29 @@ private func headOf(_ f: SnowField, _ bottom: Int) -> Snowball? {
     for _ in 0..<(60 * 60) { f.step(dt: 1 / 60); closest = min(closest, abs(ball(f, a).pos.x - ball(f, b).pos.x)) }
     #expect(closest >= 20 + 20 - 1)   // never closer than the two base balls touching
 }
+
+@Test func scarfFlutterGrowsWithWindAndStreamsDownwind() {
+    func peak(_ g: Float) -> Float {   // largest wave of the lower tail over a flutter cycle
+        (0..<64).map { abs(Flutter.make(gust: g, gait: 0, dir: 1, phase: Float($0) * 0.1, cheer: 0).wave) }.max()!
+    }
+    #expect(peak(1) > peak(0) * 2 && peak(0) > 0)   // calm air still flutters a little
+    #expect(Flutter.rate(gust: 1, gait: 0) > Flutter.rate(gust: 0, gait: 0) && Flutter.rate(gust: 0, gait: 1) > Flutter.rate(gust: 0, gait: 0))
+    for g: Float in [1, -1] {
+        let p = Flutter.make(gust: g, gait: 0, dir: 1, phase: 0, cheer: 0)
+        #expect(p.scarf * g > 1 && p.sway * g < 0)   // tail streams downwind (> 57 degrees), arms bend with it
+    }
+}
+
+@Test func armsRaiseDuringTheCheerAndRestAfterwards() {
+    func up(_ cheer: Float) -> Float { Flutter.make(gust: 0, gait: 0, dir: 1, phase: 0, cheer: cheer).up }
+    #expect(up(0) == 0 && up(Tuning.cheerTime) == 0)
+    #expect(up(1) == 1 && up(0.1) < 1)   // full V mid-cheer, lowering at the end
+    let f = field()
+    let a = build(f, x: 300), b = build(f, x: 420)
+    run(f, 1)
+    for _ in 0..<3 { f.registerHit(b, head: true) }
+    run(f, 1)
+    #expect(f.pose(of: a).up > 0.9 && f.pose(of: b).up == 0)
+    run(f, 3)
+    #expect(f.pose(of: a).up == 0)
+}

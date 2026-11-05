@@ -12,6 +12,7 @@ public struct Snowman {
 
     public internal(set) var x: Float                // walks, see Walkers.swift
     public internal(set) var hop: Float = 0, lean: Float = 0, facing: Float = 1   // walking pose: lift, head offset, +-1
+    public internal(set) var pose = Flutter()        // scarf / arms, see Walkers.swift
     public let surfaceID: Int
     public let scale: Float
     public internal(set) var y: Float                // base y (last known pile top under it)
