@@ -226,8 +226,9 @@ public struct SplitMix64: RandomNumberGenerator {
 public final class SnowField {
     public let size: SIMD2<Float>
     let origin: CGPoint
-    let groundY: Float
-    let visibleTop: Float
+    private(set) var groundY: Float
+    private(set) var visibleTop: Float
+    private var boundsDirty = false
     public private(set) var flakes: [Flake] = []
     public private(set) var debris: [Flake] = []
     private(set) var surfaces: [Surface] = []
@@ -367,6 +368,14 @@ public final class SnowField {
         return true
     }
 
+    /// Dock / menu bar moved: keeps flakes and piles, surfaces are rebuilt on the next `update`.
+    public func setBounds(groundY: CGFloat, visibleTop: CGFloat) {
+        guard Float(groundY) != self.groundY || Float(visibleTop) != self.visibleTop else { return }
+        self.groundY = Float(groundY)
+        self.visibleTop = Float(visibleTop)
+        boundsDirty = true
+    }
+
     public func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
 
     /// Rebuilds surfaces from the front-to-back window list. Returns debris spawned by knocked-off piles.
@@ -375,7 +384,8 @@ public final class SnowField {
         let now = CFAbsoluteTimeGetCurrent()
         pollDt = Float(min(max(now - lastPoll, 0.05), 0.5))
         lastPoll = now
-        guard windows != lastWindows else { return 0 }
+        guard windows != lastWindows || boundsDirty else { return 0 }
+        boundsDirty = false
         lastWindows = windows
         return updateSurfaces(windows: windows)
     }
