@@ -2,7 +2,7 @@
 
 Neve faz nevar sobre a tela do seu Mac, acumulando nas janelas e no Dock.
 
-<!-- screenshot -->
+![Neve: neve caindo e acumulando sobre janelas e o Dock](docs/demo.gif)
 
 App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, sem dependências externas.
 
