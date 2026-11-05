@@ -9,7 +9,7 @@ final class SnowmanLayers {
     let root = CALayer()
     private var elements: [CALayer] = []      // index = stage - 1: base, middle, head, coal, nose, arms, scarf
     private var bodies: [CAShapeLayer] = []
-    private var shown = -1, shownCollapsing = false, shownPos = SIMD2<Float>(-1e9, -1e9), shownScale: Float = 0
+    private var shown = -1, shownCollapsing = false, shownPos = SIMD2<Float>(-1e9, -1e9), shownScale: Float = 0, shownPose = SIMD2<Float>(0, 1)
     private let box = CGRect(x: -30, y: 0, width: 60, height: 60)
 
     private func local(_ build: (CGMutablePath) -> Void) -> CGPath {   // path in `box` coordinates
@@ -109,14 +109,15 @@ final class SnowmanLayers {
             if !root.isHidden { root.isHidden = true; shown = -1 }
             return
         }
+        let pose = SIMD2(m.lean, m.facing)   // walking: head offset, facing
         let easing = !reduceMotion && m.stageAge < 0.35
-        guard m.stage != shown || m.collapsing != shownCollapsing || m.collapsing || easing || pos != shownPos || root.isHidden else { return }
+        guard m.stage != shown || m.collapsing != shownCollapsing || m.collapsing || easing || pos != shownPos || pose != shownPose || root.isHidden else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if pos != shownPos || m.scale != shownScale || root.isHidden {
+        if pos != shownPos || m.scale != shownScale || pose != shownPose || root.isHidden {
             root.position = CGPoint(x: CGFloat(pos.x), y: CGFloat(pos.y))
-            root.setAffineTransform(CGAffineTransform(scaleX: CGFloat(m.scale), y: CGFloat(m.scale)))
-            shownPos = pos; shownScale = m.scale
+            root.setAffineTransform(CGAffineTransform(scaleX: CGFloat(m.scale * m.facing), y: CGFloat(m.scale)).rotated(by: -atan(CGFloat(m.lean / (44 * m.scale)))))
+            shownPos = pos; shownScale = m.scale; shownPose = pose
         }
         root.isHidden = false
         for (i, l) in elements.enumerated() {

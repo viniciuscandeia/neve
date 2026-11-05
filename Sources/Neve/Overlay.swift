@@ -77,7 +77,7 @@ final class InteractView: NSView {
 
 /// The user options an overlay renders; the controller owns them (UserDefaults) and pushes them to every overlay.
 struct OverlayPrefs: Equatable {
-    var economy = false, behind = false, still = false, snowman = true, showInCaptures = false
+    var economy = false, behind = false, still = false, snowman = true, walk = true, showInCaptures = false
     var intensity = Intensity.media
 }
 
@@ -92,6 +92,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let window: NSWindow
     private let view = InteractView()
     private let ballLayers = BallLayers()
+    private let fightLayers = FightLayers()   // thrown snowballs
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0
     private var piles: PileLayers!
@@ -169,6 +170,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
         root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
         root.addSublayer(ballLayers.root)
+        root.addSublayer(fightLayers.root)
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -243,6 +245,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(p.behind ? .desktopIconWindow : .dockWindow)) + 1)
         window.sharingType = p.showInCaptures ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
         field.snowmanEnabled = p.snowman
+        field.walk.enabled = p.walk
         field.setIntensity(p.intensity)
         link?.preferredFrameRateRange = frameRange
         accessibilityChanged()   // `still` follows the pref
@@ -361,6 +364,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         snowmanLayers.update(field, reduceMotion: reduceMotion)
         ballLayers.update(field, reduceMotion: reduceMotion)
+        fightLayers.update(field)
         render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
     }
 

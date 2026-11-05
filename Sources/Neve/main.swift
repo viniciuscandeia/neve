@@ -5,8 +5,8 @@ import ServiceManagement
 
 /// UserDefaults keys of the on / off options. Defaults: Nevar and Boneco de neve on, the rest off.
 enum Pref: String {
-    case enabled, economy, ambient, behindWindows, stillSnow, snowman, showInCaptures
-    var defaultValue: Bool { self == .enabled || self == .snowman }
+    case enabled, economy, ambient, behindWindows, stillSnow, snowman, walk, showInCaptures
+    var defaultValue: Bool { self == .enabled || self == .snowman || self == .walk }
 }
 
 @MainActor
@@ -42,7 +42,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var behind: Bool { flag(.behindWindows) }
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
-        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), showInCaptures: flag(.showInCaptures), intensity: .saved)
+        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), showInCaptures: flag(.showInCaptures), intensity: .saved)
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -93,7 +93,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let options = [toggleItem(.economy, "Modo econômico", symbol: "leaf"), toggleItem(.ambient, "Modo ambiente", symbol: "sun.max"),
                        toggleItem(.behindWindows, "Atrás das janelas", symbol: "square.stack.3d.down.right"),
                        toggleItem(.stillSnow, "Neve parada (movimento reduzido)", symbol: "pause.circle"),
-                       toggleItem(.snowman, "Boneco de neve", symbol: "figure.stand")]
+                       toggleItem(.snowman, "Boneco de neve", symbol: "figure.stand"),
+                       toggleItem(.walk, "Bonecos andam e brigam", symbol: "figure.walk")]
         let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem(.enabled, "Nevar", symbol: "snowflake", key: "n"), .sectionHeader(title: "QUANTIDADE")] + levels
             + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem] + options + [snowballHint, toggleItem(.showInCaptures, "Mostrar em capturas", symbol: "camera"), loginItem, axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
@@ -211,7 +212,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             applyPrefs()
             if polling { pollWindows() }   // empties / refills the surface list
             updateStatus()
-        case .stillSnow, .snowman, .showInCaptures: applyPrefs()
+        case .stillSnow, .snowman, .walk, .showInCaptures: applyPrefs()
         }
     }
 

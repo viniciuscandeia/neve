@@ -110,10 +110,10 @@ final class BallLayers {
         }
     }
 
-    private func place(_ l: CALayer, at p: SIMD2<Float>, radius: Float, alpha: Float = 1, grow: Float = 1) {
+    private func place(_ l: CALayer, at p: SIMD2<Float>, radius: Float, alpha: Float = 1, grow: Float = 1, flip: CGFloat = 1) {
         l.position = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
         let k = CGFloat(radius * grow)
-        l.transform = CATransform3DMakeScale(k, k, 1)
+        l.transform = CATransform3DMakeScale(k * flip, k, 1)
         l.opacity = alpha
         l.isHidden = false
     }
@@ -140,7 +140,7 @@ final class BallLayers {
             let t = reduceMotion ? 1 : min(b.snowmanAge / 0.3, 1), e = t * (2 - t), grow = 0.85 + 0.15 * e
             place(sets[k].arms, at: m.pos, radius: m.radius, alpha: e, grow: grow)
             place(sets[k].mid, at: m.pos, radius: m.radius, alpha: e, grow: grow)
-            place(sets[k].head, at: h.pos, radius: h.radius, alpha: e, grow: grow)
+            place(sets[k].head, at: h.pos, radius: h.radius, alpha: e, grow: grow, flip: CGFloat(field.facing(of: b.id)))   // faces its foe
             k += 1
         }
         for s in sets[k...] { s.arms.isHidden = true; s.mid.isHidden = true; s.head.isHidden = true }
