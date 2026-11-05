@@ -23,6 +23,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
     private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
     private var economy = UserDefaults.standard.bool(forKey: "economy")
+    private let ambientItem = NSMenuItem(title: "Modo ambiente", action: #selector(toggleAmbient), keyEquivalent: "")
+    private let behindItem = NSMenuItem(title: "Atrás das janelas", action: #selector(toggleBehind), keyEquivalent: "")
+    private let stillItem = NSMenuItem(title: "Neve parada (movimento reduzido)", action: #selector(toggleStill), keyEquivalent: "")
+    private let whereItem = NSMenuItem(title: "Nevar em", action: nil, keyEquivalent: "")
+    private let ud = UserDefaults.standard
+    private var ambient: Bool { ud.bool(forKey: "ambient") }
+    private var behind: Bool { ud.bool(forKey: "behindWindows") }
     private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "n")
@@ -59,12 +66,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         capturesItem.target = self
         capturesItem.image = Self.symbol("camera")
         capturesItem.state = UserDefaults.standard.bool(forKey: "showInCaptures") ? .on : .off
+        for (m, name, key) in [(ambientItem, "sun.max", "ambient"), (behindItem, "square.stack.3d.down.right", "behindWindows"), (stillItem, "pause.circle", "stillSnow")] {
+            m.target = self
+            m.image = Self.symbol(name)
+            m.state = ud.bool(forKey: key) ? .on : .off
+        }
+        whereItem.image = Self.symbol("display")
+        whereItem.submenu = NSMenu()
         axItem.target = self
         axItem.image = Self.symbol("exclamationmark.triangle")
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
         let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem, .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), economyItem, capturesItem, loginItem, axItem, .separator(), clear, quit]
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem, economyItem, ambientItem, behindItem, stillItem, capturesItem, loginItem, axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
@@ -98,34 +112,93 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildOverlays()
     }
 
-    /// Screen set / frame / scale of the last rebuild; Dock and menu-bar (visibleFrame) changes never rebuild.
-    private var builtKeys: [[CGFloat]] = []
-    private func keys(_ s: [NSScreen]) -> [[CGFloat]] { s.map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height, $0.backingScaleFactor] } }
+    private func displayID(_ s: NSScreen) -> Int { (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0 }
 
-    /// Leaving / entering fullscreen reshuffles the menu bar and Dock mid-Space-animation: ignore geometry until ~1s after.
-    private var settleUntil = Date.distantPast
-    private var settling: Bool { overlays.contains(where: \.isFullscreen) || Date() < settleUntil }
+    /// Leaving / entering fullscreen reshuffles the menu bar and Dock mid-Space-animation: per screen, ignore visibleFrame ~1s after.
+    private var settleUntil: [Int: Date] = [:]
+    private func settling(_ o: Overlay) -> Bool { o.isFullscreen || Date() < settleUntil[displayID(o.screen), default: .distantPast] }
 
-    /// Rebuild only if the screens really changed, else just move ground / menu-bar cutoffs in place.
+    /// Real configuration changes (screens added / removed, frame or scale) apply at once, per screen;
+    /// only visibleFrame-only changes (Dock, menu bar) wait for a transitioning screen to settle.
     @objc private func screensChanged() {
-        if polling && settling { return }   // the poll timer re-checks once settled
-        if keys(wantedScreens) != builtKeys { rebuildOverlays() } else { overlays.forEach { $0.refreshBounds() } }
+        let wanted = wantedScreens
+        let ids = Set(wanted.map(displayID))
+        let changed = Set(overlays.map { displayID($0.screen) }) != ids
+            || wanted.contains { s in overlays.contains { displayID($0.screen) == displayID(s) && $0.screenChanged(s) } }
+        if changed { syncOverlays() }
+        for o in overlays where !(polling && settling(o)) { o.refreshBounds() }
     }
 
-    private func rebuildOverlays() {
-        for o in overlays { o.teardown() }
-        builtKeys = keys(wantedScreens)
-        overlays = wantedScreens.compactMap { Overlay(screen: $0) }
-        if overlays.count < wantedScreens.count && !loggedMetal {
+    /// Makes the overlays match wantedScreens: tears down unwanted / changed ones, creates missing ones; other screens keep their piles.
+    private func syncOverlays() {
+        let wanted = wantedScreens
+        func stale(_ o: Overlay) -> Bool { !wanted.contains { displayID($0) == displayID(o.screen) && !o.screenChanged($0) } }
+        overlays.filter(stale).forEach { $0.teardown() }
+        overlays.removeAll(where: stale)
+        for o in overlays { o.setEconomy(economy) }
+        let missing = wanted.filter { s in !overlays.contains { displayID($0.screen) == displayID(s) } }
+        let made = missing.compactMap { Overlay(screen: $0) }
+        if made.count < missing.count && !loggedMetal {
             loggedMetal = true
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
         }
+        overlays += made
         metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
         refreshRunState()
     }
 
-    /// Economy mode: only the screen with the menu bar gets an overlay; the others are torn down.
-    private var wantedScreens: [NSScreen] { economy ? Array(NSScreen.screens.prefix(1)) : NSScreen.screens }
+    private func rebuildOverlays() { syncOverlays() }
+
+    /// "all" / "main" / a display ID. Economy forces the main screen (the one with the menu bar).
+    private var target: String { ud.string(forKey: "snowOn") ?? "all" }
+    private var wantedScreens: [NSScreen] {
+        let all = NSScreen.screens
+        if economy || target == "main" { return Array(all.prefix(1)) }
+        if let id = Int(target), let s = all.first(where: { displayID($0) == id }) { return [s] }
+        return all   // "all", or the chosen screen is unplugged
+    }
+
+    @objc private func pickTarget(_ sender: NSMenuItem) {
+        ud.set(sender.representedObject as? String ?? "all", forKey: "snowOn")
+        syncOverlays()
+    }
+
+    private func rebuildWhereMenu() {
+        guard let m = whereItem.submenu else { return }
+        m.removeAllItems()
+        var rows: [(String, String)] = [("Todas as telas", "all"), ("Só na tela principal", "main")]
+        if NSScreen.screens.count > 1 { rows += NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
+        let cur = rows.contains { $0.1 == target } ? target : "all"
+        for (title, key) in rows {
+            let i = NSMenuItem(title: title, action: #selector(pickTarget(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = key
+            i.state = key == cur ? .on : .off
+            i.isEnabled = !economy
+            m.addItem(i)
+        }
+    }
+
+    @objc private func toggleAmbient() {
+        ud.set(!ambient, forKey: "ambient")
+        ambientItem.state = ambient ? .on : .off
+        if ambient && userIdle { userIdle = false; refreshRunState() } else { updateStatus() }
+    }
+
+    @objc private func toggleBehind() {
+        ud.set(!behind, forKey: "behindWindows")
+        behindItem.state = behind ? .on : .off
+        for o in overlays { o.setBehind(behind) }
+        if polling { pollWindows() }   // empties / refills the surface list
+        updateStatus()
+    }
+
+    @objc private func toggleStill() {
+        let on = !ud.bool(forKey: "stillSnow")
+        ud.set(on, forKey: "stillSnow")
+        stillItem.state = on ? .on : .off
+        for o in overlays { o.setStill(on) }
+    }
 
     @objc private func toggleCaptures() {
         let on = capturesItem.state != .on
@@ -138,14 +211,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         economy.toggle()
         UserDefaults.standard.set(economy, forKey: "economy")
         economyItem.state = economy ? .on : .off
-        let wanted = wantedScreens
-        overlays.filter { o in !wanted.contains(o.screen) }.forEach { $0.teardown() }
-        overlays.removeAll { o in !wanted.contains(o.screen) }   // main-screen piles are kept
-        for o in overlays { o.setEconomy(economy) }
-        builtKeys = keys(wanted)
-        overlays += wanted.filter { s in !overlays.contains { $0.screen == s } }.compactMap { Overlay(screen: $0) }
-        metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
-        refreshRunState()
+        syncOverlays()
     }
 
     private var running: Bool { enabled && !screensAsleep && !sessionInactive }
@@ -168,7 +234,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if hot { return "Pausado — sistema quente" }
         if fullscreenIdle { return "Pausado — app em tela cheia" }
         var s = level == .nevasca ? "Nevasca · vento forte" : "Nevando · \(level.title)"
-        if economy { s += " · econômico" }
+        if economy { s += " · econômico · só tela principal" }
+        else if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" ? wantedScreens[0].localizedName : "tela principal") }
+        if ambient { s += " · ambiente" }
+        if behind { s += " · atrás das janelas" }
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { s += " · movimento reduzido" }
         return s
     }
@@ -180,7 +249,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         axItem.isHidden = AXIsProcessTrusted()
     }
 
-    func menuWillOpen(_ menu: NSMenu) { updateStatus() }
+    func menuWillOpen(_ menu: NSMenu) {
+        stillItem.isHidden = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        rebuildWhereMenu()
+        updateStatus()
+    }
 
     private func refreshRunState() {
         updateStatus()
@@ -216,20 +289,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// No input for 5 min pauses rendering; input resumes it (checked here, so no Accessibility needed for keys).
     @objc private func pollTick() {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
-        if !userIdle && since >= 300 { userIdle = true; refreshRunState() }
+        if !userIdle && !ambient && since >= 300 { userIdle = true; refreshRunState() }
         else if userIdle && since < 2 { userIdle = false; refreshRunState() }
         if !userIdle { pollWindows() }
     }
 
     @objc private func pollWindows() {
-        if !settling { screensChanged() }
+        screensChanged()
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
         let covering = windows.map(\.frame)
-        if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
+        if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
+        else if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
         for o in overlays {
             let fs = covering.contains { o.covers($0) }
-            if fs != o.isFullscreen { settleUntil = Date().addingTimeInterval(1) }
+            if fs != o.isFullscreen { settleUntil[displayID(o.screen)] = Date().addingTimeInterval(1) }
             o.setFullscreen(fs)
             if !o.isFullscreen { o.update(windows: windows) }   // under fullscreen the list is just that app: keep piles untouched
         }

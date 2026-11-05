@@ -83,6 +83,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var occluded = false
     private var lowPower = false
     private var contrast: Float = 0
+    private var stillPref = UserDefaults.standard.bool(forKey: "stillSnow")
+    private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
     private var economy = UserDefaults.standard.bool(forKey: "economy")
     private var lastTimestamp: CFTimeInterval = 0
     private var lastPathTime: CFTimeInterval = 0
@@ -119,7 +121,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.sharingType = UserDefaults.standard.bool(forKey: "showInCaptures") ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
         window.isReleasedWhenClosed = false
         // One above the Dock: over the Dock (piles) but under menu bar, status-bar popovers and menus (all .statusBar+).
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
+        setBehind(UserDefaults.standard.bool(forKey: "behindWindows"))
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         window.setFrame(f, display: false)
 
@@ -188,6 +190,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     @objc private func accessibilityChanged() {
         let ws = NSWorkspace.shared
         field.setCalm(ws.accessibilityDisplayShouldReduceMotion)
+        still = stillPref && ws.accessibilityDisplayShouldReduceMotion
         let hc = ws.accessibilityDisplayShouldIncreaseContrast
         contrast = hc ? 1 : 0
         pileLayer.shadowOpacity = hc ? 0.8 : 0.45
@@ -221,6 +224,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     func covers(_ r: CGRect) -> Bool { r.insetBy(dx: -1, dy: -1).contains(screen.frame) }
     var isFullscreen: Bool { fullscreen }
     func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; apply() } }
+    func setStill(_ on: Bool) { stillPref = on; accessibilityChanged() }
+    /// Behind windows: just above the desktop icons (snow over the wallpaper only); else one above the Dock.
+    func setBehind(_ on: Bool) {
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(on ? .desktopIconWindow : .dockWindow)) + 1)
+    }
     func setShowInCaptures(_ on: Bool) { window.sharingType = on ? .readOnly : .none }
     func setHot(_ on: Bool) { if on != hot { hot = on; apply() } }
     func setIntensity(_ v: Intensity) { field.setIntensity(v) }
@@ -279,7 +287,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let now = time
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
-        field.step(dt: Float(dt))
+        if !still { field.step(dt: Float(dt)) }
         let drag = field.draggingID
         if field.pilesDirty, forcePath || now - lastPathTime >= 1.0 / 15 {
             lastPathTime = now
@@ -320,7 +328,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         let buffer = buffers[bufferIndex]
         bufferIndex = (bufferIndex + 1) % buffers.count
-        let count = field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
+        let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
 
         pass.colorAttachments[0].texture = drawable.texture
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
