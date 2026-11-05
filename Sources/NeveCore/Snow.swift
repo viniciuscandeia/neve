@@ -195,13 +195,16 @@ public struct Flake {
     var size: Float
     var alpha: Float
     public var kind: FlakeKind
+    var seed: Float = 0     // per-flake shape variant / rotation (0..1)
+    var fade: Float = 1     // 0..1 fade-in after a spawn; multiplied into alpha
 }
 
-/// GPU instance, 16 bytes; layout mirrors the Metal struct.
+/// GPU instance, 24 bytes (8-aligned); layout mirrors the Metal struct.
 public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
     var alpha: Float
+    var seed: Float
 }
 
 struct Surface {
@@ -297,12 +300,14 @@ public final class SnowField {
             let s = Float.random(in: 1.5...3.5, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
                          phase: phase, amp: Float.random(in: 5...15, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
-                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background)
+                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         default:
             let s = Float.random(in: 2.5...7, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
                          phase: phase, amp: Float.random(in: 8...25, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
-                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky)
+                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         }
     }
 
@@ -385,7 +390,7 @@ public final class SnowField {
     @discardableResult
     private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
-        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris))
+        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 0))
         return true
     }
 
@@ -610,6 +615,7 @@ public final class SnowField {
                 continue
             }
             let prevY = f.pos.y
+            f.fade = min(1, f.fade + dt * 2.5)   // ~0.4s fade-in
             f.phase += f.freq * dt
             f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
@@ -628,6 +634,7 @@ public final class SnowField {
         while i >= 0 {
             var f = debris[i]
             let prevY = f.pos.y
+            f.fade = min(1, f.fade + dt * 2.5)
             f.vx -= (f.vx - wind * 0.15) * 0.5 * dt
             f.fall = min(f.fall + Tuning.debrisGravity * dt, Tuning.debrisTerminal)
             f.pos.x += f.vx * dt
@@ -648,9 +655,9 @@ public final class SnowField {
         var n = 0
         for i in 0..<(skyEnd + bgEnd) {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
-            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
+            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
         }
-        for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
+        for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
         return n
     }
 

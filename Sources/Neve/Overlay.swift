@@ -6,8 +6,8 @@ import QuartzCore
 private let shaderSource = """
 #include <metal_stdlib>
 using namespace metal;
-struct Instance { float2 pos; float size; float alpha; };
-struct VOut { float4 position [[position]]; float2 uv; float alpha; };
+struct Instance { float2 pos; float size; float alpha; float seed; };
+struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; };
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
@@ -17,12 +17,21 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.position = float4(p / viewSize * 2.0 - 1.0, 0.0, 1.0);
     o.uv = corner;
     o.alpha = i.alpha;
+    o.size = i.size;
+    o.seed = i.seed;
     return o;
 }
 // White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
 // `contrast` (Increase Contrast) = 1 darkens the rim and keeps it opaque.
 fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[buffer(0)]]) {
     float d = length(in.uv);
+    // Flakes >= ~5pt: faint 6-fold crystal hint + a little per-flake irregularity. Small ones stay round dots.
+    float big = smoothstep(3.5, 5.5, in.size);
+    if (big > 0.0) {
+        float th = atan2(in.uv.y, in.uv.x) + in.seed * 6.2832;
+        float wob = cos(6.0 * th) * 0.13 + cos(3.0 * th + in.seed * 17.0) * 0.07 * fract(in.seed * 7.0);
+        d *= 1.0 - big * (wob + 0.04);
+    }
     float core = 1.0 - smoothstep(0.1, 0.45, d);
     float3 rim = mix(float3(0.56, 0.65, 0.80), float3(0.40, 0.50, 0.70), contrast);
     float a = (1.0 - smoothstep(0.55, 1.0, d)) * in.alpha;
@@ -71,6 +80,27 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let highlightLayer = CAShapeLayer()
     private let dragLayer = CAShapeLayer()        // the pile of a window being dragged: slid with the mouse between polls
     private let dragHighlight = CAShapeLayer()
+    private let crestLayer = CAShapeLayer(), dragCrest = CAShapeLayer()
+    private var crestFor: [CAShapeLayer] { [crestLayer, dragCrest] }
+    private var masks: [ObjectIdentifier: CAShapeLayer] = [:]
+    private func crestMask(_ l: CAShapeLayer) -> CAShapeLayer {
+        if let m = masks[ObjectIdentifier(l)] { return m }
+        let m = CAShapeLayer()
+        m.frame = l.bounds
+        m.fillColor = CGColor(gray: 0, alpha: 1)
+        masks[ObjectIdentifier(l)] = m
+        return m
+    }
+    /// Sets a pile path on a crest layer (and its mask). Runs only when the path changes.
+    private func setCrest(_ l: CAShapeLayer, _ p: CGPath?) {
+        l.path = p
+        let m = crestMask(l)
+        guard let p else { m.path = nil; return }
+        let q = CGMutablePath()
+        q.addPath(p)
+        q.addPath(p, transform: CGAffineTransform(translationX: 0, y: -3))
+        m.path = q
+    }
     private var pollMouse = NSEvent.mouseLocation
     private var forcePath = false
     private let metalLayer = CAMetalLayer()
@@ -134,15 +164,22 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         // lifted 1.5pt so only a thin bluish band stays visible at the bottom edge.
         for (body, highlight) in [(pileLayer, highlightLayer), (dragLayer, dragHighlight)] {
             body.frame = bounds
-            body.fillColor = CGColor(red: 0.74, green: 0.82, blue: 0.94, alpha: 0.97)
+            body.fillColor = CGColor(red: 0.84, green: 0.90, blue: 0.98, alpha: 0.97)
             body.shadowColor = CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
-            body.shadowOpacity = 0.45
+            body.shadowOpacity = 0.4
             body.shadowRadius = 3
             body.shadowOffset = CGSize(width: 0, height: -1.5)
             root.addSublayer(body)
             highlight.frame = bounds.offsetBy(dx: 0, dy: 1.5)
-            highlight.fillColor = CGColor(red: 0.98, green: 0.99, blue: 1, alpha: 0.97)
+            highlight.fillColor = CGColor(red: 0.88, green: 0.93, blue: 0.99, alpha: 0.97)
             root.addSublayer(highlight)
+            // Crest: pure white, masked to a ~3pt sliver along the top edge (path minus itself shifted down).
+            let crest = crestFor[body === pileLayer ? 0 : 1]
+            crest.frame = bounds
+            crest.fillColor = CGColor(gray: 1, alpha: 0.95)
+            crestMask(crest).fillRule = .evenOdd
+            crest.mask = crestMask(crest)
+            root.addSublayer(crest)
         }
 
         let scale = screen.backingScaleFactor
@@ -231,11 +268,19 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Presents only when enabled, not under a fullscreen app, not thermally throttled. Piles are kept while paused.
     private func apply() {
         guard run && !fullscreen && !hot else {
-            link?.isPaused = true
-            window.orderOut(nil)
+            guard window.isVisible else { link?.isPaused = true; return }
+            // Fade out (~0.4s), then hide; the link keeps running meanwhile. Fullscreen/thermal hides are the same path.
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; window.animator().alphaValue = 0 }) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !(self.run && !self.fullscreen && !self.hot) else { return }
+                    self.link?.isPaused = true
+                    self.window.orderOut(nil)
+                }
+            }
             return
         }
-        if !window.isVisible { occluded = false; window.orderFrontRegardless(); lastTimestamp = 0 }
+        if !window.isVisible { occluded = false; window.alphaValue = 0; window.orderFrontRegardless(); lastTimestamp = 0 }
+        if window.alphaValue < 1 { NSAnimationContext.runAnimationGroup { $0.duration = 0.4; window.animator().alphaValue = 1 } }
         if link == nil {
             // CAMetalDisplayLink hands over a ready drawable, so the main thread never blocks in nextDrawable.
             let l = CAMetalDisplayLink(metalLayer: metalLayer)
@@ -292,10 +337,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             pileLayer.path = path
             pileLayer.shadowPath = path
             highlightLayer.path = path
+            setCrest(crestLayer, path)
+            setCrest(dragCrest, dpath)
             dragLayer.path = dpath
             dragLayer.shadowPath = dpath
             dragHighlight.path = dpath
-            for l in [dragLayer, dragHighlight] { l.setAffineTransform(.identity) }
+            for l in [dragLayer, dragHighlight, dragCrest] { l.setAffineTransform(.identity) }
             CATransaction.commit()
         }
         // A dragged window follows the mouse 1:1: slide its pile layer by the mouse delta since the last poll.
@@ -307,6 +354,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             CATransaction.setDisableActions(true)
             dragLayer.setAffineTransform(t)
             dragHighlight.setAffineTransform(t)
+            dragCrest.setAffineTransform(t)
             CATransaction.commit()
         }
         render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
