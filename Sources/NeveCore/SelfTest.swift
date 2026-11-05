@@ -31,7 +31,7 @@ public func runSelfTest() {
     let c0 = field.surfaces[idx].c0
     for _ in 0..<20 { field.deposit(surface: idx, bin: 150 / 2 - c0, volume: 4) }
     precondition(field.pile(id: 1)!.heights.max()! > 1, "pile built")
-    let n = field.update(windows: [dock, front, WindowInfo(number: 1, frame: back.frame.offsetBy(dx: 40, dy: 0))])
+    let n = field.update(windows: [dock, front, WindowInfo(number: 1, frame: back.frame.offsetBy(dx: 40, dy: 0))], dt: 0.01)   // 4000 pt/s: everything shakes off
     precondition(n > 0 && field.debris.count == n, "knock-off spawns debris")
     precondition(field.pile(id: 1)!.heights.max()! == 0, "knock-off clears pile")
 

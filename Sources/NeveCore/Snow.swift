@@ -15,6 +15,14 @@ public enum Tuning {
     static let maxDebris = 1200
     static let debrisGravity: Float = 1400   // pt/s^2: packed snow accelerates instead of floating
     static let debrisTerminal: Float = 1700  // pt/s
+    // Moving a window: the pile travels with it; `shed` (0...1) of it falls off, rising smoothly with speed.
+    static let shedStart: Float = 400        // pt/s: below this nothing falls off
+    static let shedFull: Float = 2500        // pt/s: at or above this everything falls off
+    static let shedUp: Float = 0.8           // upward speed counts less (snow is pressed onto the roof) ...
+    static let shedDown: Float = 1.3         // ... downward counts more (faster than gravity: snow floats off)
+    static let shakeGain: Float = 0.7        // direction reversal: effective speed = this * |velocity change|
+    static let shedEdgeBias: Float = 1.5     // extra shed at the window ends ...
+    static let shedEdgeZone: Float = 0.15    // ... within this fraction of the width
 }
 
 /// Snow amount; `multiplier` scales the base flake count. Nevasca adds strong gusty wind.
@@ -200,6 +208,7 @@ struct Surface {
     let edgeY: Float
     let c0: Int          // first global column
     var pile: Pile
+    var vel: SIMD2<Float> = .zero   // window velocity (pt/s) at the last poll that moved it
 }
 
 struct Entry {
@@ -235,6 +244,8 @@ public final class SnowField {
     private var offsets: [Int32]       // CSR: per column range into entries
     private var entries: [Entry] = []
     private var lastWindows: [WindowInfo] = []
+    /// Window moved (same size) in the last poll: the overlay may slide its pile layer with the mouse until the next poll.
+    public private(set) var draggingID: Int?
     private let numCols: Int
     private let invBin = 1 / Tuning.binWidth
     private let skyCount: Int      // sky pool size; the rest of `flakes` is background
@@ -380,14 +391,31 @@ public final class SnowField {
 
     /// Rebuilds surfaces from the front-to-back window list. Returns debris spawned by knocked-off piles.
     @discardableResult
-    public func update(windows: [WindowInfo]) -> Int {
+    public func update(windows: [WindowInfo], dt: Float? = nil) -> Int {
         let now = CFAbsoluteTimeGetCurrent()
-        pollDt = Float(min(max(now - lastPoll, 0.05), 0.5))
+        pollDt = dt ?? Float(min(max(now - lastPoll, 0.05), 0.5))
         lastPoll = now
-        guard windows != lastWindows || boundsDirty else { return 0 }
+        guard windows != lastWindows || boundsDirty else {
+            if draggingID != nil { draggingID = nil; pilesDirty = true }
+            for i in surfaces.indices { surfaces[i].vel = .zero }
+            return 0
+        }
         boundsDirty = false
         lastWindows = windows
         return updateSurfaces(windows: windows)
+    }
+
+    private var moved: Int?   // scratch for updateSurfaces/buildSurface
+
+    /// 0...1 share of a pile that falls off when its window moves with velocity `v` (previous poll's velocity `prev`).
+    static func shedFraction(v: SIMD2<Float>, prev: SIMD2<Float>) -> Float {
+        var s = (v.x * v.x + (v.y > 0 ? Tuning.shedUp : Tuning.shedDown) * (v.y > 0 ? Tuning.shedUp : Tuning.shedDown) * v.y * v.y).squareRoot()
+        if v.x * prev.x + v.y * prev.y < 0 {   // sharp shake: reversal at speed
+            let d = v - prev
+            s = max(s, Tuning.shakeGain * (d.x * d.x + d.y * d.y).squareRoot())
+        }
+        let t = min(max((s - Tuning.shedStart) / (Tuning.shedFull - Tuning.shedStart), 0), 1)
+        return t * t * (3 - 2 * t)
     }
 
     @discardableResult
@@ -400,6 +428,7 @@ public final class SnowField {
         var old = surfaces
         var built: [Surface] = []
         var spawned = 0
+        moved = nil
         for (i, r) in rects.enumerated() {
             let id = windows[i].number, edge = Float(r.maxY)
             // Dock bar (id 0) sits below the visible frame's bottom; hidden/offscreen Dock has minY < 0.
@@ -408,6 +437,7 @@ public final class SnowField {
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
         }
         for s in old { spawned += knockOff(s) }   // gone surfaces
+        draggingID = moved
         surfaces = built
         buildColumns()
         pilesDirty = true
@@ -435,26 +465,40 @@ public final class SnowField {
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
         }
+        var vel = SIMD2<Float>.zero
         if let k = old.firstIndex(where: { $0.id == id }) {
             let prev = old.swapRemove(k)
-            if id == 0 {   // Dock bar resizes when apps come and go: keep snow by global column
+            let d = SIMD2(Float(frame.minX - prev.frame.minX), Float(frame.minY - prev.frame.minY))
+            let sameSize = abs(prev.frame.width - frame.width) < 0.5 && abs(prev.frame.height - frame.height) < 0.5
+            func carry(shift: Int) {   // heights by global column, clipped to what is visible / allowed now
                 for b in pile.heights.indices where pile.visible[b] {
-                    let k = c0 + b - prev.c0
+                    let k = c0 + b - shift - prev.c0
                     if k >= 0, k < prev.pile.heights.count { pile.heights[b] = min(prev.pile.heights[k], pile.limit(b)) }
                 }
-            } else if abs(prev.frame.minX - frame.minX) < 0.5, abs(prev.frame.minY - frame.minY) < 0.5,
-               abs(prev.frame.width - frame.width) < 0.5, abs(prev.frame.height - frame.height) < 0.5, prev.pile.heights.count == pile.heights.count {
+            }
+            if id == 0 {   // Dock bar resizes when apps come and go: keep snow by global column
+                carry(shift: 0)
+            } else if sameSize, abs(d.x) < 0.5, abs(d.y) < 0.5, prev.pile.heights.count == pile.heights.count {
                 var kept = prev.pile
                 kept.visible = pile.visible
                 kept.cap = pile.cap
                 for b in kept.heights.indices { kept.heights[b] = pile.visible[b] ? min(kept.heights[b], kept.cap[b]) : 0 }
                 pile = kept
-            } else {
-                let v = SIMD2(Float(frame.minX - prev.frame.minX), Float(frame.minY - prev.frame.minY)) / pollDt
-                spawned += knockOff(prev, velocity: v.clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800)))
+            } else if sameSize {   // moved: the pile travels with the window; a speed-dependent share falls off
+                vel = d / pollDt
+                if moved == nil { moved = id }
+                carry(shift: Int((d.x / bw).rounded()))
+                spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.shedFraction(v: vel, prev: prev.vel), velocity: vel)
+            } else {   // resized: snow stays where it is in x; the part no longer over the window falls
+                carry(shift: 0)
+                let v = (d / pollDt).clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
+                for k in prev.pile.heights.indices {
+                    let col = prev.c0 + k
+                    if col < c0 || col >= c1 { spawned += shedBin(col: col, edgeY: prev.edgeY + prev.pile.base[k], from: 0, amount: prev.pile.heights[k], velocity: v) }
+                }
             }
         }
-        return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, pile: pile)
+        return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, pile: pile, vel: vel)
     }
 
     private func buildColumns() {
@@ -474,23 +518,44 @@ public final class SnowField {
         }
     }
 
-    /// Turns a pile into falling debris (~1 flake per 3pt of height per bin), inheriting some of the surface's motion.
-    private func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
-        guard CFAbsoluteTimeGetCurrent() >= silentUntil else { return 0 }
+    /// Takes `fraction` of the pile off as debris, preferring the tops and the window ends.
+    private func shed(_ pile: inout Pile, c0: Int, edgeY: Float, frame: CGRect, fraction: Float, velocity v: SIMD2<Float>) -> Int {
+        guard fraction > 0 else { return 0 }
+        let v = v.clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
+        let zone = max(Float(frame.width) * Tuning.shedEdgeZone, 1)
         var n = 0
-        for (b, h) in s.pile.heights.enumerated() where h > 0.5 {
-            for _ in 0..<max(1, Int(h / 3)) {
-                guard debris.count < Tuning.maxDebris else { return n }
-                let x = (Float(s.c0 + b) + Float.random(in: 0...1, using: &rng)) * Tuning.binWidth
-                let y = s.edgeY + s.pile.base[b] + Float.random(in: 0...h, using: &rng)
-                let vx = Float.random(in: -12...12, using: &rng) + v.x * 0.5, fall = Float.random(in: 10...50, using: &rng) - v.y * 0.5
-                if addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9) { n += 1 }
-                // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
-                if Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
-                    for _ in 0..<Int.random(in: 2...(2 + Int(h / 6)), using: &rng) {
-                        if addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
-                                     vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng)) { n += 1 }
-                    }
+        for b in pile.heights.indices where pile.heights[b] > 0.5 {
+            let x = (Float(c0 + b) + 0.5) * Tuning.binWidth
+            let edge = max(0, 1 - min(x - Float(frame.minX), Float(frame.maxX) - x) / zone)
+            let h = pile.heights[b], r = h * min(1, fraction * (1 + Tuning.shedEdgeBias * edge))
+            n += shedBin(col: c0 + b, edgeY: edgeY + pile.base[b], from: h - r, amount: r, velocity: v)
+            pile.heights[b] = h - r
+        }
+        return n
+    }
+
+    /// Turns a whole pile into falling debris, inheriting some of the surface's motion.
+    private func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
+        var n = 0
+        for (b, h) in s.pile.heights.enumerated() { n += shedBin(col: s.c0 + b, edgeY: s.edgeY + s.pile.base[b], from: 0, amount: h, velocity: v) }
+        return n
+    }
+
+    /// Debris (~1 flake per 3pt of snow) for the slice [from, from+amount] of one bin's column of snow.
+    private func shedBin(col: Int, edgeY: Float, from: Float, amount h: Float, velocity v: SIMD2<Float>) -> Int {
+        guard h > 0.5, CFAbsoluteTimeGetCurrent() >= silentUntil else { return 0 }
+        var n = 0
+        for _ in 0..<max(1, Int(h / 3)) {
+            guard debris.count < Tuning.maxDebris else { break }
+            let x = (Float(col) + Float.random(in: 0...1, using: &rng)) * Tuning.binWidth
+            let y = edgeY + from + Float.random(in: 0...h, using: &rng)
+            let vx = Float.random(in: -12...12, using: &rng) + v.x * 0.5, fall = Float.random(in: 10...50, using: &rng) - v.y * 0.5
+            if addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9) { n += 1 }
+            // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
+            if Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
+                for _ in 0..<Int.random(in: 2...(2 + Int(h / 6)), using: &rng) {
+                    if addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
+                                 vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng)) { n += 1 }
                 }
             }
         }
@@ -577,11 +642,12 @@ public final class SnowField {
 
     /// One path for every pile on this screen: a closed, smooth subpath per snowy run.
     /// Top edge = midpoint quadratic curves through every 3rd bin of the lightly blurred surface.
-    public func pilePath() -> CGPath {
+    /// `forDrag` false: every pile except window `dragging`'s; true: only that one (it gets its own layer while dragged).
+    public func pilePath(dragging: Int = -1, forDrag: Bool = false) -> CGPath {
         let path = CGMutablePath()
         let bw = CGFloat(Tuning.binWidth)
         var idx: [Int] = []
-        for s in surfaces {
+        for s in surfaces where (s.id == dragging) == forDrag {
             let h = s.pile.heights, vis = s.pile.visible, base = s.pile.base
             let n = h.count
             let edge = CGFloat(s.edgeY)

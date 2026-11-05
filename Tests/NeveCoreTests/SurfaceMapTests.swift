@@ -84,15 +84,69 @@ let front = win(2, 200, 300, 300, 300)
     #expect(f.pile(id: 0) == nil)
 }
 
-@Test func movedWindowKnocksItsSnowOffAsDebrisAndClearsPile() {
-    let f = makeField(flakes: 600)
-    f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
-    let before = f.debris.count
-    let n = f.update(windows: [front, win(1, 140, 200, 300, 200)])
-    #expect(n > 0)
-    #expect(f.debris.count == before + n)
-    #expect(f.pile(id: 1)!.heights.max()! == 0)
+/// Lone window 1 (x 100...400, top y=400) with a deterministic pile: 12 deposits in every bin.
+func pileOnLoneWindow(_ f: SnowField, width: CGFloat = 300) {
+    f.update(windows: [win(1, 100, 200, width, 200)])
+    for b in 0..<f.surfaces[0].pile.heights.count { for _ in 0..<12 { f.deposit(surface: 0, bin: b, volume: 4) } }
+}
+func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduce(0, +) }
+
+@Test func slowMoveCarriesThePileAlongWithoutShedding() {
+    let f = makeField(seed: 3)
+    pileOnLoneWindow(f)
+    let old = f.pile(id: 1)!.heights, spilled = f.debris.count   // deposits at the rounded ends already spilled some
+    #expect(old.max()! > 10)
+    // +60 pt in 0.2 s = 300 pt/s < 400: nothing falls; 60 pt = 30 bins, so new bin b holds old bin b.
+    #expect(f.update(windows: [win(1, 160, 200, 300, 200)], dt: 0.2) == 0)
+    #expect(f.debris.count == spilled)
+    #expect(zip(f.pile(id: 1)!.heights, old).dropFirst(3).dropLast(3).allSatisfy { abs($0 - $1) < 0.01 })   // ends are re-tapered
+    #expect(f.pile(id: 1)!.c0 == 80)               // pile now sits over x 160...460
+    #expect(f.edgeVisible(id: 1, x: 300) && !f.edgeVisible(id: 1, x: 120))
+    #expect(f.draggingID == 1)
+    f.update(windows: [win(1, 160, 200, 300, 200)])   // window rests: drag ends
+    #expect(f.draggingID == nil)
+}
+
+@Test func veryFastMoveShedsMostOfThePileAsDebris() {
+    let f = makeField(seed: 3)
+    pileOnLoneWindow(f)
+    let before = total(f), spilled = f.debris.count
+    // +100 pt in 0.05 s = 2000 pt/s: smoothstep share 0.85 (more at the ends).
+    let n = f.update(windows: [win(1, 200, 200, 300, 200)], dt: 0.05)
+    #expect(n > 0 && f.debris.count == spilled + n)
+    #expect(total(f) < 0.2 * before)
+    #expect(total(f) > 0)   // the snow in the middle is shed only partly
+}
+
+@Test func shedFractionGrowsWithSpeedDirectionAndShakes() {
+    let z = SIMD2<Float>.zero
+    #expect(SnowField.shedFraction(v: [300, 0], prev: z) == 0)
+    #expect(SnowField.shedFraction(v: [400, 0], prev: z) == 0)
+    #expect(SnowField.shedFraction(v: [2500, 0], prev: z) == 1)
+    let mid = SnowField.shedFraction(v: [1450, 0], prev: z)
+    #expect(abs(mid - 0.5) < 0.01)
+    let up = SnowField.shedFraction(v: [0, 1500], prev: z)
+    let side = SnowField.shedFraction(v: [1500, 0], prev: z)
+    let down = SnowField.shedFraction(v: [0, -1500], prev: z)
+    #expect(up < side && side < down)
+    // 600 pt/s sheds nothing on its own, but reversing 600 -> -600 is a 1200 pt/s jolt.
+    #expect(SnowField.shedFraction(v: [-600, 0], prev: z) > 0 || SnowField.shedFraction(v: [-600, 0], prev: z) == 0)
+    #expect(SnowField.shedFraction(v: [-600, 0], prev: [600, 0]) > SnowField.shedFraction(v: [-600, 0], prev: [-600, 0]))
+}
+
+@Test func resizingNarrowerKeepsThePileAndDropsOnlyTheOverhang() {
+    let f = makeField(seed: 3)
+    pileOnLoneWindow(f)
+    let old = f.pile(id: 1)!.heights, spilled = f.debris.count
+    let n = f.update(windows: [win(1, 100, 200, 200, 200)], dt: 0.1)   // right edge 400 -> 300
+    #expect(f.pile(id: 1)!.heights.count == 100)
+    #expect(zip(f.pile(id: 1)!.heights[3..<90], old[3..<90]).allSatisfy { abs($0 - $1) < 0.01 })   // left part (clear of the new right taper) untouched
+    #expect(n > 0 && f.debris.count == spilled + n)
+    #expect(f.debris[spilled...].allSatisfy { $0.pos.x >= 296 })          // only snow from x 300...400 falls
+    #expect(f.draggingID == nil)
+    // Widening again starts the new part empty.
+    f.update(windows: [win(1, 100, 200, 300, 200)], dt: 0.1)
+    #expect(f.pile(id: 1)!.heights[110...].allSatisfy { $0 == 0 })
 }
 
 @Test func unchangedWindowKeepsItsPileAndSpawnsNothing() {
@@ -183,10 +237,10 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     f.update(windows: [win(1, 0, 200, 1000, 200)])
     for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
     let before = f.debris.count
-    let n = f.update(windows: [win(1, 40, 200, 1000, 200)])
+    let n = f.update(windows: [win(1, 40, 200, 1000, 200)], dt: 0.01)
     #expect(f.debris.count == Tuning.maxDebris)
     #expect(n == f.debris.count - before)
     // Pool already full: a second avalanche reports nothing.
     for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
-    #expect(f.update(windows: [win(1, 80, 200, 1000, 200)]) == 0)
+    #expect(f.update(windows: [win(1, 80, 200, 1000, 200)], dt: 0.01) == 0)
 }
