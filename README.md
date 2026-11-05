@@ -11,6 +11,7 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
 - A neve cai sobre toda a tela, por cima de tudo, e nunca bloqueia cliques (overlay click-through).
 - Os flocos se acumulam na borda superior das janelas e no Dock.
 - A neve escorrega pelos cantos arredondados das janelas.
+- Passe o cursor sobre a neve acumulada para derrubá-la.
 - Ao arrastar, minimizar ou fechar uma janela, a neve acumulada nela cai.
 - Ícone de floco de neve na barra de menus (fica esmaecido quando a neve está pausada ou desligada). O menu nativo mostra:
   - Linha de status no topo, atualizada ao abrir o menu (ex.: "Nevando · Média", "Pausado — app em tela cheia", "Desligado").
