@@ -9,6 +9,9 @@ final class SnowmanLayers {
     let root = CALayer()
     private var elements: [CALayer] = []      // index = stage - 1: base, middle, head, coal, nose, arms, scarf
     private var bodies: [CAShapeLayer] = []
+    private var armLayers: [CALayer] = []     // left, right
+    private var tails: [CALayer] = []         // upper scarf tail, lower segment (child of the upper)
+    private var shownFlutter = Flutter(), lastFlutter = 0.0
     private var shown = -1, shownCollapsing = false, shownPos = SIMD2<Float>(-1e9, -1e9), shownScale: Float = 0, shownPose = SIMD2<Float>(0, 1)
     private let box = CGRect(x: -30, y: 0, width: 60, height: 60)
 
@@ -37,12 +40,18 @@ final class SnowmanLayers {
         arms.strokeColor = CGColor(red: 0.38, green: 0.25, blue: 0.14, alpha: 1)
         arms.lineWidth = 1.3
         arms.lineCap = .round
-        arms.path = local { p in
-            for s: CGFloat in [-1, 1] {
+        for s: CGFloat in [-1, 1] {
+            let arm = shape(local { p in
                 p.move(to: CGPoint(x: s * 6, y: 29.5)); p.addLine(to: CGPoint(x: s * 17, y: 36.5))      // arm
                 p.move(to: CGPoint(x: s * 12.5, y: 33.4)); p.addLine(to: CGPoint(x: s * 13.5, y: 38))   // twigs
                 p.move(to: CGPoint(x: s * 15, y: 35.2)); p.addLine(to: CGPoint(x: s * 18.8, y: 38.4))
-            }
+            }, .clear, in: CGRect(origin: .zero, size: box.size))
+            arm.fillColor = nil
+            arm.strokeColor = arms.strokeColor
+            arm.lineWidth = arms.lineWidth
+            arm.lineCap = .round
+            arms.addSublayer(arm)
+            armLayers.append(arm)
         }
         root.addSublayer(arms)
         for (cy, r) in Snowman.balls {
@@ -82,8 +91,17 @@ final class SnowmanLayers {
         }, CGColor(red: 0.96, green: 0.52, blue: 0.12, alpha: 1), in: box)
         let scarf = shape(local { p in
             p.addRoundedRect(in: CGRect(x: -7.4, y: 36, width: 14.8, height: 3.6), cornerWidth: 1.8, cornerHeight: 1.8)
-            p.move(to: CGPoint(x: 3.2, y: 37)); p.addLine(to: CGPoint(x: 7, y: 37)); p.addLine(to: CGPoint(x: 8.2, y: 29)); p.addLine(to: CGPoint(x: 4.4, y: 29)); p.closeSubpath()
         }, CGColor(red: 0.82, green: 0.17, blue: 0.20, alpha: 1), in: box)
+        let red = scarf.fillColor!
+        let tail = shape(local { p in   // two segments split at y = 33 (the lower one overlaps a little); they rotate about the knot / the joint
+            p.move(to: CGPoint(x: 3.2, y: 37)); p.addLine(to: CGPoint(x: 7, y: 37)); p.addLine(to: CGPoint(x: 7.6, y: 33)); p.addLine(to: CGPoint(x: 3.8, y: 33)); p.closeSubpath()
+        }, red, in: CGRect(origin: .zero, size: box.size))
+        let tail2 = shape(local { p in
+            p.move(to: CGPoint(x: 3.74, y: 33.4)); p.addLine(to: CGPoint(x: 7.54, y: 33.4)); p.addLine(to: CGPoint(x: 8.2, y: 29)); p.addLine(to: CGPoint(x: 4.4, y: 29)); p.closeSubpath()
+        }, red, in: CGRect(origin: .zero, size: box.size))
+        tail.addSublayer(tail2)
+        scarf.addSublayer(tail)
+        tails = [tail, tail2]
         scarf.addSublayer(shape(local { p in
             p.addRect(CGRect(x: -3.5, y: 36, width: 1.3, height: 3.6)); p.addRect(CGRect(x: 0.8, y: 36, width: 1.3, height: 3.6))
         }, CGColor(red: 0.98, green: 0.88, blue: 0.86, alpha: 0.9), in: CGRect(origin: .zero, size: box.size)))
@@ -92,6 +110,11 @@ final class SnowmanLayers {
         // elements is now [base, middle, head, coal, nose, arms, scarf] in stage order
         root.isHidden = true
         for l in elements { l.isHidden = true }
+    }
+
+    /// Rotates `l` by `a` about `p` (relative to the layer's centre).
+    private func spin(_ l: CALayer, _ a: CGFloat, about p: CGPoint) {
+        l.setAffineTransform(CGAffineTransform(translationX: p.x, y: p.y).rotated(by: a).translatedBy(x: -p.x, y: -p.y))
     }
 
     /// Increase Contrast: stronger shadow and a dark-blue outline on the balls.
@@ -109,9 +132,12 @@ final class SnowmanLayers {
             if !root.isHidden { root.isHidden = true; shown = -1 }
             return
         }
+        let now = CACurrentMediaTime()
+        let flutter = reduceMotion ? Flutter() : m.pose
+        let fluttering = flutter != shownFlutter && now - lastFlutter >= 1 / 30   // scarf / arms: <= 30 Hz
         let pose = SIMD2(m.lean, m.facing)   // walking: head offset, facing
         let easing = !reduceMotion && m.stageAge < 0.35
-        guard m.stage != shown || m.collapsing != shownCollapsing || m.collapsing || easing || pos != shownPos || pose != shownPose || root.isHidden else { return }
+        guard m.stage != shown || m.collapsing != shownCollapsing || m.collapsing || easing || pos != shownPos || pose != shownPose || fluttering || root.isHidden else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if pos != shownPos || m.scale != shownScale || pose != shownPose || root.isHidden {
@@ -132,6 +158,16 @@ final class SnowmanLayers {
             }
             l.opacity = alpha
             l.transform = grow == 1 ? CATransform3DIdentity : CATransform3DMakeScale(CGFloat(grow), CGFloat(grow), 1)
+        }
+        if fluttering {
+            let f = CGFloat(m.facing)   // the root is mirrored when facing left
+            spin(tails[0], CGFloat(flutter.scarf) * f, about: CGPoint(x: 5.2, y: 7))
+            spin(tails[1], CGFloat(flutter.wave) * f, about: CGPoint(x: 5.7, y: 3))
+            for (k, a) in armLayers.enumerated() {   // sway is world-space (mirrored with the root), the cheer V is symmetric
+                let side: CGFloat = k == 0 ? -1 : 1
+                spin(a, CGFloat(flutter.sway) * f + side * CGFloat(flutter.up) * 0.75, about: CGPoint(x: side * 6, y: -0.5))
+            }
+            shownFlutter = flutter; lastFlutter = now
         }
         shown = m.stage; shownCollapsing = m.collapsing
         CATransaction.commit()

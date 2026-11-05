@@ -9,10 +9,10 @@ final class BallLayers {
     let root = CALayer()
     private static let big: CGFloat = 20   // radius the shared paths are drawn at
     private struct Group { let layer: CALayer, speckles: CALayer, body: CAShapeLayer }
-    private struct Accessories { let arms: CAShapeLayer, mid: CAShapeLayer, head: CAShapeLayer }
+    private struct Accessories { let arms: CAShapeLayer, mid: CAShapeLayer, head: CAShapeLayer, armLR: [CAShapeLayer], tails: [CAShapeLayer] }
     private var groups: [Group] = []
     private var sets: [Accessories] = []
-    private var shown = -1
+    private var shown = -1, keys: [Int] = [], shownPoses: [Flutter] = [], lastFlutter = 0.0   // per set: bottom ball id, applied pose
 
     private func shape(_ path: CGPath?, fill: CGColor?, extent: CGFloat) -> CAShapeLayer {
         let l = CAShapeLayer()
@@ -64,13 +64,19 @@ final class BallLayers {
             arms.strokeColor = CGColor(red: 0.38, green: 0.25, blue: 0.14, alpha: 1)
             arms.lineWidth = 0.15
             arms.lineCap = .round
-            let a = CGMutablePath()
-            for s: CGFloat in [-1, 1] {
+            var armLR: [CAShapeLayer] = []
+            for s: CGFloat in [-1, 1] {   // one layer per arm, rotated about its shoulder
+                let a = CGMutablePath()
                 a.move(to: CGPoint(x: s * 0.7, y: -0.12)); a.addLine(to: CGPoint(x: s * 2.0, y: 0.7))
                 a.move(to: CGPoint(x: s * 1.47, y: 0.34)); a.addLine(to: CGPoint(x: s * 1.59, y: 0.88))
                 a.move(to: CGPoint(x: s * 1.76, y: 0.55)); a.addLine(to: CGPoint(x: s * 2.21, y: 0.93))
+                let arm = shape(a, fill: nil, extent: 3)
+                arm.strokeColor = arms.strokeColor
+                arm.lineWidth = arms.lineWidth
+                arm.lineCap = .round
+                arms.addSublayer(arm)
+                armLR.append(arm)
             }
-            arms.path = a
             // Buttons on the middle ball.
             let mid = shape(dots([(0, 0.44, 0.11), (0, 0.01, 0.11), (0, -0.41, 0.11)]), fill: coal, extent: 3)
             // Head (unit = head radius): eyes, smile, carrot, scarf.
@@ -85,8 +91,14 @@ final class BallLayers {
             let scarf = shape(nil, fill: CGColor(red: 0.82, green: 0.17, blue: 0.20, alpha: 1), extent: 3)
             let sc = CGMutablePath()
             sc.addRoundedRect(in: CGRect(x: -1.14, y: -1.31, width: 2.28, height: 0.56), cornerWidth: 0.28, cornerHeight: 0.28)
-            sc.move(to: CGPoint(x: 0.49, y: -1.15)); sc.addLine(to: CGPoint(x: 1.08, y: -1.15)); sc.addLine(to: CGPoint(x: 1.26, y: -2.38)); sc.addLine(to: CGPoint(x: 0.68, y: -2.38)); sc.closeSubpath()
             scarf.path = sc
+            let red = CGColor(red: 0.82, green: 0.17, blue: 0.20, alpha: 1)
+            let tail = CGMutablePath(), tail2 = CGMutablePath()   // two segments, split at y = -1.765; the lower overlaps a little
+            tail.move(to: CGPoint(x: 0.49, y: -1.15)); tail.addLine(to: CGPoint(x: 1.08, y: -1.15)); tail.addLine(to: CGPoint(x: 1.17, y: -1.765)); tail.addLine(to: CGPoint(x: 0.585, y: -1.765)); tail.closeSubpath()
+            tail2.move(to: CGPoint(x: 0.58, y: -1.70)); tail2.addLine(to: CGPoint(x: 1.16, y: -1.70)); tail2.addLine(to: CGPoint(x: 1.26, y: -2.38)); tail2.addLine(to: CGPoint(x: 0.68, y: -2.38)); tail2.closeSubpath()
+            let t1 = shape(tail, fill: red, extent: 3), t2 = shape(tail2, fill: red, extent: 3)
+            t1.addSublayer(t2)
+            scarf.addSublayer(t1)
             let stripes = shape(nil, fill: CGColor(red: 0.98, green: 0.88, blue: 0.86, alpha: 0.9), extent: 3)
             let st = CGMutablePath()
             st.addRect(CGRect(x: -0.54, y: -1.31, width: 0.2, height: 0.56)); st.addRect(CGRect(x: 0.12, y: -1.31, width: 0.2, height: 0.56))
@@ -95,8 +107,9 @@ final class BallLayers {
             head.addSublayer(nose)
             head.addSublayer(scarf)
             for l in [arms, mid, head] { l.isHidden = true }
-            sets.append(Accessories(arms: arms, mid: mid, head: head))
+            sets.append(Accessories(arms: arms, mid: mid, head: head, armLR: armLR, tails: [t1, t2]))
         }
+        keys = Array(repeating: -1, count: sets.count); shownPoses = Array(repeating: Flutter(), count: sets.count)
         for s in sets { root.addSublayer(s.arms) }
         for g in groups { root.addSublayer(g.layer) }
         for s in sets { root.addSublayer(s.mid); root.addSublayer(s.head) }
@@ -118,9 +131,36 @@ final class BallLayers {
         l.isHidden = false
     }
 
+    /// Scarf tail and arm transforms of set `i` from its walker's pose (skipped when unchanged).
+    private func pose(_ i: Int, _ field: SnowField, reduceMotion: Bool, force: Bool = false) {
+        let p = reduceMotion ? Flutter() : field.pose(of: keys[i])
+        guard force || p != shownPoses[i] else { return }
+        shownPoses[i] = p
+        let f = CGFloat(field.facing(of: keys[i]))   // the head is mirrored when facing left
+        spin(sets[i].tails[0], CGFloat(p.scarf) * f, about: CGPoint(x: 0.8, y: -1.15))
+        spin(sets[i].tails[1], CGFloat(p.wave) * f, about: CGPoint(x: 0.88, y: -1.765))
+        for (k, arm) in sets[i].armLR.enumerated() {
+            let side: Float = k == 0 ? -1 : 1
+            spin(arm, CGFloat(p.arm(side: side)), about: CGPoint(x: CGFloat(side) * 0.7, y: -0.12))
+        }
+    }
+
+    private func spin(_ l: CALayer, _ a: CGFloat, about p: CGPoint) {
+        l.setAffineTransform(CGAffineTransform(translationX: p.x, y: p.y).rotated(by: a).translatedBy(x: -p.x, y: -p.y))
+    }
+
     /// Called every frame; does real work only when the field's balls changed.
     func update(_ field: SnowField, reduceMotion: Bool) {
-        guard field.ballsVersion != shown else { return }
+        guard field.ballsVersion != shown else {   // nothing moved: only the scarf / arms flutter, at most 30 Hz
+            let now = CACurrentMediaTime()
+            guard now - lastFlutter >= 1 / 30 else { return }
+            lastFlutter = now
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for i in sets.indices where keys[i] >= 0 { pose(i, field, reduceMotion: reduceMotion) }
+            CATransaction.commit()
+            return
+        }
         shown = field.ballsVersion
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -141,8 +181,11 @@ final class BallLayers {
             place(sets[k].arms, at: m.pos, radius: m.radius, alpha: e, grow: grow)
             place(sets[k].mid, at: m.pos, radius: m.radius, alpha: e, grow: grow)
             place(sets[k].head, at: h.pos, radius: h.radius, alpha: e, grow: grow, flip: CGFloat(field.facing(of: b.id)))   // faces its foe
+            keys[k] = b.id
+            pose(k, field, reduceMotion: reduceMotion, force: true)
             k += 1
         }
+        for i in k..<sets.count { keys[i] = -1 }
         for s in sets[k...] { s.arms.isHidden = true; s.mid.isHidden = true; s.head.isHidden = true }
         CATransaction.commit()
     }

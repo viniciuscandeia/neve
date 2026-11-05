@@ -18,6 +18,34 @@ extension Tuning {
     public static func hitChance(distance d: Float) -> Float { 0.8 - 0.45 * min(max((d - 80) / 170, 0), 1) }
 }
 
+/// Scarf and arm pose of a walking snowman, all radians except `up`. Layers apply it as transforms: no path rebuilds.
+public struct Flutter: Equatable {
+    public var scarf: Float = 0    // upper scarf tail, + = swung toward +x (downwind when the wind blows right)
+    public var wave: Float = 0     // extra bend of the lower tail segment, lags the upper one
+    public var sway: Float = 0     // both twig arms, + = counter-clockwise: negative = bent toward +x
+    public var up: Float = 0       // 0...1 cheer: arms raised into a V
+    public init() {}
+
+    /// Pure pose from gust (-1...1), gait (0 still ... 1 walking), walking direction, flutter phase and cheer seconds left.
+    /// Amplitude and (via `rate`) frequency grow with wind and walking; a full gust streams the tail ~66 degrees downwind.
+    public static func make(gust g: Float, gait: Float, dir: Float, phase: Float, cheer: Float) -> Flutter {
+        var f = Flutter()
+        let a = 0.07 + 0.16 * abs(g) + 0.05 * gait
+        f.scarf = 1.15 * g - 0.12 * dir * gait + a * sin(phase)
+        f.wave = 1.8 * a * sin(phase - 1.1)
+        f.sway = -0.3 * g + 0.05 * abs(g) * sin(phase * 1.3)
+        if cheer > 0 {   // lift in 0.25 s, lower over the last 0.35 s
+            let u = min(1, (Tuning.cheerTime - cheer) / 0.25) * min(1, cheer / 0.35)
+            f.up = u * u * (3 - 2 * u)
+        }
+        return f
+    }
+    /// Radians per second the flutter phase advances.
+    public static func rate(gust g: Float, gait: Float) -> Float { 2 * .pi * (1.2 + 2.2 * abs(g) + 0.8 * gait) }
+    /// Rotation of each arm in the V (about its shoulder; `side` -1 left, +1 right) plus the shared sway.
+    public func arm(side: Float) -> Float { sway + side * up * 0.75 }
+}
+
 /// A complete snowman (the auto one, key 0, or a user-built stack, key = bottom ball id) walking its surface.
 public struct Walker {
     public let key: Int
@@ -31,7 +59,8 @@ public struct Walker {
     public internal(set) var hits = 0                // head hits taken in the current fight
     public internal(set) var foe: Int?
     var half: Float = 12, scale: Float = 1, speed: Float = 14
-    var windLean: Float = 0, phase: Float = 0, gait: Float = 0, idle: Float = 0, nextIdle: Float = 6, rest: Float = 0, seen = true
+    public internal(set) var pose = Flutter()
+    var windLean: Float = 0, flutter: Float = 0, phase: Float = 0, gait: Float = 0, idle: Float = 0, nextIdle: Float = 6, rest: Float = 0, seen = true
     var free: Bool { foe == nil && cheer <= 0 && rest <= 0 && wobble <= 0 }
 }
 
@@ -61,6 +90,9 @@ extension SnowField {
     /// +1 / -1: which way the snowman with this key faces (1 when it has no walker).
     public func facing(of key: Int) -> Float { walk.walkers.first { $0.key == key }?.dir ?? 1 }
 
+    /// Scarf / arm pose of the snowman with this key (at rest when it has no walker).
+    public func pose(of key: Int) -> Flutter { walk.walkers.first { $0.key == key }?.pose ?? Flutter() }
+
     private func wi(_ key: Int) -> Int? { walk.walkers.firstIndex { $0.key == key } }
 
     /// Runs from `step`: sync walkers with the complete snowmen, walk, fight, fly snowballs.
@@ -68,7 +100,7 @@ extension SnowField {
         guard walk.enabled, !calm else {   // off / Reduce Motion: everybody stands still
             if !walk.walkers.isEmpty || !walk.shots.isEmpty {
                 walk.walkers.removeAll(); walk.fights.removeAll(); walk.shots.removeAll()
-                snowman?.hop = 0; snowman?.lean = 0
+                snowman?.hop = 0; snowman?.lean = 0; snowman?.pose = Flutter()
             }
             return
         }
@@ -173,13 +205,15 @@ extension SnowField {
         w.phase += dt * 2 * .pi * 1.4 * w.gait
         w.hop = abs(sin(w.phase)) * 2.2 * w.scale * w.gait + jump
         w.lean = w.windLean + sin(w.phase * 0.5) * 1.4 * w.scale * w.gait + sin(w.wobble * 28) * min(w.wobble, 0.7) * 7 * w.scale
+        w.flutter += dt * Flutter.rate(gust: g, gait: w.gait)
+        w.pose = .make(gust: g, gait: w.gait, dir: w.dir, phase: w.flutter, cheer: w.cheer)
         walk.walkers[i] = w
         apply(w, moved: w.x != old)
     }
 
     /// Writes position, hop and lean onto the snowman (after the ball simulation has put it on its surface this frame).
     private func apply(_ w: Walker, moved: Bool) {
-        if w.key == 0 { snowman?.x = w.x; snowman?.hop = w.hop; snowman?.lean = w.lean; snowman?.facing = w.dir; return }
+        if w.key == 0 { snowman?.x = w.x; snowman?.hop = w.hop; snowman?.lean = w.lean; snowman?.facing = w.dir; snowman?.pose = w.pose; return }
         guard moved || w.hop != 0 || w.lean != 0,
               let bi = balls.firstIndex(where: { $0.id == w.key }), let mi = balls.firstIndex(where: { $0.parent == w.key }),
               let hi = balls.firstIndex(where: { $0.parent == balls[mi].id }) else { return }
