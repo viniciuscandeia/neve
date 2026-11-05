@@ -48,7 +48,7 @@ App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Met
 
 ## 🧣 Menu
 
-O ícone de floco ❄️ fica na barra de menus (esmaecido quando a neve está pausada ou desligada). Todas as opções são lembradas entre execuções.
+O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve está desligada; levemente mais suave quando pausada). Todas as opções são lembradas entre execuções.
 
 | Item | O que faz |
 |---|---|

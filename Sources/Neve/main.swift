@@ -286,7 +286,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateStatus() {
         statusLine.attributedTitle = NSAttributedString(string: "❄ Neve — " + statusText, attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.menuFont(ofSize: 0)])
         let paused = !enabled || !polling || userIdle || fullscreenIdle
-        statusItem?.button?.appearsDisabled = paused
+        let slash = Self.symbol("snowflake.slash", "Neve — desligada")
+        let (img, alpha) = !enabled
+            ? (slash ?? Self.symbol("snowflake", "Neve — desligada"), slash == nil ? 0.75 : 1)
+            : (Self.symbol("snowflake", paused ? "Neve — pausada" : "Neve"), paused ? 0.85 : 1)
+        statusItem?.button?.image = img
+        statusItem?.button?.alphaValue = alpha
         axItem.isHidden = AXIsProcessTrusted()
     }
 
