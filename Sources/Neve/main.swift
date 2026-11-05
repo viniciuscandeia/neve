@@ -105,6 +105,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
         nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         nc.addObserver(self, selector: #selector(powerChanged), name: .NSProcessInfoPowerStateDidChange, object: nil)
+        ws.addObserver(self, selector: #selector(powerOff), name: NSWorkspace.willPowerOffNotification, object: nil)
         ws.addObserver(self, selector: #selector(screensSlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionResigned), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         ws.addObserver(self, selector: #selector(screensWoke), name: NSWorkspace.screensDidWakeNotification, object: nil)
@@ -205,7 +206,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ud.set(on, forKey: pref.rawValue)
         sender.state = on ? .on : .off
         switch pref {
-        case .enabled: refreshRunState()
+        case .enabled:
+            outroGen += 1
+            if on { outroing = false; overlays.forEach { $0.intro() }; refreshRunState() }
+            else { updateStatus(); runOutro { [weak self] in self?.refreshRunState() } }
         case .economy: syncOverlays()
         case .ambient: if on && userIdle { userIdle = false; refreshRunState() } else { updateStatus() }
         case .behindWindows:
@@ -216,7 +220,41 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private var running: Bool { enabled && !screensAsleep && !sessionInactive }
+    private var outroing = false   // an outro is playing: the overlays stay up until it ends
+    private var outroGen = 0       // bumped to cancel the previous outro's completion
+    private var shuttingDown = false, replied = false
+
+    /// Plays the outro on every overlay on screen, then `done`.
+    private func runOutro(_ done: @escaping @MainActor () -> Void) {
+        let shown = overlays.filter(\.showing)
+        guard !shown.isEmpty else { return done() }
+        outroing = true
+        let gen = outroGen
+        var left = shown.count
+        for o in shown {
+            o.outro { [weak self] in
+                left -= 1
+                guard left == 0, let self, self.outroGen == gen else { return }
+                self.outroing = false
+                done()
+            }
+        }
+    }
+
+    /// Quit plays the outro first (terminateLater), with a hard 1.9s limit; a second quit, or a system shutdown, skips it.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !outroing, !shuttingDown, running, !hot, !userIdle, overlays.contains(where: \.showing) else { return .terminateNow }
+        runOutro { [weak self] in self?.finishQuit() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) { [weak self] in MainActor.assumeIsolated { self?.finishQuit() } }
+        return .terminateLater
+    }
+    private func finishQuit() {
+        guard !replied else { return }
+        replied = true
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
+    private var running: Bool { (enabled || outroing) && !screensAsleep && !sessionInactive }
     /// The one source of truth for thermal throttling.
     private var hot: Bool { ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue }
     /// Polling timers only run while snow is actually shown (not disabled / asleep / locked / hot).
@@ -366,6 +404,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func spaceChanged() { for o in overlays { o.dropPiles() } }
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
+    @objc private func powerOff() { shuttingDown = true }
     @objc private func screensSlept() { screensAsleep = true; refreshRunState() }
     @objc private func screensWoke() { screensAsleep = false; refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
