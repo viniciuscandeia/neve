@@ -21,6 +21,12 @@ public enum Tuning {
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
+    /// NEVE_SNOWMAN_FAST=1 (demos): builds 20x faster and on a shallower pile.
+    static let snowmanFast = ProcessInfo.processInfo.environment["NEVE_SNOWMAN_FAST"] == "1"
+    static let snowmanSpeed: Float = snowmanFast ? 20 : 1
+    static let snowmanDepth: Float = snowmanFast ? 4 : 14   // average pile height over the stretch that triggers a build
+    static let snowmanStretch: Float = 70                   // pt of visible ground the snowman needs
+    static let snowmanCooldown: Float = 120                 // s of snowfall after a collapse
     static let pointerRadius: Float = 60     // falling snow avoids the cursor within this distance
     static let pointerPush: Float = 450      // pt/s radial speed at point blank (scaled by (1 - d/R)^2)
     static let pointerSwirl: Float = 250     // tangential counterpart
@@ -264,8 +270,8 @@ public final class SnowField {
     private(set) var visibleTop: Float
     private var boundsDirty = false
     public private(set) var flakes: [Flake] = []
-    public private(set) var debris: [Flake] = []
-    private(set) var surfaces: [Surface] = []
+    public internal(set) var debris: [Flake] = []
+    var surfaces: [Surface] = []
     private var offsets: [Int32]       // CSR: per column range into entries
     private var entries: [Entry] = []
     private var lastWindows: [WindowInfo] = []
@@ -285,12 +291,17 @@ public final class SnowField {
     private var windGain: Float = 8
     private var wind: Float = 0
     public var pilesDirty = false
+    /// The snowman (at most one per screen) and its bookkeeping; see Snowman.swift.
+    public internal(set) var snowman: Snowman?
+    public var snowmanEnabled = true { didSet { if !snowmanEnabled { snowman = nil } } }
+    var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next build may start
+    var snowmanScan: Float = 0
     private var pointer: SIMD2<Float>?
     private var pointerVel: SIMD2<Float> = .zero
     private var pollDt: Float = 0.1        // seconds between the last two window polls
     private var lastPoll: CFAbsoluteTime = 0
-    private var rng: SplitMix64
-    private var silentUntil: CFAbsoluteTime = 0   // no knock-off debris until then (Space switches)
+    var rng: SplitMix64
+    var silentUntil: CFAbsoluteTime = 0   // no knock-off debris until then (Space switches)
 
     public var capacity: Int { flakes.count + Tuning.maxDebris }
 
@@ -375,6 +386,7 @@ public final class SnowField {
     }
 
     public func clear() {
+        snowman = nil
         for i in surfaces.indices {
             for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
         }
@@ -384,7 +396,7 @@ public final class SnowField {
 
     // MARK: Surface map
 
-    private func column(_ x: Float) -> Int { min(max(Int(x * invBin), 0), numCols - 1) }
+    func column(_ x: Float) -> Int { min(max(Int(x * invBin), 0), numCols - 1) }
 
     public func edgeVisible(id: Int, x: Float) -> Bool {
         let c = column(x)
@@ -410,7 +422,7 @@ public final class SnowField {
 
     /// `fall` is the current downward speed; `step` accelerates it. Heavy snow: bigger and brighter than sky flakes.
     @discardableResult
-    private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
+    func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
         debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1))
         return true
@@ -613,6 +625,7 @@ public final class SnowField {
         let v = (SIMD2(dx, dy) / dt).clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
+        collapseIfSwept(ax, ay, Float(b.x), Float(b.y), r, v)
         defer { for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let s = surfaces[si]
@@ -688,6 +701,7 @@ public final class SnowField {
     public func step(dt: Float) {
         let w = size.x
         time += dt
+        stepSnowman(dt: dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool

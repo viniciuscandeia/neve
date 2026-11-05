@@ -24,6 +24,7 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
     - **Modo ambiente**: desativa a pausa após 5 minutos sem uso, para usar o Neve como decoração passiva.
     - **Atrás das janelas**: a neve cai só sobre o papel de parede, atrás das janelas dos apps e dos ícones da mesa; nesse modo não há acúmulo em janelas nem no Dock, só no pé da tela.
     - **Neve parada (movimento reduzido)**: aparece só quando Reduzir Movimento está ativo no sistema; mostra a neve já acumulada, sem flocos caindo.
+    - **Boneco de neve**: quando o pé da tela acumula neve suficiente, um boneco de neve se monta sozinho (base, corpo, cabeça, olhos e botões de carvão, nariz de cenoura, braços e cachecol, em cerca de 1 a 1,5 minuto de nevada). Se o cursor passar por ele, ou a neve sob ele for removida (inclusive por "Limpar neve"), ele desmorona em pedaços de neve e, depois de uns 2 minutos, outro pode começar a ser montado. No máximo um por tela; ligado por padrão. Para demonstração, `NEVE_SNOWMAN_FAST=1` acelera a construção 20 vezes.
     - **Mostrar em capturas**, **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
   - **Limpar neve** (⌘K): remove a neve acumulada.
   - **Sair** (⌘Q).

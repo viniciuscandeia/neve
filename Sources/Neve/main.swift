@@ -30,6 +30,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let ud = UserDefaults.standard
     private var ambient: Bool { ud.bool(forKey: "ambient") }
     private var behind: Bool { ud.bool(forKey: "behindWindows") }
+    private let snowmanItem = NSMenuItem(title: "Boneco de neve", action: #selector(toggleSnowman), keyEquivalent: "")
     private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "n")
@@ -63,6 +64,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         economyItem.target = self
         economyItem.image = Self.symbol("leaf")
         economyItem.state = economy ? .on : .off
+        snowmanItem.target = self
+        snowmanItem.image = Self.symbol("figure.stand")
+        snowmanItem.state = ud.object(forKey: "snowman") as? Bool ?? true ? .on : .off
         capturesItem.target = self
         capturesItem.image = Self.symbol("camera")
         capturesItem.state = UserDefaults.standard.bool(forKey: "showInCaptures") ? .on : .off
@@ -78,7 +82,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
         let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem, .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem, economyItem, ambientItem, behindItem, stillItem, capturesItem, loginItem, axItem, .separator(), clear, quit]
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem, economyItem, ambientItem, behindItem, stillItem, snowmanItem, capturesItem, loginItem, axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
@@ -198,6 +202,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ud.set(on, forKey: "stillSnow")
         stillItem.state = on ? .on : .off
         for o in overlays { o.setStill(on) }
+    }
+
+    @objc private func toggleSnowman() {
+        let on = snowmanItem.state != .on
+        ud.set(on, forKey: "snowman")
+        snowmanItem.state = on ? .on : .off
+        for o in overlays { o.setSnowman(on) }
     }
 
     @objc private func toggleCaptures() {

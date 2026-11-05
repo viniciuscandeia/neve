@@ -114,6 +114,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var occluded = false
     private var lowPower = false
     private var contrast: Float = 0
+    private let snowmanLayers = SnowmanLayers()
+    private var reduceMotion = false
     private var stillPref = UserDefaults.standard.bool(forKey: "stillSnow")
     private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
     private var economy = UserDefaults.standard.bool(forKey: "economy")
@@ -185,6 +187,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             root.addSublayer(crest)
         }
 
+        root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
+        field.snowmanEnabled = UserDefaults.standard.object(forKey: "snowman") as? Bool ?? true
+
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
         metalLayer.pixelFormat = .bgra8Unorm
@@ -228,9 +233,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     @objc private func accessibilityChanged() {
         let ws = NSWorkspace.shared
         field.setCalm(ws.accessibilityDisplayShouldReduceMotion)
+        reduceMotion = ws.accessibilityDisplayShouldReduceMotion
         still = stillPref && ws.accessibilityDisplayShouldReduceMotion
         let hc = ws.accessibilityDisplayShouldIncreaseContrast
         contrast = hc ? 1 : 0
+        snowmanLayers.setContrast(hc)
         pileLayer.shadowOpacity = hc ? 0.8 : 0.45
         pileLayer.shadowColor = hc ? CGColor(red: 0.15, green: 0.28, blue: 0.5, alpha: 1) : CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
         dragLayer.shadowOpacity = pileLayer.shadowOpacity
@@ -267,6 +274,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     func setBehind(_ on: Bool) {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(on ? .desktopIconWindow : .dockWindow)) + 1)
     }
+    func setSnowman(_ on: Bool) { field.snowmanEnabled = on }
     func setShowInCaptures(_ on: Bool) { window.sharingType = on ? .readOnly : .none }
     func setHot(_ on: Bool) { if on != hot { hot = on; apply() } }
     func setIntensity(_ v: Intensity) { field.setIntensity(v) }
@@ -376,6 +384,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             dragCrest.setAffineTransform(t)
             CATransaction.commit()
         }
+        snowmanLayers.update(field, reduceMotion: reduceMotion)
         render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
     }
 
