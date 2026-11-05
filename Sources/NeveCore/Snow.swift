@@ -94,11 +94,16 @@ public struct Pile {
     public internal(set) var heights: [Float]
     public internal(set) var visible: [Bool]
     var base: [Float]            // baseline offset per bin (<= 0): drops along rounded corners
+    var cap: [Float]             // per-bin height ceiling imposed by windows in front (inf = none)
     let inset: Float
+    let c0: Int                  // first global column, and the REAL (unclipped) window ends in x:
+    let x0: Float, x1: Float     // taper and spill-off are measured against these, not the screen-clipped pile
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField
     var spillR: Float = 0
 
-    init(columns: Int, inset: Float) {
+    init(columns: Int, inset: Float, c0: Int = 0, x0: Float = 0, x1: Float? = nil) {
+        self.c0 = c0; self.x0 = x0; self.x1 = x1 ?? Float(c0 + columns) * Tuning.binWidth
+        cap = [Float](repeating: .infinity, count: columns)
         heights = [Float](repeating: 0, count: columns)
         visible = [Bool](repeating: true, count: columns)
         base = [Float](repeating: 0, count: columns)
@@ -116,9 +121,12 @@ public struct Pile {
     }
 
     func limit(_ bin: Int) -> Float {
-        guard inset > 0 else { return Tuning.maxPileHeight }
-        let d = (Float(min(bin, heights.count - 1 - bin)) + 0.5) * Tuning.binWidth
-        return Tuning.maxPileHeight * min(1, d / inset)
+        var l = Tuning.maxPileHeight
+        if inset > 0 {
+            let x = (Float(c0 + bin) + 0.5) * Tuning.binWidth
+            l *= min(1, max(min(x - x0, x1 - x), 0) / inset)
+        }
+        return min(l, cap[bin])
     }
 
     /// Adds snow around `bin` (spread 1/4-1/2-1/4 so no single-bin spikes), then relaxes locally.
@@ -149,6 +157,8 @@ public struct Pile {
     /// Hidden j drains silently; past the ends the snow spills off as debris.
     private mutating func shed(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
+        // The window continues past the screen edge: that end is not a drop-off.
+        if !inRange, j < 0 ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth { return false }
         let ok = inRange && visible[j]
         let tj = ok ? base[j] + heights[j] : (inRange ? base[i] : base[i] - 4)
         let excess = base[i] + heights[i] - tj - Tuning.slope
@@ -229,6 +239,8 @@ public final class SnowField {
     private let skyCount: Int      // sky pool size; the rest of `flakes` is background
     private var skyLimit = 0        // active counts for the current intensity
     private var bgLimit = 0
+    private var skyEnd = 0          // slots [0, skyEnd) of the sky pool / [skyCount, skyCount+bgEnd) of the background pool
+    private var bgEnd = 0           // may be live or spawning; everything beyond is dormant, so step/write skip it
     private var intensity = Intensity.media
     private var lowPower = false
     private var time: Float = 0
@@ -256,6 +268,7 @@ public final class SnowField {
         debris.reserveCapacity(Tuning.maxDebris)
         flakes.reserveCapacity(pool)
         for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
+        skyEnd = skyCount; bgEnd = pool - skyCount
         setIntensity(.media, immediate: true)
         updateSurfaces(windows: [])
     }
@@ -286,6 +299,7 @@ public final class SnowField {
         let m = v.multiplier / Intensity.nevasca.multiplier
         skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1))
         bgLimit = Int(Float(flakes.count - skyCount) * m)
+        skyEnd = max(skyEnd, skyLimit); bgEnd = max(bgEnd, bgLimit)
         if immediate {
             for i in flakes.indices where !isActive(i) { flakes[i].kind = .dormant }
         }
@@ -346,9 +360,11 @@ public final class SnowField {
     }
 
     /// `fall` is the current downward speed; `step` accelerates it. Heavy snow: bigger and brighter than sky flakes.
-    private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) {
-        guard debris.count < Tuning.maxDebris else { return }
+    @discardableResult
+    private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
+        guard debris.count < Tuning.maxDebris else { return false }
         debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris))
+        return true
     }
 
     public func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
@@ -394,14 +410,20 @@ public final class SnowField {
         let c0 = max(0, Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)))
         let c1 = min(numCols, Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1)
         guard c1 > c0 else { return nil }
-        var pile = Pile(columns: c1 - c0, inset: Tuning.cornerInset)
+        var pile = Pile(columns: c1 - c0, inset: Tuning.cornerInset, c0: c0, x0: Float(frame.minX), x1: Float(frame.maxX))
         pile.round(radius: Float(min(radius, frame.width / 2, frame.height / 2)), c0: c0, minX: Float(frame.minX), maxX: Float(frame.maxX))
         let y = CGFloat(edgeY) + 1
         for b in 0..<(c1 - c0) {
             let x = CGFloat((Float(c0 + b) + 0.5) * bw)
             var hidden = false
-            for j in 0..<front where rects[j].contains(CGPoint(x: x, y: y)) { hidden = true; break }
+            var ceiling = Float.infinity   // lowest underside of a front window above the edge in this column
+            for j in 0..<front {
+                let r = rects[j]
+                if r.contains(CGPoint(x: x, y: y)) { hidden = true; break }
+                if r.minY > y, x >= r.minX, x < r.maxX { ceiling = min(ceiling, Float(r.minY)) }
+            }
             pile.visible[b] = !hidden
+            pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
         }
         if let k = old.firstIndex(where: { $0.id == id }) {
             let prev = old.swapRemove(k)
@@ -413,8 +435,9 @@ public final class SnowField {
             } else if abs(prev.frame.minX - frame.minX) < 0.5, abs(prev.frame.minY - frame.minY) < 0.5,
                abs(prev.frame.width - frame.width) < 0.5, abs(prev.frame.height - frame.height) < 0.5, prev.pile.heights.count == pile.heights.count {
                 var kept = prev.pile
-                for b in kept.heights.indices where !pile.visible[b] { kept.heights[b] = 0 }
                 kept.visible = pile.visible
+                kept.cap = pile.cap
+                for b in kept.heights.indices { kept.heights[b] = pile.visible[b] ? min(kept.heights[b], kept.cap[b]) : 0 }
                 pile = kept
             } else {
                 let v = SIMD2(Float(frame.minX - prev.frame.minX), Float(frame.minY - prev.frame.minY)) / pollDt
@@ -451,14 +474,12 @@ public final class SnowField {
                 let x = (Float(s.c0 + b) + Float.random(in: 0...1, using: &rng)) * Tuning.binWidth
                 let y = s.edgeY + s.pile.base[b] + Float.random(in: 0...h, using: &rng)
                 let vx = Float.random(in: -12...12, using: &rng) + v.x * 0.5, fall = Float.random(in: 10...50, using: &rng) - v.y * 0.5
-                addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9)
-                n += 1
+                if addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9) { n += 1 }
                 // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
                 if Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
                     for _ in 0..<Int.random(in: 2...(2 + Int(h / 6)), using: &rng) {
-                        addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
-                                  vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng))
-                        n += 1
+                        if addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
+                                     vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng)) { n += 1 }
                     }
                 }
             }
@@ -489,7 +510,9 @@ public final class SnowField {
         time += dt
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = windGain * windShape()
-        for i in 0..<flakes.count {
+        var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
+        for n in 0..<(skyEnd + bgEnd) {
+            let i = n < skyEnd ? n : skyCount + n - skyEnd
             var f = flakes[i]
             if f.kind == .dormant {
                 if isActive(i), Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
@@ -507,7 +530,9 @@ public final class SnowField {
             }
             if !isActive(i), f.pos.y > size.y { f.kind = .dormant }   // just respawned: retire
             flakes[i] = f
+            if f.kind != .dormant { if i < skyCount { liveSky = i + 1 } else { liveBg = i - skyCount + 1 } }
         }
+        skyEnd = max(skyLimit, liveSky); bgEnd = max(bgLimit, liveBg)
         var i = debris.count - 1
         while i >= 0 {
             var f = debris[i]
@@ -530,7 +555,10 @@ public final class SnowField {
     /// Fills GPU instances; returns the count.
     public func writeInstances(to p: UnsafeMutablePointer<Instance>) -> Int {
         var n = 0
-        for f in flakes where f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
+        for i in 0..<(skyEnd + bgEnd) {
+            let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
+            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
+        }
         for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
         return n
     }
