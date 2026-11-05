@@ -1,0 +1,93 @@
+import CoreGraphics
+import Foundation
+
+public enum FlakeKind: UInt8 { case sky, background, debris, dormant }
+
+/// Plain-old-data flake (no references).
+public struct Flake {
+    public var pos: SIMD2<Float>
+    public var vx: Float
+    public var fall: Float
+    var phase: Float
+    var amp: Float
+    var freq: Float
+    var size: Float
+    var alpha: Float
+    public var kind: FlakeKind
+    var seed: Float = 0     // per-flake shape variant / rotation (0..1)
+    var fade: Float = 1     // 0..1 fade-in after a spawn; multiplied into alpha
+}
+
+extension SnowField {
+    func spawn(_ kind: FlakeKind, anywhere: Bool) -> Flake {
+        let x = Float.random(in: 0...size.x, using: &rng)
+        let y = anywhere ? Float.random(in: 0...size.y, using: &rng) : size.y + Float.random(in: 0...40, using: &rng)
+        let phase = Float.random(in: 0...(2 * .pi), using: &rng)
+        switch kind {
+        case .background:
+            let s = Float.random(in: 1.5...3.5, using: &rng)
+            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
+                         phase: phase, amp: Float.random(in: 5...15, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
+                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
+        default:
+            let s = Float.random(in: 2.5...7, using: &rng)
+            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
+                         phase: phase, amp: Float.random(in: 8...25, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
+                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
+        }
+    }
+
+    /// 0..<1 position of slot `i` among the active ones of its pool (the order they wake in during the intro).
+    func introRank(_ i: Int) -> Float { i < skyCount ? Float(i) / Float(skyLimit) : Float(i - skyCount) / Float(bgLimit) }
+
+    func isActive(_ i: Int) -> Bool { i < skyCount ? i < skyLimit : i - skyCount < bgLimit }
+
+    /// Smooth gusts: slow sines with unrelated periods; sign flips over several seconds.
+    func windShape() -> Float {
+        0.55 * sin(time * 2 * .pi / 37) + 0.3 * sin(time * 2 * .pi / 17 + 1.3) + 0.25 * sin(time * 2 * .pi / 9 + 2.1)
+    }
+
+    func stepFlakes(dt: Float) {
+        let w = size.x
+        var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
+        for n in 0..<(skyEnd + bgEnd) {
+            let i = n < skyEnd ? n : skyCount + n - skyEnd
+            var f = flakes[i]
+            if f.kind == .dormant {
+                if isActive(i), !outro, introDur > 0 ? introRank(i) < introT / introDur : Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
+                continue
+            }
+            let prevY = f.pos.y
+            f.fade = outro ? max(0, f.fade - dt * 1.5) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
+            if outro, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
+            f.phase += f.freq * dt
+            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
+            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
+            if let p = pointer {
+                let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
+                if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {
+                    // Radial push plus a tangential swirl (always one side, so a flake dead above the pointer slides off),
+                    // stronger when close and when the pointer moves; decays smoothly to 0 at the radius.
+                    let dist = d2.squareRoot(), k = 1 - dist / Tuning.pointerRadius, k2 = k * k
+                    let gain = 1 + min((pointerVel.x * pointerVel.x + pointerVel.y * pointerVel.y).squareRoot() / 400, 2)
+                    let radial = Tuning.pointerPush * k2 * gain / dist, swirl = Tuning.pointerSwirl * k2 * gain / dist
+                    f.pos.x += (d.x * radial - d.y * swirl + pointerVel.x * 0.4 * k2) * dt
+                    f.pos.y += (d.y * radial + d.x * swirl + pointerVel.y * 0.4 * k2) * dt
+                }
+            }
+            if f.pos.x < -10 { f.pos.x += w + 20 } else if f.pos.x > w + 10 { f.pos.x -= w + 20 }
+            if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
+                f = spawn(.sky, anywhere: false)
+            } else if f.pos.y < -f.size {
+                f = spawn(f.kind, anywhere: false)
+            }
+            if !isActive(i), f.pos.y > size.y { f.kind = .dormant }   // just respawned: retire
+            flakes[i] = f
+            if f.kind != .dormant { if i < skyCount { liveSky = i + 1 } else { liveBg = i - skyCount + 1 } }
+        }
+        skyEnd = max(skyLimit, liveSky); bgEnd = max(bgLimit, liveBg)
+        if introT >= introDur { introDur = 0 }
+    }
+}
