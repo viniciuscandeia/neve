@@ -2,14 +2,14 @@ import CoreGraphics
 import Foundation
 
 /// Tuning knobs.
-enum Tuning {
-    static let flakes = 400                 // per 1440x900 screen (scaled by area)
+public enum Tuning {
+    public static let flakes = 400                 // per 1440x900 screen (scaled by area)
     static let backgroundFraction: Float = 0.35
     static let maxPileHeight: Float = 18
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
-    static let windowRadius: CGFloat = 20   // macOS 26 window corner radius
+    public static let windowRadius: CGFloat = 20   // macOS 26 window corner radius
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
@@ -18,62 +18,81 @@ enum Tuning {
 }
 
 /// Snow amount; `multiplier` scales the base flake count. Nevasca adds strong gusty wind.
-enum Intensity: Int, CaseIterable {
+public enum Intensity: Int, CaseIterable {
     case leve, media, forte, nevasca
-    static let key = "intensity"
-    static var saved: Intensity { Intensity(rawValue: UserDefaults.standard.object(forKey: key) as? Int ?? 1) ?? .media }
-    var title: String { ["Leve", "Média", "Forte", "Nevasca"][rawValue] }
+    public static let key = "intensity"
+    public static var saved: Intensity { Intensity(rawValue: UserDefaults.standard.object(forKey: key) as? Int ?? 1) ?? .media }
+    public var title: String { ["Leve", "Média", "Forte", "Nevasca"][rawValue] }
     var multiplier: Float { [0.4, 1.0, 1.8, 3.0][rawValue] }
     var windGain: Float { self == .nevasca ? 100 : 8 }   // peak sideways speed, points/s
 }
 
 // MARK: - Window list
 
-struct WindowInfo: Equatable {
-    let number: Int     // 0 = Dock bar
-    let frame: CGRect   // global AppKit coordinates (y up)
-    var radius: CGFloat = Tuning.windowRadius
+public struct WindowInfo: Equatable, Sendable {
+    public let number: Int     // 0 = Dock bar
+    public let frame: CGRect   // global AppKit coordinates (y up)
+    public var radius: CGFloat = Tuning.windowRadius
+    public init(number: Int, frame: CGRect, radius: CGFloat = Tuning.windowRadius) {
+        self.number = number; self.frame = frame; self.radius = radius
+    }
 }
 
 /// CG (origin top-left of primary screen, y down) -> AppKit (y up).
-func appKitFrame(fromCG r: CGRect, primaryHeight: CGFloat) -> CGRect {
+public func appKitFrame(fromCG r: CGRect, primaryHeight: CGFloat) -> CGRect {
     CGRect(x: r.minX, y: primaryHeight - r.minY - r.height, width: r.width, height: r.height)
 }
 
+/// One CGWindowList entry as plain values (nil = key missing). `alpha` defaults to 1 when absent.
+public struct RawWindow {
+    public var number: Int?, pid: Int?, layer: Int?
+    public var alpha: Double
+    public var bounds: CGRect?   // CG coordinates
+    public init(number: Int?, pid: Int?, layer: Int?, alpha: Double = 1, bounds: CGRect?) {
+        self.number = number; self.pid = pid; self.layer = layer; self.alpha = alpha; self.bounds = bounds
+    }
+}
+
+/// Keeps layer-0, visible, foreign, at-least-40x20 windows; converts bounds to AppKit coordinates. Order preserved.
+public func filterWindows(_ raw: [RawWindow], ownPID: Int, primaryHeight: CGFloat) -> [WindowInfo] {
+    raw.compactMap { w in
+        guard w.layer == 0, w.pid != ownPID, w.alpha > 0, let number = w.number, let r = w.bounds,
+              r.width >= 40, r.height >= 20 else { return nil }
+        return WindowInfo(number: number, frame: appKitFrame(fromCG: r, primaryHeight: primaryHeight))
+    }
+}
+
 /// On-screen normal windows, front to back. Bounds need no Screen Recording permission.
-func readWindows(primaryHeight: CGFloat) -> [WindowInfo] {
+public func readWindows(primaryHeight: CGFloat) -> [WindowInfo] {
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else { return [] }
-    let me = getpid()
     // Read CF values directly: bridging every dictionary to Swift costs more than the call itself.
     func int(_ d: CFDictionary, _ k: CFString) -> Int? {
         guard let v = CFDictionaryGetValue(d, Unmanaged.passUnretained(k).toOpaque()) else { return nil }
         var n = 0
         return CFNumberGetValue(unsafeBitCast(v, to: CFNumber.self), .longType, &n) ? n : nil
     }
-    var out: [WindowInfo] = []
+    var raw: [RawWindow] = []
     for i in 0..<CFArrayGetCount(list) {
         let w = unsafeBitCast(CFArrayGetValueAtIndex(list, i), to: CFDictionary.self)
-        guard int(w, kCGWindowLayer) == 0,
-              int(w, kCGWindowOwnerPID) != Int(me),
-              let number = int(w, kCGWindowNumber),
-              let b = CFDictionaryGetValue(w, Unmanaged.passUnretained(kCGWindowBounds).toOpaque()),
-              let r = CGRect(dictionaryRepresentation: unsafeBitCast(b, to: CFDictionary.self)),
-              r.width >= 40, r.height >= 20 else { continue }
+        var alpha = 1.0
         if let a = CFDictionaryGetValue(w, Unmanaged.passUnretained(kCGWindowAlpha).toOpaque()) {
-            var alpha = 1.0
-            if CFNumberGetValue(unsafeBitCast(a, to: CFNumber.self), .doubleType, &alpha), alpha <= 0 { continue }
+            CFNumberGetValue(unsafeBitCast(a, to: CFNumber.self), .doubleType, &alpha)
         }
-        out.append(WindowInfo(number: number, frame: appKitFrame(fromCG: r, primaryHeight: primaryHeight)))
+        var bounds: CGRect?
+        if let b = CFDictionaryGetValue(w, Unmanaged.passUnretained(kCGWindowBounds).toOpaque()) {
+            bounds = CGRect(dictionaryRepresentation: unsafeBitCast(b, to: CFDictionary.self))
+        }
+        raw.append(RawWindow(number: int(w, kCGWindowNumber), pid: int(w, kCGWindowOwnerPID), layer: int(w, kCGWindowLayer), alpha: alpha, bounds: bounds))
     }
-    return out
+    return filterWindows(raw, ownPID: Int(getpid()), primaryHeight: primaryHeight)
 }
 
 // MARK: - Pile
 
 /// Snow height per bin along one surface.
-struct Pile {
-    var heights: [Float]
-    var visible: [Bool]
+public struct Pile {
+    public internal(set) var heights: [Float]
+    public internal(set) var visible: [Bool]
     var base: [Float]            // baseline offset per bin (<= 0): drops along rounded corners
     let inset: Float
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField
@@ -143,23 +162,23 @@ struct Pile {
 
 // MARK: - Flakes
 
-enum FlakeKind: UInt8 { case sky, background, debris, dormant }
+public enum FlakeKind: UInt8 { case sky, background, debris, dormant }
 
 /// Plain-old-data flake (no references).
-struct Flake {
-    var pos: SIMD2<Float>
+public struct Flake {
+    public var pos: SIMD2<Float>
     var vx: Float
-    var fall: Float
+    public var fall: Float
     var phase: Float
     var amp: Float
     var freq: Float
     var size: Float
     var alpha: Float
-    var kind: FlakeKind
+    public var kind: FlakeKind
 }
 
 /// GPU instance, 16 bytes; layout mirrors the Metal struct.
-struct Instance {
+public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
     var alpha: Float
@@ -180,14 +199,27 @@ struct Entry {
 
 // MARK: - SnowField
 
+/// Small seedable generator so simulations are reproducible in tests.
+public struct SplitMix64: RandomNumberGenerator {
+    private var state: UInt64
+    public init(seed: UInt64) { state = seed }
+    public mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+}
+
 /// Per-screen simulation: flakes, surface map, piles. Local coords are points, y up.
-final class SnowField {
-    let size: SIMD2<Float>
+public final class SnowField {
+    public let size: SIMD2<Float>
     let origin: CGPoint
     let groundY: Float
     let visibleTop: Float
-    private(set) var flakes: [Flake] = []
-    private(set) var debris: [Flake] = []
+    public private(set) var flakes: [Flake] = []
+    public private(set) var debris: [Flake] = []
     private(set) var surfaces: [Surface] = []
     private var offsets: [Int32]       // CSR: per column range into entries
     private var entries: [Entry] = []
@@ -202,14 +234,17 @@ final class SnowField {
     private var time: Float = 0
     private var windGain: Float = 8
     private var wind: Float = 0
-    var pilesDirty = false
+    public var pilesDirty = false
     private var pollDt: Float = 0.1        // seconds between the last two window polls
     private var lastPoll: CFAbsoluteTime = 0
+    private var rng: SplitMix64
     private var silentUntil: CFAbsoluteTime = 0   // no knock-off debris until then (Space switches)
 
-    var capacity: Int { flakes.count + Tuning.maxDebris }
+    public var capacity: Int { flakes.count + Tuning.maxDebris }
 
-    init(size: CGSize, origin: CGPoint, groundY: CGFloat, visibleTop: CGFloat, flakeCount: Int) {
+    public init(size: CGSize, origin: CGPoint, groundY: CGFloat, visibleTop: CGFloat, flakeCount: Int,
+                seed: UInt64 = .random(in: 0...UInt64.max)) {
+        rng = SplitMix64(seed: seed)
         self.size = SIMD2(Float(size.width), Float(size.height))
         self.origin = origin
         self.groundY = Float(groundY)
@@ -226,27 +261,27 @@ final class SnowField {
     }
 
     private func spawn(_ kind: FlakeKind, anywhere: Bool) -> Flake {
-        let x = Float.random(in: 0...size.x)
-        let y = anywhere ? Float.random(in: 0...size.y) : size.y + Float.random(in: 0...40)
-        let phase = Float.random(in: 0...(2 * .pi))
+        let x = Float.random(in: 0...size.x, using: &rng)
+        let y = anywhere ? Float.random(in: 0...size.y, using: &rng) : size.y + Float.random(in: 0...40, using: &rng)
+        let phase = Float.random(in: 0...(2 * .pi), using: &rng)
         switch kind {
         case .background:
-            let s = Float.random(in: 1.5...3.5)
-            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3), fall: Float.random(in: 25...50),
-                         phase: phase, amp: Float.random(in: 5...15), freq: Float.random(in: 0.8...2),
-                         size: s, alpha: Float.random(in: 0.25...0.55), kind: .background)
+            let s = Float.random(in: 1.5...3.5, using: &rng)
+            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
+                         phase: phase, amp: Float.random(in: 5...15, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
+                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background)
         default:
-            let s = Float.random(in: 2.5...7)
-            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3), fall: 40 + s * 8 + Float.random(in: 0...10),
-                         phase: phase, amp: Float.random(in: 8...25), freq: Float.random(in: 0.8...2),
-                         size: s, alpha: Float.random(in: 0.7...1), kind: .sky)
+            let s = Float.random(in: 2.5...7, using: &rng)
+            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
+                         phase: phase, amp: Float.random(in: 8...25, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
+                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky)
         }
     }
 
     private func isActive(_ i: Int) -> Bool { i < skyCount ? i < skyLimit : i - skyCount < bgLimit }
 
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
-    func setIntensity(_ v: Intensity, immediate: Bool = false) {
+    public func setIntensity(_ v: Intensity, immediate: Bool = false) {
         intensity = v
         let m = v.multiplier / Intensity.nevasca.multiplier
         skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1))
@@ -257,7 +292,7 @@ final class SnowField {
     }
 
     /// Low Power Mode: halve the colliding sky flakes.
-    func setLowPower(_ on: Bool) {
+    public func setLowPower(_ on: Bool) {
         lowPower = on
         setIntensity(intensity)
     }
@@ -268,7 +303,7 @@ final class SnowField {
     }
 
     /// Space switch: windows vanish all at once. Drop piles without debris (and mute knock-offs briefly).
-    func dropPiles() {
+    public func dropPiles() {
         silentUntil = CFAbsoluteTimeGetCurrent() + 1.5
         for i in surfaces.indices {
             for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
@@ -276,7 +311,7 @@ final class SnowField {
         pilesDirty = true
     }
 
-    func clear() {
+    public func clear() {
         for i in surfaces.indices {
             for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
         }
@@ -288,7 +323,7 @@ final class SnowField {
 
     private func column(_ x: Float) -> Int { min(max(Int(x * invBin), 0), numCols - 1) }
 
-    func edgeVisible(id: Int, x: Float) -> Bool {
+    public func edgeVisible(id: Int, x: Float) -> Bool {
         let c = column(x)
         for k in Int(offsets[c])..<Int(offsets[c + 1]) where surfaces[Int(entries[k].surface)].id == id { return true }
         return false
@@ -304,23 +339,23 @@ final class SnowField {
     /// Snow that slid off a surface end falls as debris.
     private func spill(_ si: Int) {
         let s = surfaces[si], last = s.pile.heights.count - 1
-        if s.pile.spillL > 2 { addDebris(x: Float(s.c0) * Tuning.binWidth, y: s.edgeY + s.pile.base[0], vx: -Float.random(in: 8...25), fall: Float.random(in: 10...30)) }
-        if s.pile.spillR > 2 { addDebris(x: Float(s.c0 + last + 1) * Tuning.binWidth, y: s.edgeY + s.pile.base[last], vx: Float.random(in: 8...25), fall: Float.random(in: 10...30)) }
+        if s.pile.spillL > 2 { addDebris(x: Float(s.c0) * Tuning.binWidth, y: s.edgeY + s.pile.base[0], vx: -Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng)) }
+        if s.pile.spillR > 2 { addDebris(x: Float(s.c0 + last + 1) * Tuning.binWidth, y: s.edgeY + s.pile.base[last], vx: Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng)) }
         if s.pile.spillL > 2 { surfaces[si].pile.spillL = 0 }
         if s.pile.spillR > 2 { surfaces[si].pile.spillR = 0 }
     }
 
     /// `fall` is the current downward speed; `step` accelerates it. Heavy snow: bigger and brighter than sky flakes.
-    private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float = Float.random(in: 3...5)) {
+    private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) {
         guard debris.count < Tuning.maxDebris else { return }
-        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size, alpha: 0.95, kind: .debris))
+        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris))
     }
 
-    func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
+    public func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
 
     /// Rebuilds surfaces from the front-to-back window list. Returns debris spawned by knocked-off piles.
     @discardableResult
-    func update(windows: [WindowInfo]) -> Int {
+    public func update(windows: [WindowInfo]) -> Int {
         let now = CFAbsoluteTimeGetCurrent()
         pollDt = Float(min(max(now - lastPoll, 0.05), 0.5))
         lastPoll = now
@@ -413,16 +448,16 @@ final class SnowField {
         for (b, h) in s.pile.heights.enumerated() where h > 0.5 {
             for _ in 0..<max(1, Int(h / 3)) {
                 guard debris.count < Tuning.maxDebris else { return n }
-                let x = (Float(s.c0 + b) + Float.random(in: 0...1)) * Tuning.binWidth
-                let y = s.edgeY + s.pile.base[b] + Float.random(in: 0...h)
-                let vx = Float.random(in: -12...12) + v.x * 0.5, fall = Float.random(in: 10...50) - v.y * 0.5
-                addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5) + min(h, 18) / 9)
+                let x = (Float(s.c0 + b) + Float.random(in: 0...1, using: &rng)) * Tuning.binWidth
+                let y = s.edgeY + s.pile.base[b] + Float.random(in: 0...h, using: &rng)
+                let vx = Float.random(in: -12...12, using: &rng) + v.x * 0.5, fall = Float.random(in: 10...50, using: &rng) - v.y * 0.5
+                addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9)
                 n += 1
                 // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
-                if Float.random(in: 0..<1) < min(0.6, h / 25) {
-                    for _ in 0..<Int.random(in: 2...(2 + Int(h / 6))) {
-                        addDebris(x: x + Float.random(in: -3...3), y: y + Float.random(in: -3...3),
-                                  vx: vx + Float.random(in: -4...4), fall: fall + Float.random(in: -15...15), size: Float.random(in: 2.5...4.5))
+                if Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
+                    for _ in 0..<Int.random(in: 2...(2 + Int(h / 6)), using: &rng) {
+                        addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
+                                  vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng))
                         n += 1
                     }
                 }
@@ -449,7 +484,7 @@ final class SnowField {
         return true
     }
 
-    func step(dt: Float) {
+    public func step(dt: Float) {
         let w = size.x
         time += dt
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
@@ -457,7 +492,7 @@ final class SnowField {
         for i in 0..<flakes.count {
             var f = flakes[i]
             if f.kind == .dormant {
-                if isActive(i), Float.random(in: 0..<1) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
+                if isActive(i), Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
                 continue
             }
             let prevY = f.pos.y
@@ -493,7 +528,7 @@ final class SnowField {
     }
 
     /// Fills GPU instances; returns the count.
-    func writeInstances(to p: UnsafeMutablePointer<Instance>) -> Int {
+    public func writeInstances(to p: UnsafeMutablePointer<Instance>) -> Int {
         var n = 0
         for f in flakes where f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
         for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
@@ -504,7 +539,7 @@ final class SnowField {
 
     /// One path for every pile on this screen: a closed, smooth subpath per snowy run.
     /// Top edge = midpoint quadratic curves through every 3rd bin of the lightly blurred surface.
-    func pilePath() -> CGPath {
+    public func pilePath() -> CGPath {
         let path = CGMutablePath()
         let bw = CGFloat(Tuning.binWidth)
         var idx: [Int] = []
