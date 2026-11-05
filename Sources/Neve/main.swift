@@ -18,6 +18,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var mouseMonitor: Any?
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let dock = DockWatcher()
+    private let watcher = WindowWatcher()
     private var slowTimer: Timer?
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
     private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
@@ -90,6 +91,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         dock.onChange = { [weak self] in self?.refreshDock() }
+        watcher.onChange = { [weak self] in
+            guard let self, self.polling, !self.userIdle else { return }
+            self.pollWindows()
+        }
         rebuildOverlays()
     }
 
@@ -193,10 +198,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer = nil
         slowTimer?.invalidate()
         slowTimer = nil
+        watcher.setActive(polling && AXIsProcessTrusted())   // events replace polling; the timer stays as a slow safety net
         guard polling else { return }
         let idle = fullscreenIdle
-        let t = Timer(timeInterval: idle ? 1 : (mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
-        t.tolerance = idle ? 0.2 : (mouseDown ? 0.03 : 0.1)
+        let t = Timer(timeInterval: idle ? 1 : (watcher.active ? 2 : mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
+        t.tolerance = idle ? 0.2 : (mouseDown && !watcher.active ? 0.03 : 0.1)
         RunLoop.main.add(t, forMode: .common)
         timer = t
         if !idle {
@@ -211,7 +217,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func pollTick() {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
         if !userIdle && since >= 300 { userIdle = true; refreshRunState() }
-        else if userIdle && since < 1 { userIdle = false; refreshRunState() }
+        else if userIdle && since < 2 { userIdle = false; refreshRunState() }
         if !userIdle { pollWindows() }
     }
 
@@ -250,6 +256,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on Dock AX events, app launch/quit, screen changes, every 30s.
     @objc private func refreshDock() {
         axItem.isHidden = AXIsProcessTrusted()
+        if watcher.active != (polling && AXIsProcessTrusted()) { scheduleTimers() }   // trust granted / revoked
         guard polling else { return }
         dock.refresh { [weak self] in self?.pollWindows() }
     }

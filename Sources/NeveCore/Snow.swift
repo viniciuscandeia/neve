@@ -18,6 +18,8 @@ public enum Tuning {
     // Moving a window: the pile travels with it; `shed` (0...1) of it falls off, rising smoothly with speed.
     static let shedStart: Float = 400        // pt/s: below this nothing falls off
     static let shedFull: Float = 2500        // pt/s: at or above this everything falls off
+    static let velSmoothing: Float = 0.1     // s: window velocity low-pass time constant
+    static let shedRefDt: Float = 0.1        // s: update interval the shed fractions are calibrated for
     static let shedUp: Float = 0.8           // upward speed counts less (snow is pressed onto the roof) ...
     static let shedDown: Float = 1.3         // ... downward counts more (faster than gravity: snow floats off)
     static let shakeGain: Float = 0.7        // direction reversal: effective speed = this * |velocity change|
@@ -401,13 +403,14 @@ public final class SnowField {
     @discardableResult
     public func update(windows: [WindowInfo], dt: Float? = nil) -> Int {
         let now = CFAbsoluteTimeGetCurrent()
-        pollDt = dt ?? Float(min(max(now - lastPoll, 0.05), 0.5))
-        lastPoll = now
+        // Time since the last *change*: identical lists (event bursts, polls) must not shrink dt, or velocity is overestimated.
+        pollDt = dt ?? Float(min(max(now - lastPoll, 1.0 / 240), 0.5))
         guard windows != lastWindows || boundsDirty else {
             if draggingID != nil { draggingID = nil; pilesDirty = true }
             for i in surfaces.indices { surfaces[i].vel = .zero }
             return 0
         }
+        lastPoll = now
         boundsDirty = false
         lastWindows = windows
         return updateSurfaces(windows: windows)
@@ -425,6 +428,9 @@ public final class SnowField {
         let t = min(max((s - Tuning.shedStart) / (Tuning.shedFull - Tuning.shedStart), 0), 1)
         return t * t * (3 - 2 * t)
     }
+
+    /// Share removed per update, scaled so shedding depends on elapsed time, not update rate (reference: the old 10 Hz drag poll).
+    static func perUpdate(_ f: Float, dt: Float) -> Float { dt >= Tuning.shedRefDt ? f : 1 - pow(1 - f, dt / Tuning.shedRefDt) }
 
     @discardableResult
     private func updateSurfaces(windows: [WindowInfo]) -> Int {
@@ -493,10 +499,12 @@ public final class SnowField {
                 for b in kept.heights.indices { kept.heights[b] = pile.visible[b] ? min(kept.heights[b], kept.cap[b]) : 0 }
                 pile = kept
             } else if sameSize {   // moved: the pile travels with the window; a speed-dependent share falls off
-                vel = d / pollDt
+                // Smooth over ~100 ms: at frame-rate updates raw d/dt is noisy; at the old 0.1-0.5 s polls this is ~raw.
+                let a = exp(-pollDt / Tuning.velSmoothing)
+                vel = prev.vel * a + d / pollDt * (1 - a)
                 if moved == nil { moved = id }
                 carry(shift: Int((d.x / bw).rounded()))
-                spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.shedFraction(v: vel, prev: prev.vel), velocity: vel)
+                spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.perUpdate(SnowField.shedFraction(v: vel, prev: prev.vel), dt: pollDt), velocity: vel)
             } else {   // resized: snow stays where it is in x; the part no longer over the window falls
                 carry(shift: 0)
                 let v = (d / pollDt).clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))

@@ -100,3 +100,26 @@ import NeveCore
     f.setCalm(false)
     #expect(live() > normal * 9 / 10)
 }
+
+/// Drags window 1 (pile built first) at `step` pt per update, reversing every `flip` updates; returns the debris spawned.
+private func dragDebris(step: CGFloat, updates: Int, flip: Int = .max) -> Int {
+    let f = makeField(flakes: 600)
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    #expect(snowUntilPiled(f, id: 1))
+    let before = f.debris.count
+    var x: CGFloat = 300, dir: CGFloat = 1
+    for i in 1...updates {
+        if i % flip == 0 { dir = -dir }
+        x += dir * step
+        f.update(windows: [win(1, x, 300, 400, 200)], dt: 1 / 60)
+    }
+    return f.debris.count - before
+}
+
+@Test func slowDragAtFrameRateShedsNothing() {
+    #expect(dragDebris(step: 5, updates: 120) == 0)   // 300 pt/s for 2 s, 120 updates
+}
+
+@Test func fastShakeAtFrameRateStillSheds() {
+    #expect(dragDebris(step: 30, updates: 60, flip: 8) > 0)   // 1800 pt/s, reversing every 8 frames (~3.8 Hz hand shake)
+}

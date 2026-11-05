@@ -111,8 +111,9 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
     let f = makeField(seed: 3)
     pileOnLoneWindow(f)
     let before = total(f), spilled = f.debris.count
-    // +100 pt in 0.05 s = 2000 pt/s: smoothstep share 0.85 (more at the ends).
-    let n = f.update(windows: [win(1, 200, 200, 300, 200)], dt: 0.05)
+    // +100 pt in 0.05 s = 2000 pt/s, but velocity is smoothed from rest over ~0.1 s (60% of raw here): ~1200 pt/s is not enough.
+    // +200 pt in 0.1 s: 2000 pt/s raw, 63% -> 1260; use +400 pt (4000 raw, 2500 smoothed): everything falls.
+    let n = f.update(windows: [win(1, 500, 200, 300, 200)], dt: 0.1)
     #expect(n > 0 && f.debris.count == spilled + n)
     #expect(total(f) < 0.2 * before)
     #expect(total(f) > 0)   // the snow in the middle is shed only partly
@@ -237,10 +238,10 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     f.update(windows: [win(1, 0, 200, 1000, 200)])
     for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
     let before = f.debris.count
-    let n = f.update(windows: [win(1, 40, 200, 1000, 200)], dt: 0.01)
+    let n = f.update(windows: [win(1, 400, 200, 1000, 200)], dt: 0.1)   // 4000 pt/s (velocity is smoothed over ~0.1 s)
     #expect(f.debris.count == Tuning.maxDebris)
     #expect(n == f.debris.count - before)
     // Pool already full: a second avalanche reports nothing.
     for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
-    #expect(f.update(windows: [win(1, 80, 200, 1000, 200)], dt: 0.01) == 0)
+    #expect(f.update(windows: [win(1, 800, 200, 1000, 200)], dt: 0.1) == 0)
 }
