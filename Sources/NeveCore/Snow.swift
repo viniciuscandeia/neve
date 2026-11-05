@@ -54,7 +54,7 @@ public enum Tuning {
 public enum Intensity: Int, CaseIterable {
     case leve, media, forte, nevasca
     public static let key = "intensity"
-    public static var saved: Intensity { Intensity(rawValue: UserDefaults.standard.object(forKey: key) as? Int ?? 1) ?? .media }
+    public static func saved(_ ud: UserDefaults) -> Intensity { Intensity(rawValue: ud.object(forKey: key) as? Int ?? 1) ?? .media }
     public var title: String { ["Leve", "Média", "Forte", "Nevasca"][rawValue] }
     var multiplier: Float { [0.4, 1.0, 1.8, 3.0][rawValue] }
     var windGain: Float { self == .nevasca ? 100 : 8 }   // peak sideways speed, points/s

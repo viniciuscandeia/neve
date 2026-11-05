@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: scripts/perf.sh [heavy|media|max] [secs=60] [--drag] [--runs N=3] [--bin PATH]
-# Measures Neve CPU / idle wakeups and WindowServer CPU (top) over N runs. See README "Desenvolvimento".
+# Runs its own dev instance (never touches the user's Neve) under the screen lock. Measures Neve CPU / idle wakeups and WindowServer CPU (top) over N runs. See README "Desenvolvimento".
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE=media; SECS=60; DRAG=0; RUNS=3; BIN=""
@@ -16,43 +16,34 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-ID=io.github.viniciuscandeia.neve
-APP=/Users/viniciuscandeia/development/neve/build/Neve.app
+USER_APP=/Users/viniciuscandeia/development/neve/build/Neve.app
+NAME=perf-$(basename "$ROOT" | shasum | cut -c1-4)
+SUITE=io.github.viniciuscandeia.neve.dev.$NAME
 TMP=$(mktemp -d)
-WAS_RUNNING=0; pgrep -x Neve >/dev/null && WAS_RUNNING=1
 WINS=(); NEVE_PID=""; CAFF_PID=""; DRAG_PID=""
+source "$ROOT/scripts/dev-lock.sh"
+export NEVE_LOCK_PID=$$; LOCKED=0
 
-# Previous defaults ("" = absent) so they can be restored exactly.
-PREV_intensity=$(defaults read $ID intensity 2>/dev/null || true)
-PREV_enabled=$(defaults read $ID enabled 2>/dev/null || true)
-
-PREV_ambient=$(defaults read $ID ambient 2>/dev/null || true)
-[ "$PREV_ambient" = 1 ] && PREV_ambient=true; [ "$PREV_ambient" = 0 ] && PREV_ambient=false
-restore() { # key prev type
-  if [ -n "$2" ]; then defaults write $ID "$1" "-$3" "$2"; else defaults delete $ID "$1" 2>/dev/null; fi
-}
-PREV_enabled_b=""; [ "$PREV_enabled" = 1 ] && PREV_enabled_b=true; [ "$PREV_enabled" = 0 ] && PREV_enabled_b=false
 cleanup() {
   set +e
   [ -n "$DRAG_PID" ] && kill "$DRAG_PID" 2>/dev/null
-  [ -n "$NEVE_PID" ] && kill "$NEVE_PID" 2>/dev/null
+  [ -n "$NEVE_PID" ] && kill "$NEVE_PID" 2>/dev/null   # only our own pid; never the user's Neve
   [ -n "$CAFF_PID" ] && kill "$CAFF_PID" 2>/dev/null
   for w in ${WINS[@]+"${WINS[@]}"}; do osascript -e "tell application \"Finder\" to close (window id $w)" 2>/dev/null; done
-  restore intensity "$PREV_intensity" int
-  restore enabled "$PREV_enabled_b" bool
-  restore ambient "$PREV_ambient" bool
-  [ "$WAS_RUNNING" = 1 ] && open "$APP"
+  defaults delete "$SUITE" 2>/dev/null   # the dev suite is ours alone; the user's domain is never written
+  [ "$LOCKED" = 1 ] && neve_lock_release "perf:$NAME"
   rm -rf "$TMP"
 }
 trap cleanup EXIT
 
-if [ -z "$BIN" ]; then "$ROOT/scripts/make-app.sh" >&2; BIN="$ROOT/build/Neve.app/Contents/MacOS/Neve"; fi
+# The screen is shared with other agents: hold the lock for the whole run.
+neve_lock_acquire "perf:$NAME" "${NEVE_LOCK_TIMEOUT:-1800}"; LOCKED=1
 
-pkill -x Neve 2>/dev/null || true
-sleep 1
-defaults write $ID intensity -int 1
-defaults write $ID enabled -bool true
-defaults write $ID ambient -bool true   # Modo ambiente: Neve otherwise pauses after 5 min without input, which would measure 0%
+if [ -z "$BIN" ]; then NEVE_DEV=$NAME "$ROOT/scripts/make-app.sh" >&2; BIN="$ROOT/build/Neve-$NAME.app/Contents/MacOS/Neve-dev-$NAME"; fi
+
+defaults write "$SUITE" intensity -int 1
+defaults write "$SUITE" enabled -bool true
+defaults write "$SUITE" ambient -bool true   # Modo ambiente: Neve otherwise pauses after 5 min without input, which would measure 0%
 
 # Finder windows (bounds are left, top, right, bottom in top-left-origin points).
 open_win() { # l t r b
@@ -81,15 +72,17 @@ if [ "$DRAG" = 1 ]; then
     done ) & DRAG_PID=$!
 fi
 
-ENVV=(NEVE_PERF=1)
+ENVV=(NEVE_PERF=1 NEVE_INSTANCE="$NAME")
 [ "$MODE" = heavy ] && ENVV+=(NEVE_SCENARIO=heavy)
 caffeinate -dimsu -t $(( RUNS * (SECS + 25) + 60 )) & CAFF_PID=$!; disown
 
+if pgrep -f "$USER_APP/Contents/MacOS/" >/dev/null; then
+  echo "WARNING: the user's Neve ($USER_APP) is running; WindowServer numbers include it. Not killed."
+fi
 echo "mode=$MODE secs=$SECS runs=$RUNS drag=$DRAG bin=$BIN"
 : > "$TMP/runs"
 for r in $(seq 1 "$RUNS"); do
   LOG="$TMP/perf$r.log"
-  pkill -x Neve 2>/dev/null && sleep 1 || true   # Neve exits silently if another instance is up
   env "${ENVV[@]}" NEVE_PERF_LOG="$LOG" "$BIN" >/dev/null 2>&1 & NEVE_PID=$!
   sleep 10 # warm-up
   kill -0 "$NEVE_PID" 2>/dev/null || { echo "Neve exited early" >&2; exit 1; }
