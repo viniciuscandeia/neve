@@ -9,6 +9,9 @@ enum Pref: String {
     var defaultValue: Bool { self == .enabled || self == .snowman || self == .walk }
 }
 
+/// Dev instance name (Info.plist `NeveInstance` or env `NEVE_INSTANCE`); nil for the user's app.
+let neveInstance: String? = Bundle.main.object(forInfoDictionaryKey: "NeveInstance") as? String ?? ProcessInfo.processInfo.environment["NEVE_INSTANCE"]
+
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
@@ -27,7 +30,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let watcher = WindowWatcher()
     private var slowTimer: Timer?
     private var lastScreensCheck = Date.distantPast
-    private let ud = UserDefaults.standard
+    /// The one defaults store: a per-instance suite for dev builds, so concurrent instances never share prefs.
+    private let ud = neveInstance.flatMap { UserDefaults(suiteName: "io.github.viniciuscandeia.neve.dev.\($0)") } ?? .standard
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
     private var prefItems: [Pref: NSMenuItem] = [:]
@@ -42,7 +46,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var behind: Bool { flag(.behindWindows) }
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
-        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), showInCaptures: flag(.showInCaptures), intensity: .saved)
+        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), showInCaptures: flag(.showInCaptures), intensity: Intensity.saved(ud))
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -61,6 +65,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.25)   // global default: a hung app or the Dock must not stall AX reads
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.symbol("snowflake", "Neve")
+        if let n = neveInstance { item.button?.title = " \(n)"; item.button?.imagePosition = .imageLeft }
         let menu = NSMenu()
         menu.delegate = self
         let clear = NSMenuItem(title: "Limpar neve", action: #selector(clearSnow), keyEquivalent: "k")
@@ -78,7 +83,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             m.target = self
             m.tag = v.rawValue
             m.image = Self.symbol(symbols[v.rawValue])
-            m.state = v == Intensity.saved ? .on : .off
+            m.state = v == Intensity.saved(ud) ? .on : .off
             levels.append(m)
         }
         snowballHint.isEnabled = false
@@ -96,7 +101,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                        toggleItem(.snowman, "Boneco de neve", symbol: "figure.stand"),
                        toggleItem(.walk, "Bonecos andam e brigam", symbol: "figure.walk")]
         let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem(.enabled, "Nevar", symbol: "snowflake", key: "n"), .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem] + options + [snowballHint, toggleItem(.showInCaptures, "Mostrar em capturas", symbol: "camera"), loginItem, axItem, .separator(), clear, quit]
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem] + options + [snowballHint, toggleItem(.showInCaptures, "Mostrar em capturas", symbol: "camera")] + (neveInstance == nil ? [loginItem] : []) + [axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
@@ -269,7 +274,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Read-only summary derived from the existing pause reasons; refreshed when the menu opens.
     private var statusText: String {
-        let level = Intensity.saved
+        let level = Intensity.saved(ud)
         if !enabled { return "Desligado" }
         if screensAsleep || sessionInactive || userIdle { return "Pausado — inativo" }
         if hot { return "Pausado — sistema quente" }
@@ -431,7 +436,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-if let id = Bundle.main.bundleIdentifier,
+if neveInstance == nil, let id = Bundle.main.bundleIdentifier,
    NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0 != .current }) {
     exit(0)   // already running
 }
