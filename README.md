@@ -1,6 +1,6 @@
 # Neve ❄
 
-Neve faz nevar sobre a tela do seu Mac, acumulando nas janelas e no Dock.
+Neve faz nevar sobre a tela do seu Mac, acumulando nas janelas, no Dock e no pé da tela.
 
 ![Neve: neve caindo e acumulando sobre janelas e o Dock](docs/demo.gif)
 
@@ -10,6 +10,7 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
 
 - A neve cai sobre toda a tela, por cima de tudo, e nunca bloqueia cliques (overlay click-through).
 - Os flocos se acumulam na borda superior das janelas e no Dock.
+- A neve também acumula no pé da tela, onde nada a cobre (janelas e o Dock escondem a parte coberta).
 - A neve escorrega pelos cantos arredondados das janelas.
 - Ao arrastar, minimizar ou fechar uma janela, a neve acumulada nela cai.
 - Ícone de floco de neve na barra de menus (fica esmaecido quando a neve está pausada ou desligada). O menu nativo mostra:
@@ -20,7 +21,7 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
     - **Nevar em**: Todas as telas, Só na tela principal ou uma tela específica (listada pelo nome). Se a tela escolhida for desconectada, a neve volta a cair em todas.
     - **Modo econômico**: 30 fps e neve só no monitor principal, o da barra de menus (a linha de status avisa).
     - **Modo ambiente**: desativa a pausa após 5 minutos sem uso, para usar o Neve como decoração passiva.
-    - **Atrás das janelas**: a neve cai só sobre o papel de parede, atrás das janelas dos apps e dos ícones da mesa; nesse modo não há acúmulo em janelas nem no Dock.
+    - **Atrás das janelas**: a neve cai só sobre o papel de parede, atrás das janelas dos apps e dos ícones da mesa; nesse modo não há acúmulo em janelas nem no Dock, só no pé da tela.
     - **Neve parada (movimento reduzido)**: aparece só quando Reduzir Movimento está ativo no sistema; mostra a neve já acumulada, sem flocos caindo.
     - **Mostrar em capturas**, **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
   - **Limpar neve** (⌘K): remove a neve acumulada.
