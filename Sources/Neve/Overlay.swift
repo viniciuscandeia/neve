@@ -86,6 +86,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let window: NSWindow
     private let view = InteractView()
     private let ballLayers = BallLayers()
+    private let fightLayers = FightLayers()   // thrown snowballs
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0
     private let pileLayer = CAShapeLayer()
@@ -208,7 +209,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
         root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
         root.addSublayer(ballLayers.root)
+        root.addSublayer(fightLayers.root)
         field.snowmanEnabled = UserDefaults.standard.object(forKey: "snowman") as? Bool ?? true
+        field.walk.enabled = UserDefaults.standard.object(forKey: "walk") as? Bool ?? true
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -296,6 +299,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(on ? .desktopIconWindow : .dockWindow)) + 1)
     }
     func setSnowman(_ on: Bool) { field.snowmanEnabled = on }
+    func setWalk(_ on: Bool) { field.walk.enabled = on }
     func setShowInCaptures(_ on: Bool) { window.sharingType = on ? .readOnly : .none }
     func setHot(_ on: Bool) { if on != hot { hot = on; apply() } }
     func setIntensity(_ v: Intensity) { field.setIntensity(v) }
@@ -413,6 +417,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         snowmanLayers.update(field, reduceMotion: reduceMotion)
         ballLayers.update(field, reduceMotion: reduceMotion)
+        fightLayers.update(field)
         render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
     }
 

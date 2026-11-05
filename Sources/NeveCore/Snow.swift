@@ -291,13 +291,14 @@ public final class SnowField {
     private var bgEnd = 0           // may be live or spawning; everything beyond is dormant, so step/write skip it
     private var intensity = Intensity.media
     private var lowPower = false
-    private var calm = false
+    private(set) var calm = false
     private var time: Float = 0
     private var windGain: Float = 8
-    private var wind: Float = 0
+    private(set) var wind: Float = 0
     public var pilesDirty = false
     /// The snowman (at most one per screen) and its bookkeeping; see Snowman.swift.
     public internal(set) var snowman: Snowman?
+    public var walk = WalkState()      // walking snowmen and snowball fights; see Walkers.swift
     public var snowmanEnabled = true { didSet { if !snowmanEnabled { snowman = nil } } }
     var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next build may start
     var snowmanScan: Float = 0
@@ -719,6 +720,7 @@ public final class SnowField {
         time += dt
         stepSnowman(dt: dt)
         stepBalls(dt: dt)
+        stepWalkers(dt: dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool

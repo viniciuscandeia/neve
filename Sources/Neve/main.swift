@@ -31,6 +31,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var ambient: Bool { ud.bool(forKey: "ambient") }
     private var behind: Bool { ud.bool(forKey: "behindWindows") }
     private let snowmanItem = NSMenuItem(title: "Boneco de neve", action: #selector(toggleSnowman), keyEquivalent: "")
+    private let walkItem = NSMenuItem(title: "Bonecos andam e brigam", action: #selector(toggleWalk), keyEquivalent: "")
     private let snowballHint = NSMenuItem(title: "Segure ⌥ e arraste a neve para fazer bolas", action: nil, keyEquivalent: "")
     private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
@@ -68,6 +69,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snowmanItem.target = self
         snowmanItem.image = Self.symbol("figure.stand")
         snowmanItem.state = ud.object(forKey: "snowman") as? Bool ?? true ? .on : .off
+        walkItem.target = self
+        walkItem.state = ud.object(forKey: "walk") as? Bool ?? true ? .on : .off
         snowballHint.isEnabled = false
         snowballHint.attributedTitle = NSAttributedString(string: "Segure ⌥ e arraste a neve para fazer bolas", attributes: [.font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
         snowballHint.indentationLevel = 1
@@ -86,7 +89,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
         let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem, .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem, economyItem, ambientItem, behindItem, stillItem, snowmanItem, snowballHint, capturesItem, loginItem, axItem, .separator(), clear, quit]
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem, economyItem, ambientItem, behindItem, stillItem, snowmanItem, walkItem, snowballHint, capturesItem, loginItem, axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
@@ -213,6 +216,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ud.set(on, forKey: "snowman")
         snowmanItem.state = on ? .on : .off
         for o in overlays { o.setSnowman(on) }
+    }
+
+    @objc private func toggleWalk() {
+        let on = walkItem.state != .on
+        ud.set(on, forKey: "walk")
+        walkItem.state = on ? .on : .off
+        for o in overlays { o.setWalk(on) }
     }
 
     @objc private func toggleCaptures() {

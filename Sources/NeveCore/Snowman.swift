@@ -10,7 +10,8 @@ public struct Snowman {
     public static let balls: [(cy: Float, r: Float)] = [(11.5, 11.5), (30.5, 8.5), (44.5, 6.5)]
     public static let height: Float = 51
 
-    public let x: Float
+    public internal(set) var x: Float                // walks, see Walkers.swift
+    public internal(set) var hop: Float = 0, lean: Float = 0, facing: Float = 1   // walking pose: lift, head offset, +-1
     public let surfaceID: Int
     public let scale: Float
     public internal(set) var y: Float                // base y (last known pile top under it)
@@ -76,7 +77,7 @@ extension SnowField {
     /// Where the base sits (x, y), nil when there is no snowman or its spot is covered by a window.
     public func snowmanPlacement() -> SIMD2<Float>? {
         guard let m = snowman, let (_, _, y, visible) = site(of: m), visible else { return nil }
-        return SIMD2(m.x, y)
+        return SIMD2(m.x, y + m.hop)
     }
 
     /// Gathering snow for a ball: lowers the pile around the base (cosine falloff), a share of what is there.
