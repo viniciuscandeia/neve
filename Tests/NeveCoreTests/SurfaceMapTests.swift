@@ -280,3 +280,52 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     let total = f.writeInstances(to: b)
     for k in (total - n)..<total { #expect(b[k].alpha == 0.95) }
 }
+
+// MARK: - Ground (screen bottom)
+
+@Test func groundExistsWithNoWindowsAndCollectsSnow() {
+    let f = makeField(flakes: 900)
+    #expect(f.pile(id: Tuning.groundID) != nil)
+    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 6))
+    #expect(f.pile(id: Tuning.groundID)!.heights.max()! <= Tuning.groundMaxHeight)
+}
+
+@Test func noGroundDepositsUnderDockBarButItsOwnPileStays() {
+    let f = makeField(flakes: 900)
+    f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 400, y: 10, width: 200, height: 70), radius: 18)])
+    #expect(snowUntilPiled(f, id: 0, height: 4))
+    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 4))
+    let g = f.pile(id: Tuning.groundID)!
+    for b in 200..<300 { #expect(!g.visible[b]); #expect(g.heights[b] == 0) }
+    #expect(g.heights[10] >= 0)
+}
+
+@Test func coveredGroundColumnsKeepSnowHiddenAndShowItAgain() {
+    let f = makeField()
+    for b in 0..<500 { for _ in 0..<12 { f.deposit(surface: 0, bin: b, volume: 4) } }
+    let h = f.pile(id: Tuning.groundID)!.heights[250]
+    #expect(h > 5)
+    f.update(windows: [win(0, 400, 10, 200, 70)])
+    #expect(!f.pile(id: Tuning.groundID)!.visible[250])
+    #expect(f.pile(id: Tuning.groundID)!.heights[250] == h)
+    f.update(windows: [])
+    #expect(f.pile(id: Tuning.groundID)!.visible[250])
+    #expect(f.pile(id: Tuning.groundID)!.heights[250] == h)
+}
+
+@Test func groundSurvivesSpaceSwitchDropButWindowsDoNot() {
+    let f = makeField(flakes: 900)
+    f.update(windows: [back])
+    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 4))
+    #expect(snowUntilPiled(f, id: 1, height: 4))
+    f.dropPiles()
+    #expect(f.pile(id: 1)!.heights.max()! == 0)
+    #expect(f.pile(id: Tuning.groundID)!.heights.max()! >= 4)
+}
+
+@Test func clearEmptiesGround() {
+    let f = makeField(flakes: 900)
+    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 4))
+    f.clear()
+    #expect(f.pile(id: Tuning.groundID)!.heights.max()! == 0)
+}

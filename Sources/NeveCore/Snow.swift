@@ -6,6 +6,8 @@ public enum Tuning {
     public static let flakes = 400                 // per 1440x900 screen (scaled by area)
     static let backgroundFraction: Float = 0.35
     static let maxPileHeight: Float = 18
+    static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
+    static let groundID = -1
     static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
@@ -115,6 +117,7 @@ public struct Pile {
     var base: [Float]            // baseline offset per bin (<= 0): drops along rounded corners
     var cap: [Float]             // per-bin height ceiling imposed by windows in front (inf = none)
     let inset: Float
+    var maxHeight = Tuning.maxPileHeight
     let c0: Int                  // first global column, and the REAL (unclipped) window ends in x:
     let x0: Float, x1: Float     // taper and spill-off are measured against these, not the screen-clipped pile
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField
@@ -140,7 +143,7 @@ public struct Pile {
     }
 
     func limit(_ bin: Int) -> Float {
-        var l = Tuning.maxPileHeight
+        var l = maxHeight
         if inset > 0 {
             let x = (Float(c0 + bin) + 0.5) * Tuning.binWidth
             l *= min(1, max(min(x - x0, x1 - x), 0) / inset)
@@ -224,7 +227,7 @@ public struct Instance {
 }
 
 struct Surface {
-    let id: Int          // window number, 0 = ground (dock top / screen bottom)
+    let id: Int          // window number; 0 = Dock bar, Tuning.groundID = screen bottom
     let frame: CGRect    // unclipped, local coords
     let edgeY: Float
     let c0: Int          // first global column
@@ -365,7 +368,7 @@ public final class SnowField {
     /// Space switch: windows vanish all at once. Drop piles without debris (and mute knock-offs briefly).
     public func dropPiles() {
         silentUntil = CFAbsoluteTimeGetCurrent() + 1.5
-        for i in surfaces.indices {
+        for i in surfaces.indices where surfaces[i].id != Tuning.groundID {   // the ground is not tied to a window
             for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
         }
         pilesDirty = true
@@ -474,12 +477,37 @@ public final class SnowField {
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
         }
+        if let g = buildGround(rects: rects, windows: windows, old: &old) { built.append(g) }   // behind everything: every window and the Dock hide it
         for s in old { spawned += knockOff(s) }   // gone surfaces
         draggingID = moved
         surfaces = built
         buildColumns()
         pilesDirty = true
         return spawned
+    }
+
+    /// Screen-bottom pile: full width, flat, no taper, edges drain nothing. Snow under covered columns stays (hidden), not knocked off.
+    private func buildGround(rects: [CGRect], windows: [WindowInfo], old: inout [Surface]) -> Surface? {
+        let bw = Tuning.binWidth
+        let frame = CGRect(x: -1e5, y: -1, width: 2e5 + CGFloat(size.x), height: 1)   // "window" extends past the screen: no edge spill
+        var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: Float(frame.minX), x1: Float(frame.maxX))
+        pile.maxHeight = Tuning.groundMaxHeight
+        for b in 0..<numCols {
+            let x = CGFloat((Float(b) + 0.5) * bw)
+            var ceiling = Float.infinity
+            for (i, r) in rects.enumerated() {
+                // The floating Dock bar hovers a few points above the screen bottom: it still hides the ground under it.
+                let covers = windows[i].number == 0 ? r.maxY > 1 && x >= r.minX && x < r.maxX : r.contains(CGPoint(x: x, y: 1))
+                if covers { pile.visible[b] = false; break }
+                if r.minY > 1, x >= r.minX, x < r.maxX { ceiling = min(ceiling, Float(r.minY)) }
+            }
+            pile.cap[b] = ceiling
+        }
+        if let k = old.firstIndex(where: { $0.id == Tuning.groundID }) {
+            let prev = old.swapRemove(k)
+            for b in 0..<numCols { pile.heights[b] = min(prev.pile.heights[b], pile.limit(b)) }
+        }
+        return Surface(id: Tuning.groundID, frame: frame, edgeY: 0, c0: 0, anchor: 0, pile: pile)
     }
 
     private func buildSurface(id: Int, frame: CGRect, edgeY: Float, radius: CGFloat, rects: [CGRect], front: Int,
