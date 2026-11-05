@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-import NeveCore
+@testable import NeveCore
 
 // Field 1000x800 at origin (0,0): ground (dock top) at y=90, menu-bar area starts at y=780.
 func makeField(flakes: Int = 0, seed: UInt64 = 1) -> SnowField {
@@ -128,4 +128,46 @@ let front = win(2, 200, 300, 300, 300)
     let before = f.debris.count
     #expect(f.update(windows: []) == 0)   // windows vanish in the same switch: no avalanche
     #expect(f.debris.count == before)
+}
+
+// MARK: - Review fixes
+
+// Back window top edge y=400 (x 100...400); the front window starts at y=410, only 10 pt above it,
+// and covers x 200...500. Point y=401 is free, so the edge counts as visible under the front window.
+@Test func pileCannotGrowIntoAFrontWindowThatStartsJustAboveTheEdge() {
+    let f = makeField(flakes: 900)
+    f.update(windows: [win(2, 200, 410, 300, 290), win(1, 100, 200, 300, 200)])
+    // Bin b centre x = 101 + 2b: bins 0...49 are left of the front window, 50...149 under it.
+    var free: Float = 0
+    for _ in 0..<12000 {
+        f.step(dt: 1 / 60)
+        free = f.pile(id: 1)!.heights[0..<45].max()!
+        if free >= 14 { break }
+    }
+    #expect(free >= 14)   // the open part really grew tall, so the cap below is what limits the rest
+    let under = f.pile(id: 1)!.heights[50..<150]
+    #expect(under.max()! <= 10.001)
+}
+
+@Test func windowOverTheScreenEdgeGetsNoArtificialTaperThere() {
+    let f = makeField()
+    f.update(windows: [win(1, 800, 200, 400, 200), win(2, 600, 200, 400, 200)])   // 1 crosses the right edge, 2 ends on it
+    for s in f.surfaces.indices { for _ in 0..<60 { f.deposit(surface: s, bin: f.surfaces[s].pile.heights.count - 1, volume: 4) } }
+    #expect(f.pile(id: 1)!.heights.last! >= 17)    // snow piles to full height right at the screen edge
+    #expect(f.pile(id: 2)!.heights.last! < 5)      // a real end still tapers
+}
+
+@Test(arguments: 1...12 as ClosedRange<UInt64>)
+func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
+    // A pile worth ~2600 debris knocked off into a 1200 pool: the cap is hit mid-clump for some seeds.
+    let f = makeField(seed: seed)
+    f.update(windows: [win(1, 0, 200, 1000, 200)])
+    for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
+    let before = f.debris.count
+    let n = f.update(windows: [win(1, 40, 200, 1000, 200)])
+    #expect(f.debris.count == Tuning.maxDebris)
+    #expect(n == f.debris.count - before)
+    // Pool already full: a second avalanche reports nothing.
+    for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
+    #expect(f.update(windows: [win(1, 80, 200, 1000, 200)]) == 0)
 }
