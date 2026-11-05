@@ -7,7 +7,6 @@ import ApplicationServices
 final class DockWatcher {
     /// Bar frame in global AppKit coordinates, nil when untrusted / hidden / on the side.
     private(set) var frame: CGRect?
-    private var rawRect: CGRect?   // AX (top-left) coordinates; converted with current geometry at publish time
     private var busy = false, dirty = false
     private var generation = 0     // bumped when trust is lost: in-flight results are discarded
     var onChange: (@MainActor () -> Void)?
@@ -48,7 +47,6 @@ final class DockWatcher {
         guard AXIsProcessTrusted() else {
             generation += 1
             stop()
-            rawRect = nil
             if frame != nil { frame = nil; done() }
             return
         }
@@ -63,7 +61,6 @@ final class DockWatcher {
                     if let pid = q.pid {
                         if let list = q.list, observer == nil || pid != observedPid { attach(pid: pid, list: list) }
                     } else { stop() }
-                    rawRect = q.rect
                     let new = q.rect.flatMap { r in NSScreen.screens.first.map { appKitFrame(fromCG: r, primaryHeight: $0.frame.height) } }
                     if new != frame { frame = new; done() }
                 }
@@ -77,7 +74,7 @@ final class DockWatcher {
 struct DockQuery: @unchecked Sendable {
     var pid: pid_t?
     var list: AXUIElement?
-    var rect: CGRect?   // raw AX coordinates; nil when the Dock is not a bottom bar
+    var rect: CGRect?   // raw AX coordinates (converted with the current geometry when published); nil when the Dock is not a bottom bar
 }
 
 /// Dock's AXList child = the bar.
@@ -85,7 +82,6 @@ private func queryDockBar() -> DockQuery {
     guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier else { return DockQuery() }
     var q = DockQuery(pid: pid)
     let app = AXUIElementCreateApplication(pid)
-    AXUIElementSetMessagingTimeout(app, 0.5)
     var value: CFTypeRef?
     guard AXUIElementCopyAttributeValue(app, kAXChildrenAttribute as CFString, &value) == .success,
           let kids = value as? [AXUIElement] else { return q }

@@ -82,9 +82,12 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 
 ## Como funciona
 
-- Uma janela de overlay transparente cobre a tela, acima das demais e ignorando eventos do mouse.
-- A posição das janelas visíveis é lida periodicamente e convertida em um mapa de superfícies por coluna de pixels: para cada coluna, a altura da superfície mais alta em que um floco pode pousar.
-- Ao pousar, o floco alimenta uma pilha de neve naquela coluna. As pilhas escorregam nos cantos arredondados e desabam quando a janela se move, é minimizada ou fechada.
+- Uma janela de overlay transparente (uma por tela) cobre a tela, acima das demais e ignorando eventos do mouse.
+- Com a permissão de Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; os eventos só marcam "mudou" e, no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega a ordem e os limites das janelas (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll de segurança a cada 2 s cobre eventos perdidos e mudanças da área visível (Dock ou barra de menus recolhendo). Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s (10 vezes por segundo enquanto o botão do mouse está apertado, para acompanhar arrastos).
+- As janelas viram um mapa de superfícies por coluna de pixels: para cada coluna, a altura da superfície mais alta em que um floco pode pousar. O Dock (lido via Acessibilidade) e o pé da tela também são superfícies; o pé da tela fica atrás de tudo, então janelas e Dock escondem a parte coberta, que guarda a neve até aparecer de novo.
+- Ao pousar, o floco alimenta uma pilha de neve naquela coluna. As pilhas escorregam nos cantos arredondados e desabam quando a janela se move rápido, é minimizada ou fechada.
+- Quando o pé da tela acumula neve suficiente num trecho livre, um boneco de neve se monta sozinho, etapa por etapa. Ele desmorona se o cursor passar por ele ou se a neve sob ele sumir.
+- Com ⌥ pressionado, o overlay deixa de ser click-through só sobre a neve ou uma bola: dá para pegar uma bolinha, rolá-la (ela cresce levando neve da pilha), soltá-la e empilhar até três bolas num boneco.
 - O shader Metal é compilado em tempo de execução a partir de código-fonte, porque as Command Line Tools não incluem o compilador `metal`.
 
 ## Desempenho

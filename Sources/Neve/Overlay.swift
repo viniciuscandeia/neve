@@ -75,6 +75,12 @@ final class InteractView: NSView {
     override func mouseUp(with event: NSEvent) { onUp?(event) }
 }
 
+/// The user options an overlay renders; the controller owns them (UserDefaults) and pushes them to every overlay.
+struct OverlayPrefs: Equatable {
+    var economy = false, behind = false, still = false, snowman = true, showInCaptures = false
+    var intensity = Intensity.media
+}
+
 /// Click-through snow window covering one screen (interactive only while ⌥ is held over snow or a snowball).
 @MainActor
 final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
@@ -88,31 +94,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let ballLayers = BallLayers()
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0
-    private let pileLayer = CAShapeLayer()
-    private let highlightLayer = CAShapeLayer()
-    private let dragLayer = CAShapeLayer()        // the pile of a window being dragged: slid with the mouse between polls
-    private let dragHighlight = CAShapeLayer()
-    private let crestLayer = CAShapeLayer(), dragCrest = CAShapeLayer()
-    private var crestFor: [CAShapeLayer] { [crestLayer, dragCrest] }
-    private var masks: [ObjectIdentifier: CAShapeLayer] = [:]
-    private func crestMask(_ l: CAShapeLayer) -> CAShapeLayer {
-        if let m = masks[ObjectIdentifier(l)] { return m }
-        let m = CAShapeLayer()
-        m.frame = l.bounds
-        m.fillColor = CGColor(gray: 0, alpha: 1)
-        masks[ObjectIdentifier(l)] = m
-        return m
-    }
-    /// Sets a pile path on a crest layer (and its mask). Runs only when the path changes.
-    private func setCrest(_ l: CAShapeLayer, _ p: CGPath?) {
-        l.path = p
-        let m = crestMask(l)
-        guard let p else { m.path = nil; return }
-        let q = CGMutablePath()
-        q.addPath(p)
-        q.addPath(p, transform: CGAffineTransform(translationX: 0, y: -3))
-        m.path = q
-    }
+    private var piles: PileLayers!
+    private var dragPile: PileLayers!   // the pile of a window being dragged: slid with the mouse between polls
     private var pollMouse = NSEvent.mouseLocation
     private var forcePath = false
     private var lastCursor: CGPoint?
@@ -122,22 +105,21 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let inFlight = DispatchSemaphore(value: 3)
     private var link: CAMetalDisplayLink?
     private let pass = MTLRenderPassDescriptor()   // reused every frame; only the texture changes
-    private var run = false, fullscreen = false, hot = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+    private var run = false, fullscreen = false   // run: the controller's single decision (enabled, awake, not hot, user active)
     private var occluded = false
     private var lowPower = false
     private var contrast: Float = 0
     private let snowmanLayers = SnowmanLayers()
     private var reduceMotion = false
-    private var stillPref = UserDefaults.standard.bool(forKey: "stillSnow")
+    private var prefs: OverlayPrefs
     private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
-    private var economy = UserDefaults.standard.bool(forKey: "economy")
     private var lastTimestamp: CFTimeInterval = 0
     private var lastPathTime: CFTimeInterval = 0
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
 
-    init?(screen: NSScreen) {
+    init?(screen: NSScreen, prefs: OverlayPrefs) {
         guard let gpu = Overlay.sharedGpu else { return nil }
         let f = screen.frame, v = screen.visibleFrame
         frame = f
@@ -153,6 +135,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             buffers.append(b)
         }
         self.screen = screen
+        self.prefs = prefs
         self.gpu = gpu
         self.field = field
         self.buffers = buffers
@@ -170,10 +153,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.isOpaque = false
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.sharingType = UserDefaults.standard.bool(forKey: "showInCaptures") ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
         window.isReleasedWhenClosed = false
-        // One above the Dock: over the Dock (piles) but under menu bar, status-bar popovers and menus (all .statusBar+).
-        setBehind(UserDefaults.standard.bool(forKey: "behindWindows"))
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         window.setFrame(f, display: false)
 
@@ -184,31 +164,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         view.wantsLayer = true
         window.contentView = view
 
-        // Shaded snow: bluish-gray body with soft bluish shadow, plus a white copy of the same path
-        // lifted 1.5pt so only a thin bluish band stays visible at the bottom edge.
-        for (body, highlight) in [(pileLayer, highlightLayer), (dragLayer, dragHighlight)] {
-            body.frame = bounds
-            body.fillColor = CGColor(red: 0.84, green: 0.90, blue: 0.98, alpha: 0.97)
-            body.shadowColor = CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
-            body.shadowOpacity = 0.4
-            body.shadowRadius = 3
-            body.shadowOffset = CGSize(width: 0, height: -1.5)
-            root.addSublayer(body)
-            highlight.frame = bounds.offsetBy(dx: 0, dy: 1.5)
-            highlight.fillColor = CGColor(red: 0.88, green: 0.93, blue: 0.99, alpha: 0.97)
-            root.addSublayer(highlight)
-            // Crest: pure white, masked to a ~3pt sliver along the top edge (path minus itself shifted down).
-            let crest = crestFor[body === pileLayer ? 0 : 1]
-            crest.frame = bounds
-            crest.fillColor = CGColor(gray: 1, alpha: 0.95)
-            crestMask(crest).fillRule = .evenOdd
-            crest.mask = crestMask(crest)
-            root.addSublayer(crest)
-        }
+        piles = PileLayers(in: root, bounds: bounds)
+        dragPile = PileLayers(in: root, bounds: bounds)
 
         root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
         root.addSublayer(ballLayers.root)
-        field.snowmanEnabled = UserDefaults.standard.object(forKey: "snowman") as? Bool ?? true
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -232,9 +192,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         view.setAccessibilityHidden(true)
         window.isExcludedFromWindowsMenu = true
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
-        accessibilityChanged()
+        apply(prefs)
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
-        field.setIntensity(Intensity.saved, immediate: true)
+        field.setIntensity(prefs.intensity, immediate: true)
     }
 
     /// True when the screen's frame or scale differs from creation: needs a full rebuild.
@@ -252,19 +212,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Reduce Motion: calmer snow. Increase Contrast: stronger flake rim and pile bottom edge. (Reduce Transparency: nothing to change, the overlay has no blur.)
     @objc private func accessibilityChanged() {
         let ws = NSWorkspace.shared
-        field.setCalm(ws.accessibilityDisplayShouldReduceMotion)
-        reduceMotion = ws.accessibilityDisplayShouldReduceMotion
-        still = stillPref && ws.accessibilityDisplayShouldReduceMotion
-        let hc = ws.accessibilityDisplayShouldIncreaseContrast
+        let motion = ws.accessibilityDisplayShouldReduceMotion, hc = ws.accessibilityDisplayShouldIncreaseContrast
+        field.setCalm(motion)
+        reduceMotion = motion
+        still = prefs.still && motion
         contrast = hc ? 1 : 0
         snowmanLayers.setContrast(hc)
         ballLayers.setContrast(hc)
-        pileLayer.shadowOpacity = hc ? 0.8 : 0.45
-        pileLayer.shadowColor = hc ? CGColor(red: 0.15, green: 0.28, blue: 0.5, alpha: 1) : CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
-        dragLayer.shadowOpacity = pileLayer.shadowOpacity
-        dragLayer.shadowColor = pileLayer.shadowColor
+        piles.setContrast(hc)
+        dragPile.setContrast(hc)
     }
-
 
     func update(windows: [WindowInfo]) {
         field.update(windows: windows)
@@ -278,39 +235,38 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.setLowPower(on)
         link?.preferredFrameRateRange = frameRange
     }
-    func setEconomy(_ on: Bool) {
-        economy = on
+    /// Applies the user options (idempotent; the controller calls it on every change).
+    func apply(_ p: OverlayPrefs) {
+        prefs = p
+        // Behind windows: just above the desktop icons (snow over the wallpaper only); else one above the Dock:
+        // over the Dock (piles) but under menu bar, status-bar popovers and menus (all .statusBar+).
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(p.behind ? .desktopIconWindow : .dockWindow)) + 1)
+        window.sharingType = p.showInCaptures ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
+        field.snowmanEnabled = p.snowman
+        field.setIntensity(p.intensity)
         link?.preferredFrameRateRange = frameRange
+        accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        lowPower || economy ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        lowPower || prefs.economy ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
     func covers(_ r: CGRect) -> Bool { r.insetBy(dx: -1, dy: -1).contains(screen.frame) }
     var isFullscreen: Bool { fullscreen }
-    func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; apply() } }
-    func setStill(_ on: Bool) { stillPref = on; accessibilityChanged() }
-    /// Behind windows: just above the desktop icons (snow over the wallpaper only); else one above the Dock.
-    func setBehind(_ on: Bool) {
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(on ? .desktopIconWindow : .dockWindow)) + 1)
-    }
-    func setSnowman(_ on: Bool) { field.snowmanEnabled = on }
-    func setShowInCaptures(_ on: Bool) { window.sharingType = on ? .readOnly : .none }
-    func setHot(_ on: Bool) { if on != hot { hot = on; apply() } }
-    func setIntensity(_ v: Intensity) { field.setIntensity(v) }
+    func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; present() } }
 
-    func start() { run = true; apply() }
-    func pause() { run = false; apply() }
+    /// The controller's decision: enabled, awake, session active, not thermally throttled, user not idle.
+    func setRun(_ on: Bool) { run = on; present() }
 
-    /// Presents only when enabled, not under a fullscreen app, not thermally throttled. Piles are kept while paused.
-    private func apply() {
-        guard run && !fullscreen && !hot else {
+    /// Presents only when `run` and not under a fullscreen app. Piles are kept while paused.
+    private func present() {
+        guard run && !fullscreen else {
             guard window.isVisible else { link?.isPaused = true; return }
             // Fade out (~0.4s), then hide; the link keeps running meanwhile. Fullscreen/thermal hides are the same path.
             NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; window.animator().alphaValue = 0 }) { [weak self] in
                 MainActor.assumeIsolated {
-                    guard let self, !(self.run && !self.fullscreen && !self.hot) else { return }
+                    guard let self, !(self.run && !self.fullscreen) else { return }
                     self.link?.isPaused = true
                     self.window.orderOut(nil)
                 }
@@ -372,7 +328,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         // Interactive only where there is snow or a snowball (and ⌥ is down): everywhere else clicks pass through.
         let interactive = held != nil || (option && frame.contains(cursor) && field.hitTest(point: here))
         if window.ignoresMouseEvents == interactive { window.ignoresMouseEvents = !interactive }
-        if !resumed, let prev = lastCursor, prev != cursor, NSEvent.pressedMouseButtons & 1 == 0, !option, held == nil {
+        if !resumed, !still, let prev = lastCursor, prev != cursor, NSEvent.pressedMouseButtons & 1 == 0, !option, held == nil {
             field.sweep(from: CGPoint(x: prev.x - o.x, y: prev.y - o.y), to: CGPoint(x: cursor.x - o.x, y: cursor.y - o.y), dt: Float(dt))
         }
         let local = SIMD2(Float(cursor.x - frame.origin.x), Float(cursor.y - frame.origin.y))
@@ -388,15 +344,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             let dpath = drag == nil ? nil : field.pilePath(dragging: drag!, forDrag: true)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            pileLayer.path = path
-            pileLayer.shadowPath = path
-            highlightLayer.path = path
-            setCrest(crestLayer, path)
-            setCrest(dragCrest, dpath)
-            dragLayer.path = dpath
-            dragLayer.shadowPath = dpath
-            dragHighlight.path = dpath
-            for l in [dragLayer, dragHighlight, dragCrest] { l.setAffineTransform(.identity) }
+            piles.set(path: path)
+            dragPile.set(path: dpath)
+            dragPile.setTransform(.identity)
             CATransaction.commit()
         }
         // A dragged window follows the mouse 1:1: slide its pile layer by the mouse delta since the last poll.
@@ -406,9 +356,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             let t = CGAffineTransform(translationX: m.x - pollMouse.x, y: m.y - pollMouse.y)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            dragLayer.setAffineTransform(t)
-            dragHighlight.setAffineTransform(t)
-            dragCrest.setAffineTransform(t)
+            dragPile.setTransform(t)
             CATransaction.commit()
         }
         snowmanLayers.update(field, reduceMotion: reduceMotion)

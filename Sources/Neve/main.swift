@@ -3,12 +3,18 @@ import AppKit
 import os
 import ServiceManagement
 
+/// UserDefaults keys of the on / off options. Defaults: Nevar and Boneco de neve on, the rest off.
+enum Pref: String {
+    case enabled, economy, ambient, behindWindows, stillSnow, snowman, showInCaptures
+    var defaultValue: Bool { self == .enabled || self == .snowman }
+}
+
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var overlays: [Overlay] = []
     private var timer: Timer?
-    private var enabled = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true
+    private var idleWatch = false   // the timer is the 1 Hz fullscreen watch
     private var screensAsleep = false
     private var sessionInactive = false
     private let metalItem = NSMenuItem(title: "Metal indisponível", action: nil, keyEquivalent: "")
@@ -20,23 +26,39 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let dock = DockWatcher()
     private let watcher = WindowWatcher()
     private var slowTimer: Timer?
-    private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
-    private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
-    private var economy = UserDefaults.standard.bool(forKey: "economy")
-    private let ambientItem = NSMenuItem(title: "Modo ambiente", action: #selector(toggleAmbient), keyEquivalent: "")
-    private let behindItem = NSMenuItem(title: "Atrás das janelas", action: #selector(toggleBehind), keyEquivalent: "")
-    private let stillItem = NSMenuItem(title: "Neve parada (movimento reduzido)", action: #selector(toggleStill), keyEquivalent: "")
-    private let whereItem = NSMenuItem(title: "Nevar em", action: nil, keyEquivalent: "")
+    private var lastScreensCheck = Date.distantPast
     private let ud = UserDefaults.standard
-    private var ambient: Bool { ud.bool(forKey: "ambient") }
-    private var behind: Bool { ud.bool(forKey: "behindWindows") }
-    private let snowmanItem = NSMenuItem(title: "Boneco de neve", action: #selector(toggleSnowman), keyEquivalent: "")
+    private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
+    private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
+    private var prefItems: [Pref: NSMenuItem] = [:]
+    private let whereItem = NSMenuItem(title: "Nevar em", action: nil, keyEquivalent: "")
     private let snowballHint = NSMenuItem(title: "Segure ⌥ e arraste a neve para fazer bolas", action: nil, keyEquivalent: "")
-    private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
-    private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "n")
+
+    private func flag(_ p: Pref) -> Bool { ud.object(forKey: p.rawValue) as? Bool ?? p.defaultValue }
+    private var enabled: Bool { flag(.enabled) }
+    private var economy: Bool { flag(.economy) }
+    private var ambient: Bool { flag(.ambient) }
+    private var behind: Bool { flag(.behindWindows) }
+    /// Everything the overlays render from the options; the single place UserDefaults is read for them.
+    private var overlayPrefs: OverlayPrefs {
+        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), showInCaptures: flag(.showInCaptures), intensity: .saved)
+    }
+    private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
+
+    /// A check-mark menu item bound to a Pref, handled by `togglePref(_:)`.
+    private func toggleItem(_ pref: Pref, _ title: String, symbol: String, key: String = "") -> NSMenuItem {
+        let m = NSMenuItem(title: title, action: #selector(togglePref(_:)), keyEquivalent: key)
+        m.target = self
+        m.representedObject = pref.rawValue
+        m.image = Self.symbol(symbol)
+        m.state = flag(pref) ? .on : .off
+        prefItems[pref] = m
+        return m
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.25)   // global default: a hung app or the Dock must not stall AX reads
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.symbol("snowflake", "Neve")
         let menu = NSMenu()
@@ -45,10 +67,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let quit = NSMenuItem(title: "Sair", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = Self.symbol("power")
         clear.image = Self.symbol("sparkles")
-        toggleItem.image = Self.symbol("snowflake")
-        toggleItem.target = self
         clear.target = self
-        toggleItem.state = enabled ? .on : .off
         loginItem.target = self
         loginItem.image = Self.symbol("arrow.right.circle")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -62,31 +81,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             m.state = v == Intensity.saved ? .on : .off
             levels.append(m)
         }
-        economyItem.target = self
-        economyItem.image = Self.symbol("leaf")
-        economyItem.state = economy ? .on : .off
-        snowmanItem.target = self
-        snowmanItem.image = Self.symbol("figure.stand")
-        snowmanItem.state = ud.object(forKey: "snowman") as? Bool ?? true ? .on : .off
         snowballHint.isEnabled = false
-        snowballHint.attributedTitle = NSAttributedString(string: "Segure ⌥ e arraste a neve para fazer bolas", attributes: [.font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+        snowballHint.attributedTitle = NSAttributedString(string: snowballHint.title, attributes: [.font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
         snowballHint.indentationLevel = 1
-        capturesItem.target = self
-        capturesItem.image = Self.symbol("camera")
-        capturesItem.state = UserDefaults.standard.bool(forKey: "showInCaptures") ? .on : .off
-        for (m, name, key) in [(ambientItem, "sun.max", "ambient"), (behindItem, "square.stack.3d.down.right", "behindWindows"), (stillItem, "pause.circle", "stillSnow")] {
-            m.target = self
-            m.image = Self.symbol(name)
-            m.state = ud.bool(forKey: key) ? .on : .off
-        }
         whereItem.image = Self.symbol("display")
         whereItem.submenu = NSMenu()
         axItem.target = self
         axItem.image = Self.symbol("exclamationmark.triangle")
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
-        let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem, .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem, economyItem, ambientItem, behindItem, stillItem, snowmanItem, snowballHint, capturesItem, loginItem, axItem, .separator(), clear, quit]
+        let options = [toggleItem(.economy, "Modo econômico", symbol: "leaf"), toggleItem(.ambient, "Modo ambiente", symbol: "sun.max"),
+                       toggleItem(.behindWindows, "Atrás das janelas", symbol: "square.stack.3d.down.right"),
+                       toggleItem(.stillSnow, "Neve parada (movimento reduzido)", symbol: "pause.circle"),
+                       toggleItem(.snowman, "Boneco de neve", symbol: "figure.stand")]
+        let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem(.enabled, "Nevar", symbol: "snowflake", key: "n"), .sectionHeader(title: "QUANTIDADE")] + levels
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem] + options + [snowballHint, toggleItem(.showInCaptures, "Mostrar em capturas", symbol: "camera"), loginItem, axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
@@ -102,13 +111,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ws.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-        nc.addObserver(self, selector: #selector(thermalChanged), name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
-        // Global mouse monitors need no Accessibility permission; 10Hz polling only while the button is down.
+        nc.addObserver(self, selector: #selector(refreshRunStateNotification), name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
+        ws.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        // Global mouse monitors need no Accessibility permission; without it, window polling speeds up to 10Hz while the button is down (drags).
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] e in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.mouseDown = e.type == .leftMouseDown
-                self.scheduleTimers()
+                if !self.watcher.active { self.scheduleTimers() }   // only the polling rate depends on the button; events do not
                 if !self.mouseDown && self.polling { self.pollWindows() }
             }
         }
@@ -117,7 +127,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self, self.polling, !self.userIdle else { return }
             self.pollWindows()
         }
-        rebuildOverlays()
+        syncOverlays()
     }
 
     private func displayID(_ s: NSScreen) -> Int { (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0 }
@@ -129,6 +139,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Real configuration changes (screens added / removed, frame or scale) apply at once, per screen;
     /// only visibleFrame-only changes (Dock, menu bar) wait for a transitioning screen to settle.
     @objc private func screensChanged() {
+        lastScreensCheck = Date()
         let wanted = wantedScreens
         let ids = Set(wanted.map(displayID))
         let changed = Set(overlays.map { displayID($0.screen) }) != ids
@@ -143,9 +154,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         func stale(_ o: Overlay) -> Bool { !wanted.contains { displayID($0) == displayID(o.screen) && !o.screenChanged($0) } }
         overlays.filter(stale).forEach { $0.teardown() }
         overlays.removeAll(where: stale)
-        for o in overlays { o.setEconomy(economy) }
+        applyPrefs()
         let missing = wanted.filter { s in !overlays.contains { displayID($0.screen) == displayID(s) } }
-        let made = missing.compactMap { Overlay(screen: $0) }
+        let prefs = overlayPrefs
+        let made = missing.compactMap { Overlay(screen: $0, prefs: prefs) }
         if made.count < missing.count && !loggedMetal {
             loggedMetal = true
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
@@ -154,8 +166,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
         refreshRunState()
     }
-
-    private func rebuildOverlays() { syncOverlays() }
 
     /// "all" / "main" / a display ID. Economy forces the main screen (the one with the menu bar).
     private var target: String { ud.string(forKey: "snowOn") ?? "all" }
@@ -187,49 +197,26 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func toggleAmbient() {
-        ud.set(!ambient, forKey: "ambient")
-        ambientItem.state = ambient ? .on : .off
-        if ambient && userIdle { userIdle = false; refreshRunState() } else { updateStatus() }
-    }
-
-    @objc private func toggleBehind() {
-        ud.set(!behind, forKey: "behindWindows")
-        behindItem.state = behind ? .on : .off
-        for o in overlays { o.setBehind(behind) }
-        if polling { pollWindows() }   // empties / refills the surface list
-        updateStatus()
-    }
-
-    @objc private func toggleStill() {
-        let on = !ud.bool(forKey: "stillSnow")
-        ud.set(on, forKey: "stillSnow")
-        stillItem.state = on ? .on : .off
-        for o in overlays { o.setStill(on) }
-    }
-
-    @objc private func toggleSnowman() {
-        let on = snowmanItem.state != .on
-        ud.set(on, forKey: "snowman")
-        snowmanItem.state = on ? .on : .off
-        for o in overlays { o.setSnowman(on) }
-    }
-
-    @objc private func toggleCaptures() {
-        let on = capturesItem.state != .on
-        UserDefaults.standard.set(on, forKey: "showInCaptures")
-        capturesItem.state = on ? .on : .off
-        for o in overlays { o.setShowInCaptures(on) }
-    }
-
-    @objc private func toggleEconomy() {
-        economy.toggle()
-        UserDefaults.standard.set(economy, forKey: "economy")
-        economyItem.state = economy ? .on : .off
-        syncOverlays()
+    /// Flips the Pref a menu item is bound to (see `toggleItem`), then reacts to it.
+    @objc private func togglePref(_ sender: NSMenuItem) {
+        guard let pref = (sender.representedObject as? String).flatMap(Pref.init(rawValue:)) else { return }
+        let on = !flag(pref)
+        ud.set(on, forKey: pref.rawValue)
+        sender.state = on ? .on : .off
+        switch pref {
+        case .enabled: refreshRunState()
+        case .economy: syncOverlays()
+        case .ambient: if on && userIdle { userIdle = false; refreshRunState() } else { updateStatus() }
+        case .behindWindows:
+            applyPrefs()
+            if polling { pollWindows() }   // empties / refills the surface list
+            updateStatus()
+        case .stillSnow, .snowman, .showInCaptures: applyPrefs()
+        }
     }
 
     private var running: Bool { enabled && !screensAsleep && !sessionInactive }
+    /// The one source of truth for thermal throttling.
     private var hot: Bool { ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue }
     /// Polling timers only run while snow is actually shown (not disabled / asleep / locked / hot).
     private var polling: Bool { running && !hot }
@@ -253,7 +240,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" ? wantedScreens[0].localizedName : "tela principal") }
         if ambient { s += " · ambiente" }
         if behind { s += " · atrás das janelas" }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { s += " · movimento reduzido" }
+        if reduceMotion { s += " · movimento reduzido" }
         return s
     }
 
@@ -265,14 +252,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        stillItem.isHidden = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        prefItems[.stillSnow]?.isHidden = !reduceMotion
         rebuildWhereMenu()
         updateStatus()
     }
 
     private func refreshRunState() {
         updateStatus()
-        for o in overlays { if running && !userIdle { o.start() } else { o.pause() } }
+        let run = running && !hot && !userIdle
+        for o in overlays { o.setRun(run) }
         scheduleTimers()
         if polling {
             refreshDock()
@@ -280,7 +268,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// 0.5s window poll (10Hz while the mouse is down) + 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
+    /// With Accessibility trust, window events drive updates and the timer is a 2s safety poll; without it, a 0.5s poll (10Hz while the mouse is down).
+    /// Plus a 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
     private func scheduleTimers() {
         timer?.invalidate()
         timer = nil
@@ -289,6 +278,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watcher.setActive(polling && AXIsProcessTrusted())   // events replace polling; the timer stays as a slow safety net
         guard polling else { return }
         let idle = fullscreenIdle
+        idleWatch = idle
         let t = Timer(timeInterval: idle ? 1 : (watcher.active ? 2 : mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
         t.tolerance = idle ? 0.2 : (mouseDown && !watcher.active ? 0.03 : 0.1)
         RunLoop.main.add(t, forMode: .common)
@@ -306,11 +296,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
         if !userIdle && !ambient && since >= 300 { userIdle = true; refreshRunState() }
         else if userIdle && since < 2 { userIdle = false; refreshRunState() }
+        if Date().timeIntervalSince(lastScreensCheck) >= 0.5 { screensChanged() }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         if !userIdle { pollWindows() }
     }
 
     @objc private func pollWindows() {
-        screensChanged()
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
         let covering = windows.map(\.frame)
@@ -322,24 +312,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             o.setFullscreen(fs)
             if !o.isFullscreen { o.update(windows: windows) }   // under fullscreen the list is just that app: keep piles untouched
         }
-        if fullscreenIdle != (timer?.timeInterval == 1) {
+        if fullscreenIdle != idleWatch {
             scheduleTimers()
             if !fullscreenIdle { refreshDock() }
         }
     }
 
-    @objc private func toggle() {
-        enabled.toggle()
-        toggleItem.state = enabled ? .on : .off
-        UserDefaults.standard.set(enabled, forKey: "enabled")
-        refreshRunState()
-    }
-
     @objc private func pickIntensity(_ sender: NSMenuItem) {
         guard let v = Intensity(rawValue: sender.tag) else { return }
-        UserDefaults.standard.set(v.rawValue, forKey: Intensity.key)
+        ud.set(v.rawValue, forKey: Intensity.key)
         for m in sender.menu?.items ?? [] where Intensity(rawValue: m.tag) != nil && m.action == sender.action { m.state = m == sender ? .on : .off }
-        for o in overlays { o.setIntensity(v) }
+        applyPrefs()
     }
 
     /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on Dock AX events, app launch/quit, screen changes, every 30s.
@@ -347,7 +330,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         axItem.isHidden = AXIsProcessTrusted()
         if watcher.active != (polling && AXIsProcessTrusted()) { scheduleTimers() }   // trust granted / revoked
         guard polling else { return }
-        dock.refresh { [weak self] in self?.pollWindows() }
+        dock.refresh { [weak self] in self?.screensChanged(); self?.pollWindows() }   // the Dock moving can change visibleFrame
     }
 
     @objc private func askAccessibility() {
@@ -386,10 +369,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func screensWoke() { screensAsleep = false; refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
     @objc private func sessionBecameActive() { sessionInactive = false; refreshRunState() }
-    @objc private func thermalChanged() {
-        let h = hot
-        for o in overlays { o.setHot(h) }
-        refreshRunState()
+    @objc private func refreshRunStateNotification() { refreshRunState() }
+    @objc private func accessibilityChanged() {
+        reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        updateStatus()
     }
     @objc private func powerChanged() {
         let low = ProcessInfo.processInfo.isLowPowerModeEnabled

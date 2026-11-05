@@ -17,7 +17,7 @@ final class WindowWatcher {
     private static let appEvents = [kAXWindowMovedNotification, kAXWindowResizedNotification, kAXWindowMiniaturizedNotification,
                                     kAXWindowDeminiaturizedNotification, kAXWindowCreatedNotification, kAXApplicationHiddenNotification,
                                     kAXApplicationShownNotification, kAXFocusedWindowChangedNotification]
-    private(set) var eventCount = 0, fireCount = 0
+    private var attaching: Task<Void, Never>?
 
     func setActive(_ on: Bool) {
         guard on != active else { return }
@@ -26,40 +26,57 @@ final class WindowWatcher {
         if on {
             ws.addObserver(self, selector: #selector(launched(_:)), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
             ws.addObserver(self, selector: #selector(terminated(_:)), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-            for app in NSWorkspace.shared.runningApplications { attach(app) }
-            Self.log.info("watching \(self.observers.count) apps")
+            // One app per main-actor turn: attaching to ~100 apps in one go would stall the main thread at startup.
+            attaching = Task {
+                for app in NSWorkspace.shared.runningApplications {
+                    guard !Task.isCancelled else { return }
+                    attach(app)
+                    await Task.yield()
+                }
+                Self.log.info("watching \(self.observers.count) apps")
+            }
         } else {
+            attaching?.cancel()
+            attaching = nil
             ws.removeObserver(self)
             for pid in Array(observers.keys) { detach(pid) }
         }
     }
 
     @objc private func launched(_ n: Notification) {
-        if let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { attach(app) }
+        guard let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        if !attach(app) {   // not ready yet (no AX server): once more a second later
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                if active, !app.isTerminated { attach(app) }
+            }
+        }
     }
     @objc private func terminated(_ n: Notification) {
         if let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { detach(app.processIdentifier) }
         mark()
     }
 
-    private func attach(_ app: NSRunningApplication) {
+    /// False only when a regular app could not be observed (worth retrying); apps that do not qualify count as done.
+    @discardableResult
+    private func attach(_ app: NSRunningApplication) -> Bool {
         let pid = app.processIdentifier
-        guard app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil else { return }
+        guard app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil else { return true }
         var obs: AXObserver?
         let err = AXObserverCreate(pid, windowCallback, &obs)
-        guard err == .success, let obs else { Self.log.info("skip \(app.localizedName ?? "?") (create: \(err.rawValue))"); return }
-        let el = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(el, 0.25)   // a hung app must not stall the main thread
+        guard err == .success, let obs else { Self.log.info("skip \(app.localizedName ?? "?") (create: \(err.rawValue))"); return false }
+        let el = AXUIElementCreateApplication(pid)   // the global AX messaging timeout (set at startup) bounds every call
         let me = Unmanaged.passUnretained(self).toOpaque()
         var ok = 0
         for n in Self.appEvents where AXObserverAddNotification(obs, el, n as CFString, me) == .success { ok += 1 }
-        guard ok > 0 else { Self.log.info("skip \(app.localizedName ?? "?") (no notifications)"); return }
+        guard ok > 0 else { Self.log.info("skip \(app.localizedName ?? "?") (no notifications)"); return false }
         var v: CFTypeRef?
         if AXUIElementCopyAttributeValue(el, kAXWindowsAttribute as CFString, &v) == .success, let ws = v as? [AXUIElement] {
             for w in ws { _ = AXObserverAddNotification(obs, w, kAXUIElementDestroyedNotification as CFString, me) }
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
         observers[pid] = obs
+        return true
     }
 
     private func detach(_ pid: pid_t) {
@@ -68,7 +85,6 @@ final class WindowWatcher {
     }
 
     fileprivate func event(_ element: AXUIElement, _ name: String) {
-        eventCount += 1
         if name == kAXWindowCreatedNotification {   // watch the new window's destruction
             var pid: pid_t = 0
             if AXUIElementGetPid(element, &pid) == .success, let o = observers[pid] {
@@ -88,7 +104,6 @@ final class WindowWatcher {
                 guard let self else { return }
                 self.pending = false
                 self.lastFire = Date()
-                self.fireCount += 1
                 self.onChange?()
             }
         }
