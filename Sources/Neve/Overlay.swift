@@ -64,6 +64,10 @@ final class Overlay: NSObject {
     private let view = NSView()
     private let pileLayer = CAShapeLayer()
     private let highlightLayer = CAShapeLayer()
+    private let dragLayer = CAShapeLayer()        // the pile of a window being dragged: slid with the mouse between polls
+    private let dragHighlight = CAShapeLayer()
+    private var pollMouse = NSEvent.mouseLocation
+    private var forcePath = false
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
     private var bufferIndex = 0
@@ -115,18 +119,20 @@ final class Overlay: NSObject {
         view.wantsLayer = true
         window.contentView = view
 
-        pileLayer.frame = bounds
         // Shaded snow: bluish-gray body with soft bluish shadow, plus a white copy of the same path
         // lifted 1.5pt so only a thin bluish band stays visible at the bottom edge.
-        pileLayer.fillColor = CGColor(red: 0.74, green: 0.82, blue: 0.94, alpha: 0.97)
-        pileLayer.shadowColor = CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
-        pileLayer.shadowOpacity = 0.45
-        pileLayer.shadowRadius = 3
-        pileLayer.shadowOffset = CGSize(width: 0, height: -1.5)
-        root.addSublayer(pileLayer)
-        highlightLayer.frame = bounds.offsetBy(dx: 0, dy: 1.5)
-        highlightLayer.fillColor = CGColor(red: 0.98, green: 0.99, blue: 1, alpha: 0.97)
-        root.addSublayer(highlightLayer)
+        for (body, highlight) in [(pileLayer, highlightLayer), (dragLayer, dragHighlight)] {
+            body.frame = bounds
+            body.fillColor = CGColor(red: 0.74, green: 0.82, blue: 0.94, alpha: 0.97)
+            body.shadowColor = CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
+            body.shadowOpacity = 0.45
+            body.shadowRadius = 3
+            body.shadowOffset = CGSize(width: 0, height: -1.5)
+            root.addSublayer(body)
+            highlight.frame = bounds.offsetBy(dx: 0, dy: 1.5)
+            highlight.fillColor = CGColor(red: 0.98, green: 0.99, blue: 1, alpha: 0.97)
+            root.addSublayer(highlight)
+        }
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -154,7 +160,11 @@ final class Overlay: NSObject {
         screen.visibleFrame.minY - screen.frame.minY != groundY || screen.visibleFrame.maxY - screen.frame.minY != visibleTop
     }
 
-    func update(windows: [WindowInfo]) { field.update(windows: windows) }
+    func update(windows: [WindowInfo]) {
+        field.update(windows: windows)
+        pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
+        forcePath = true                    // re-place the piles at once, dropping any drag offset
+    }
     func clear() { field.clear() }
     func dropPiles() { field.dropPiles() }
     func setLowPower(_ on: Bool) {
@@ -218,15 +228,33 @@ final class Overlay: NSObject {
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
         field.step(dt: Float(dt))
-        if field.pilesDirty, now - lastPathTime >= 1.0 / 15 {
+        let drag = field.draggingID
+        if field.pilesDirty, forcePath || now - lastPathTime >= 1.0 / 15 {
             lastPathTime = now
             field.pilesDirty = false
-            let path = field.pilePath()
+            forcePath = false
+            let path = field.pilePath(dragging: drag ?? -1)
+            let dpath = drag == nil ? nil : field.pilePath(dragging: drag!, forDrag: true)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             pileLayer.path = path
             pileLayer.shadowPath = path
             highlightLayer.path = path
+            dragLayer.path = dpath
+            dragLayer.shadowPath = dpath
+            dragHighlight.path = dpath
+            for l in [dragLayer, dragHighlight] { l.setAffineTransform(.identity) }
+            CATransaction.commit()
+        }
+        // A dragged window follows the mouse 1:1: slide its pile layer by the mouse delta since the last poll.
+        // After release the last offset is held until the next poll reconciles with the real bounds.
+        if drag != nil, NSEvent.pressedMouseButtons != 0 {
+            let m = NSEvent.mouseLocation
+            let t = CGAffineTransform(translationX: m.x - pollMouse.x, y: m.y - pollMouse.y)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            dragLayer.setAffineTransform(t)
+            dragHighlight.setAffineTransform(t)
             CATransaction.commit()
         }
         render()
