@@ -856,7 +856,7 @@ public final class SnowField {
     /// One path for every pile on this screen: a closed, smooth subpath per snowy run.
     /// Top edge = midpoint quadratic curves through every 3rd bin of the lightly blurred surface.
     /// `forDrag` false: every pile except window `dragging`'s; true: only that one (it gets its own layer while dragged).
-    public func pilePath(dragging: Int = -1, forDrag: Bool = false) -> CGPath {
+    public func pilePath(dragging: Int = .min, forDrag: Bool = false) -> CGPath {
         let path = CGMutablePath()
         let bw = CGFloat(Tuning.binWidth)
         var idx: [Int] = [], pts: [CGPoint] = []
@@ -897,7 +897,7 @@ public final class SnowField {
                         }
                     }
                     if idx.count > 1 { path.addLine(to: pts[idx.count - 1]) }
-                    for k in idx.reversed() { path.addLine(to: CGPoint(x: x(k), y: edge + CGFloat(base[k]) - 1)) }
+                    for k in idx.reversed() { path.addLine(to: CGPoint(x: x(k), y: edge + CGFloat(base[k]) - (s.id == Tuning.groundID ? 0 : 1))) }
                     path.closeSubpath()
                 }
                 b = e

@@ -124,3 +124,16 @@ private func maxSway(calm: Bool) -> Float {
     f.step(dt: 0.05)
     #expect(f.debris.dropFirst(spilled).allSatisfy { $0.fall > Tuning.calmDebrisFall })   // still falls (and accelerates)
 }
+
+// The screen-bottom pile (id -1) must be in the normal path (it was dropped: -1 doubled as the "no dragged window" sentinel)
+// and sit on the visible bottom edge: base y = 0, top within groundMaxHeight.
+@Test func groundPileIsDrawnOnScreen() {
+    let f = makeField()
+    f.update(windows: [])
+    let g = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
+    for _ in 0..<40 { for b in stride(from: 5, to: f.surfaces[g].pile.heights.count - 5, by: 2) { f.deposit(surface: g, bin: b, volume: 4) } }
+    let ys = flatten(f.pilePath()).map(\.y)
+    #expect(ys.count > 20)
+    #expect(ys.min()! >= 0)
+    #expect(ys.max()! > 10 && ys.max()! <= Double(Tuning.groundMaxHeight) + 2)
+}
