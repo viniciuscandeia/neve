@@ -62,6 +62,7 @@ final class Overlay: NSObject {
     private let window: NSWindow
     private let view = NSView()
     private let pileLayer = CAShapeLayer()
+    private let highlightLayer = CAShapeLayer()
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
     private var bufferIndex = 0
@@ -109,12 +110,17 @@ final class Overlay: NSObject {
         window.contentView = view
 
         pileLayer.frame = bounds
-        pileLayer.fillColor = CGColor(gray: 1, alpha: 0.95)
-        pileLayer.shadowColor = CGColor(gray: 0, alpha: 1)
-        pileLayer.shadowOpacity = 0.35
-        pileLayer.shadowRadius = 2
-        pileLayer.shadowOffset = CGSize(width: 0, height: -1)
+        // Shaded snow: bluish-gray body with soft bluish shadow, plus a white copy of the same path
+        // lifted 1.5pt so only a thin bluish band stays visible at the bottom edge.
+        pileLayer.fillColor = CGColor(red: 0.74, green: 0.82, blue: 0.94, alpha: 0.97)
+        pileLayer.shadowColor = CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
+        pileLayer.shadowOpacity = 0.45
+        pileLayer.shadowRadius = 3
+        pileLayer.shadowOffset = CGSize(width: 0, height: -1.5)
         root.addSublayer(pileLayer)
+        highlightLayer.frame = bounds.offsetBy(dx: 0, dy: 1.5)
+        highlightLayer.fillColor = CGColor(red: 0.98, green: 0.99, blue: 1, alpha: 0.97)
+        root.addSublayer(highlightLayer)
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -137,6 +143,7 @@ final class Overlay: NSObject {
 
     func update(windows: [WindowInfo]) { field.update(windows: windows) }
     func clear() { field.clear() }
+    func dropPiles() { field.dropPiles() }
     func setLowPower(_ on: Bool) { field.setLowPower(on) }
 
     func start() {
@@ -176,6 +183,7 @@ final class Overlay: NSObject {
             CATransaction.setDisableActions(true)
             pileLayer.path = path
             pileLayer.shadowPath = path
+            highlightLayer.path = path
             CATransaction.commit()
         }
         render()
