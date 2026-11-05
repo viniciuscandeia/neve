@@ -169,6 +169,8 @@ func runSelfTest() {
     for _ in 0..<20 { field.deposit(surface: idx2, bin: 10, volume: 4) }
     let m = field.update(windows: [dock, front])
     precondition(m > 0 && field.debris.count == m && field.pile(id: 1) == nil, "vanished window drops snow as debris")
+    for _ in 0..<5 { field.step(dt: 0.01) }   // nothing below: debris must have gained gravity * t
+    precondition(field.debris.count == m && field.debris.allSatisfy { $0.fall >= 0.9 * Tuning.debrisGravity * 0.05 }, "debris accelerates")
 
     // Space switch: piles dropped silently.
     let idx3 = field.surfaces.firstIndex { $0.id == 2 }!

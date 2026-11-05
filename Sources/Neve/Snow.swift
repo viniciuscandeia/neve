@@ -13,6 +13,8 @@ enum Tuning {
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
+    static let debrisGravity: Float = 1400   // pt/s^2: packed snow accelerates instead of floating
+    static let debrisTerminal: Float = 1700  // pt/s
 }
 
 /// Snow amount; `multiplier` scales the base flake count. Nevasca adds strong gusty wind.
@@ -302,15 +304,16 @@ final class SnowField {
     /// Snow that slid off a surface end falls as debris.
     private func spill(_ si: Int) {
         let s = surfaces[si], last = s.pile.heights.count - 1
-        if s.pile.spillL > 2 { addDebris(x: Float(s.c0) * Tuning.binWidth, y: s.edgeY + s.pile.base[0], vx: -Float.random(in: 8...25), fall: Float.random(in: 40...70)) }
-        if s.pile.spillR > 2 { addDebris(x: Float(s.c0 + last + 1) * Tuning.binWidth, y: s.edgeY + s.pile.base[last], vx: Float.random(in: 8...25), fall: Float.random(in: 40...70)) }
+        if s.pile.spillL > 2 { addDebris(x: Float(s.c0) * Tuning.binWidth, y: s.edgeY + s.pile.base[0], vx: -Float.random(in: 8...25), fall: Float.random(in: 10...30)) }
+        if s.pile.spillR > 2 { addDebris(x: Float(s.c0 + last + 1) * Tuning.binWidth, y: s.edgeY + s.pile.base[last], vx: Float.random(in: 8...25), fall: Float.random(in: 10...30)) }
         if s.pile.spillL > 2 { surfaces[si].pile.spillL = 0 }
         if s.pile.spillR > 2 { surfaces[si].pile.spillR = 0 }
     }
 
-    private func addDebris(x: Float, y: Float, vx: Float, fall: Float) {
+    /// `fall` is the current downward speed; `step` accelerates it. Heavy snow: bigger and brighter than sky flakes.
+    private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float = Float.random(in: 3...5)) {
         guard debris.count < Tuning.maxDebris else { return }
-        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 5), phase: 0, amp: 0, freq: 0, size: Float.random(in: 2...3.5), alpha: 0.9, kind: .debris))
+        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size, alpha: 0.95, kind: .debris))
     }
 
     func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
@@ -411,9 +414,18 @@ final class SnowField {
             for _ in 0..<max(1, Int(h / 3)) {
                 guard debris.count < Tuning.maxDebris else { return n }
                 let x = (Float(s.c0 + b) + Float.random(in: 0...1)) * Tuning.binWidth
-                addDebris(x: x, y: s.edgeY + s.pile.base[b] + Float.random(in: 0...h),
-                          vx: Float.random(in: -35...35) + v.x * 0.5, fall: Float.random(in: 40...90) - v.y * 0.5)
+                let y = s.edgeY + s.pile.base[b] + Float.random(in: 0...h)
+                let vx = Float.random(in: -12...12) + v.x * 0.5, fall = Float.random(in: 10...50) - v.y * 0.5
+                addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5) + min(h, 18) / 9)
                 n += 1
+                // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
+                if Float.random(in: 0..<1) < min(0.6, h / 25) {
+                    for _ in 0..<Int.random(in: 2...(2 + Int(h / 6))) {
+                        addDebris(x: x + Float.random(in: -3...3), y: y + Float.random(in: -3...3),
+                                  vx: vx + Float.random(in: -4...4), fall: fall + Float.random(in: -15...15), size: Float.random(in: 2.5...4.5))
+                        n += 1
+                    }
+                }
             }
         }
         if n > 0 { pilesDirty = true }
@@ -465,7 +477,8 @@ final class SnowField {
         while i >= 0 {
             var f = debris[i]
             let prevY = f.pos.y
-            f.vx -= (f.vx - wind * 0.6) * 1.5 * dt
+            f.vx -= (f.vx - wind * 0.15) * 0.5 * dt
+            f.fall = min(f.fall + Tuning.debrisGravity * dt, Tuning.debrisTerminal)
             f.pos.x += f.vx * dt
             f.pos.y -= f.fall * dt
             if f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w
