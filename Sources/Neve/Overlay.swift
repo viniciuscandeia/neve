@@ -269,7 +269,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(p.behind ? .desktopIconWindow : .dockWindow)) + 1)
         window.sharingType = p.showInCaptures ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
         field.snowmanEnabled = p.snowman
-        field.walk.enabled = p.walk
+        field.walkEnabled = p.walk
         field.setIntensity(p.intensity)
         link?.preferredFrameRateRange = frameRange
         accessibilityChanged()   // `still` follows the pref

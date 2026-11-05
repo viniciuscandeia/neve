@@ -12,7 +12,7 @@ final class SnowmanLayers {
     private var armLayers: [CALayer] = []     // left, right
     private var tails: [CALayer] = []         // upper scarf tail, lower segment (child of the upper)
     private var shownFlutter = Flutter(), lastFlutter = 0.0
-    private var shown = -1, shownCollapsing = false, shownPos = SIMD2<Float>(-1e9, -1e9), shownScale: Float = 0, shownPose = SIMD2<Float>(0, 1)
+    private var shown = -1, shownCollapsing = false, shownHeadless = false, shownPos = SIMD2<Float>(-1e9, -1e9), shownScale: Float = 0, shownPose = SIMD2<Float>(0, 1)
     private let box = CGRect(x: -30, y: 0, width: 60, height: 60)
 
     private func local(_ build: (CGMutablePath) -> Void) -> CGPath {   // path in `box` coordinates
@@ -128,16 +128,22 @@ final class SnowmanLayers {
 
     /// Called every frame; does real work only on a stage / position change, a collapse, or during the 0.3 s ease-in.
     func update(_ field: SnowField, reduceMotion: Bool) {
-        guard let m = field.snowman, let pos = field.snowmanPlacement() else {
+        // The auto snowman, a `Figure` (fromBalls: false); stage-by-stage drawing as before (this renderer goes away with the Metal rig).
+        guard let fig = field.figures.first(where: { !$0.fromBalls }), fig.phase != .hidden else {
             if !root.isHidden { root.isHidden = true; shown = -1 }
             return
         }
+        let look = field.look(of: fig)
+        struct View { var stage: Int, collapsing: Bool, fade: Float, stageAge: Float, scale: Float, lean: Float, facing: Float, pose: Flutter, headless: Bool }
+        let m = View(stage: look.built, collapsing: look.collapsing, fade: look.fade, stageAge: fig.stageAge, scale: look.radii.x / 11.5,
+                     lean: look.pose.lean, facing: look.facing, pose: look.pose.flutter, headless: look.headless)
+        let pos = SIMD2(look.foot.x, look.foot.y - 0.2 * look.radii.x + look.pose.hop)   // base of the bottom ball
         let now = CACurrentMediaTime()
         let flutter = reduceMotion ? Flutter() : m.pose
         let fluttering = flutter != shownFlutter && now - lastFlutter >= 1 / 30   // scarf / arms: <= 30 Hz
         let pose = SIMD2(m.lean, m.facing)   // walking: head offset, facing
         let easing = !reduceMotion && m.stageAge < 0.35
-        guard m.stage != shown || m.collapsing != shownCollapsing || m.collapsing || easing || pos != shownPos || pose != shownPose || fluttering || root.isHidden else { return }
+        guard m.stage != shown || m.headless != shownHeadless || m.collapsing != shownCollapsing || m.collapsing || easing || pos != shownPos || pose != shownPose || fluttering || root.isHidden else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if pos != shownPos || m.scale != shownScale || pose != shownPose || root.isHidden {
@@ -147,7 +153,7 @@ final class SnowmanLayers {
         }
         root.isHidden = false
         for (i, l) in elements.enumerated() {
-            let present = m.stage > i && !(m.collapsing && i < 3)   // balls turn into debris at once
+            let present = m.stage > i && !(m.collapsing && i < 3) && !(m.headless && (i == 2 || i == 3 || i == 4 || i == 6))   // balls turn into debris at once; no head, no face / scarf
             l.isHidden = !present
             guard present else { continue }
             var alpha: Float = m.collapsing ? m.fade : 1, grow: Float = 1
@@ -169,7 +175,7 @@ final class SnowmanLayers {
             }
             shownFlutter = flutter; lastFlutter = now
         }
-        shown = m.stage; shownCollapsing = m.collapsing
+        shown = m.stage; shownCollapsing = m.collapsing; shownHeadless = m.headless
         CATransaction.commit()
     }
 }

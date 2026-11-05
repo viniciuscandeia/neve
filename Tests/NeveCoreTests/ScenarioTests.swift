@@ -17,8 +17,8 @@ private func heavyField() -> SnowField {
     var fought = false, shot = false
     for _ in 0..<600 {
         f.step(dt: 1 / 60)
-        fought = fought || !f.walk.fights.isEmpty
-        shot = shot || !f.walk.shots.isEmpty
+        fought = fought || !f.fights.isEmpty
+        shot = shot || !f.shots.isEmpty
     }
     #expect(fought && shot)
 }
@@ -26,7 +26,7 @@ private func heavyField() -> SnowField {
 @Test func stagingTwiceDoesNotDuplicate() {
     let f = heavyField()
     f.stage(.heavy)
-    let n = f.balls.count
+    let n = f.figures.count
     f.stage(.heavy)
-    #expect(n == 6 && f.balls.count == 6 && f.snowman?.complete == true)
+    #expect(n == 3 && f.figures.count == 3 && f.balls.isEmpty && f.figures.filter { !$0.fromBalls }.count == 1 && f.figures.allSatisfy { $0.built == Snowman.stageCount })
 }

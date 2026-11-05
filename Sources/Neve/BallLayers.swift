@@ -2,8 +2,9 @@ import NeveCore
 import AppKit
 import QuartzCore
 
-/// Layers for the snowballs the user rolls: a pool of ball groups (drawn once at radius 20, scaled per ball) and two
-/// snowman accessory sets. Rebuilt from state only when the field's `ballsVersion` changes.
+/// Layers for the snowballs the user rolls and for the snowmen made of them (`Figure`s with fromBalls): a pool of ball
+/// groups (drawn once at radius 20, scaled per ball) and one accessory set per figure. Rebuilt from state only when the
+/// field's `ballsVersion` / `figuresVersion` changes (this renderer goes away with the Metal rig).
 @MainActor
 final class BallLayers {
     let root = CALayer()
@@ -12,7 +13,7 @@ final class BallLayers {
     private struct Accessories { let arms: CAShapeLayer, mid: CAShapeLayer, head: CAShapeLayer, armLR: [CAShapeLayer], tails: [CAShapeLayer] }
     private var groups: [Group] = []
     private var sets: [Accessories] = []
-    private var shown = -1, keys: [Int] = [], shownPoses: [Flutter] = [], lastFlutter = 0.0   // per set: bottom ball id, applied pose
+    private var shown = -1, shownFigs = -1, keys: [Int] = [], shownPoses: [Flutter] = [], lastFlutter = 0.0   // per set: figure id, applied pose
 
     private func shape(_ path: CGPath?, fill: CGColor?, extent: CGFloat) -> CAShapeLayer {
         let l = CAShapeLayer()
@@ -37,7 +38,7 @@ final class BallLayers {
         let specks = dots([(0.55 * R * cos(0.5), 0.55 * R * sin(0.5), 1.9), (0.72 * R * cos(2.4), 0.72 * R * sin(2.4), 2.4),
                            (0.3 * R * cos(4.0), 0.3 * R * sin(4.0), 1.6), (0.8 * R * cos(5.3), 0.8 * R * sin(5.3), 2.0),
                            (0.45 * R * cos(3.0), 0.45 * R * sin(3.0), 1.4), (0.62 * R * cos(1.5), 0.62 * R * sin(1.5), 1.3)])
-        for _ in 0..<(Tuning.maxBalls + 2) {
+        for _ in 0..<(Tuning.maxBalls + 3 * Tuning.maxFigures) {
             let g = CALayer()
             g.bounds = CGRect(x: -R, y: -R, width: 2 * R, height: 2 * R)
             let body = shape(circle, fill: snow, extent: R)
@@ -58,7 +59,7 @@ final class BallLayers {
             groups.append(Group(layer: g, speckles: sp, body: body))
         }
         let coal = CGColor(red: 0.13, green: 0.14, blue: 0.16, alpha: 1)
-        for _ in 0..<(Tuning.maxBalls / 3) {
+        for _ in 0..<Tuning.maxFigures {
             // Arms (unit = middle ball radius), drawn under every ball.
             let arms = shape(nil, fill: nil, extent: 3)
             arms.strokeColor = CGColor(red: 0.38, green: 0.25, blue: 0.14, alpha: 1)
@@ -131,12 +132,11 @@ final class BallLayers {
         l.isHidden = false
     }
 
-    /// Scarf tail and arm transforms of set `i` from its walker's pose (skipped when unchanged).
-    private func pose(_ i: Int, _ field: SnowField, reduceMotion: Bool, force: Bool = false) {
-        let p = reduceMotion ? Flutter() : field.pose(of: keys[i])
+    /// Scarf tail and arm transforms of set `i` (skipped when unchanged).
+    private func pose(_ i: Int, _ p: Flutter, facing: Float, force: Bool = false) {
         guard force || p != shownPoses[i] else { return }
         shownPoses[i] = p
-        let f = CGFloat(field.facing(of: keys[i]))   // the head is mirrored when facing left
+        let f = CGFloat(facing)   // the head is mirrored when facing left
         spin(sets[i].tails[0], CGFloat(p.scarf) * f, about: CGPoint(x: 0.8, y: -1.15))
         spin(sets[i].tails[1], CGFloat(p.wave) * f, about: CGPoint(x: 0.88, y: -1.765))
         for (k, arm) in sets[i].armLR.enumerated() {
@@ -149,42 +149,56 @@ final class BallLayers {
         l.setAffineTransform(CGAffineTransform(translationX: p.x, y: p.y).rotated(by: a).translatedBy(x: -p.x, y: -p.y))
     }
 
-    /// Called every frame; does real work only when the field's balls changed.
+    private func put(_ g: Group, at p: SIMD2<Float>, radius: Float, rotation: Float = 0, alpha: Float = 1) {
+        g.layer.position = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
+        let k = CGFloat(radius) / BallLayers.big
+        g.layer.transform = CATransform3DMakeScale(k, k, 1)
+        g.layer.opacity = alpha
+        g.speckles.transform = CATransform3DMakeRotation(CGFloat(rotation), 0, 0, 1)
+        g.layer.isHidden = false
+    }
+
+    /// Called every frame; does real work only when the field's balls or figures changed.
     func update(_ field: SnowField, reduceMotion: Bool) {
-        guard field.ballsVersion != shown else {   // nothing moved: only the scarf / arms flutter, at most 30 Hz
+        guard field.ballsVersion != shown || field.figuresVersion != shownFigs else {   // nothing moved: only the scarf / arms flutter, at most 30 Hz
             let now = CACurrentMediaTime()
             guard now - lastFlutter >= 1 / 30 else { return }
             lastFlutter = now
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            for i in sets.indices where keys[i] >= 0 { pose(i, field, reduceMotion: reduceMotion) }
+            for i in sets.indices where keys[i] >= 0 {
+                guard let f = field.figures.first(where: { $0.id == keys[i] }) else { continue }
+                pose(i, reduceMotion ? Flutter() : f.pose.flutter, facing: f.facing)
+            }
             CATransaction.commit()
             return
         }
-        shown = field.ballsVersion
+        shown = field.ballsVersion; shownFigs = field.figuresVersion
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for (i, g) in groups.enumerated() {
-            guard i < field.balls.count else { g.layer.isHidden = true; continue }
-            let b = field.balls[i]
-            g.layer.position = CGPoint(x: CGFloat(b.pos.x), y: CGFloat(b.pos.y))
-            let k = CGFloat(b.radius) / BallLayers.big
-            g.layer.transform = CATransform3DMakeScale(k, k, 1)
-            g.layer.opacity = b.fade
-            g.speckles.transform = CATransform3DMakeRotation(CGFloat(b.rotation), 0, 0, 1)
-            g.layer.isHidden = false
+        var gi = 0
+        for b in field.balls where gi < groups.count {
+            put(groups[gi], at: b.pos, radius: b.radius, rotation: b.rotation, alpha: b.fade)
+            gi += 1
         }
         var k = 0
-        for b in field.balls where b.snowmanAge >= 0 && k < sets.count {
-            guard let (m, h) = field.snowmanChain(of: b) else { continue }
-            let t = reduceMotion ? 1 : min(b.snowmanAge / 0.3, 1), e = t * (2 - t), grow = 0.85 + 0.15 * e
-            place(sets[k].arms, at: m.pos, radius: m.radius, alpha: e, grow: grow)
-            place(sets[k].mid, at: m.pos, radius: m.radius, alpha: e, grow: grow)
-            place(sets[k].head, at: h.pos, radius: h.radius, alpha: e, grow: grow, flip: CGFloat(field.facing(of: b.id)))   // faces its foe
-            keys[k] = b.id
-            pose(k, field, reduceMotion: reduceMotion, force: true)
+        for f in field.figures where f.fromBalls && f.phase != .hidden && k < sets.count {
+            let l = field.look(of: f)
+            let e = reduceMotion ? 1 : l.newest, grow = 0.85 + 0.15 * e
+            for (c, r) in [(l.centers.0, l.radii.x), (l.centers.1, l.radii.y), (l.centers.2, l.radii.z)].prefix(l.headless ? 2 : 3) where gi < groups.count {
+                put(groups[gi], at: c, radius: r)
+                gi += 1
+            }
+            place(sets[k].arms, at: l.centers.1, radius: l.radii.y, alpha: e, grow: grow)
+            place(sets[k].mid, at: l.centers.1, radius: l.radii.y, alpha: e, grow: grow)
+            if l.headless { sets[k].head.isHidden = true } else {
+                place(sets[k].head, at: l.centers.2, radius: l.radii.z, alpha: e, grow: grow, flip: CGFloat(l.facing))   // faces its foe
+            }
+            keys[k] = f.id
+            pose(k, reduceMotion ? Flutter() : l.pose.flutter, facing: l.facing, force: true)
             k += 1
         }
+        for g in groups[gi...] { g.layer.isHidden = true }
         for i in k..<sets.count { keys[i] = -1 }
         for s in sets[k...] { s.arms.isHidden = true; s.mid.isHidden = true; s.head.isHidden = true }
         CATransaction.commit()

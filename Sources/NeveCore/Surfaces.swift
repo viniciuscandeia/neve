@@ -78,6 +78,7 @@ extension SnowField {
         for (i, s) in surfaces.enumerated() { index[s.id] = i }
         buildColumns()
         transportBalls(before: before)
+        transportFigures(before: before)
         pilesDirty = true
         return spawned
     }
@@ -222,7 +223,7 @@ extension SnowField {
         let v = (SIMD2(dx, dy) / dt).limited()
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
-        collapseIfSwept(ax, ay, Float(b.x), Float(b.y), r, v)
+        sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         defer { for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {

@@ -1,7 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// A snowball the user scooped from a pile, rolled and dropped. Pure state: rendering reads it.
+/// A loose snowball the user scooped from a pile, rolled and dropped (or a head knocked off). A stack of three
+/// decreasing balls stands up as a `Figure` (see Figures.swift). Pure state: rendering reads it.
 public struct Snowball: Equatable {
     public enum State: Equatable { case held, falling, resting }
     public let id: Int
@@ -12,14 +13,11 @@ public struct Snowball: Equatable {
     public internal(set) var surfaceID: Int?            // surface it rests on (a stacked ball inherits its parent's)
     public internal(set) var parent: Int?               // ball it sits on
     public internal(set) var fade: Float = 1            // 1 -> 0 while melting away
-    public internal(set) var snowmanAge: Float = -1     // bottom ball of a 3-stack: seconds since it became a snowman, capped at 1
     var vel: SIMD2<Float> = .zero
     var melting = false
 }
 
 extension SnowField {
-    private static let sink: Float = 0.8   // a ball rests this share of its radius above the surface top
-    private static let overlap: Float = 1.5
 
     private func index(of id: Int) -> Int? { balls.firstIndex { $0.id == id } }
 
@@ -71,7 +69,7 @@ extension SnowField {
             let d = q - b.pos
             if d.x * d.x + d.y * d.y <= (b.radius + 4) * (b.radius + 4) { return true }
         }
-        return pileUnder(q) != nil
+        return overFigure(q) || pileUnder(q) != nil
     }
 
     private func pileUnder(_ q: SIMD2<Float>) -> (Int, Int)? {
@@ -85,7 +83,8 @@ extension SnowField {
         return best.map { ($0.0, $0.1) }
     }
 
-    /// Grabs the loose ball under the point (the nearest one with nothing on top of it); it is then held.
+    /// Grabs the loose ball under the point (the nearest one with nothing on top of it); it is then held. The head of a
+    /// stacked snowman (or the top of a headless one) works too: the figure turns back into balls and that ball is held.
     public func pickSnowball(at p: CGPoint) -> Int? {
         let q = SIMD2(Float(p.x), Float(p.y))
         var best: Int?, bestD = Float.infinity
@@ -93,9 +92,9 @@ extension SnowField {
             let d = q - balls[i].pos, d2 = d.x * d.x + d.y * d.y, r = balls[i].radius + 4
             if d2 <= r * r, d2 < bestD { best = i; bestD = d2 }
         }
+        if let (j, d2) = figureTop(at: q, slack: 4), d2 < bestD, let ids = demote(figures[j].id), let k = index(of: ids.top) { best = k }
         guard let i = best else { return nil }
         balls[i].state = .held; balls[i].parent = nil; balls[i].surfaceID = nil; balls[i].vel = .zero
-        balls[i].snowmanAge = -1
         ballsVersion &+= 1
         return balls[i].id
     }
@@ -142,13 +141,6 @@ extension SnowField {
         ballsVersion &+= 1
     }
 
-    /// The middle and head of a snowman whose bottom ball is `bottom`.
-    public func snowmanChain(of bottom: Snowball) -> (Snowball, Snowball)? {
-        guard bottom.snowmanAge >= 0, let m = balls.first(where: { $0.parent == bottom.id }),
-              let h = balls.first(where: { $0.parent == m.id }) else { return nil }
-        return (m, h)
-    }
-
     // MARK: Simulation
 
     func stepBalls(dt: Float) {
@@ -158,14 +150,10 @@ extension SnowField {
         for _ in 0..<2 {   // stacks are at most 3 high: two passes settle children after parents
             for i in balls.indices where balls[i].state == .resting && balls[i].parent != nil { follow(i) }
         }
-        for i in balls.indices where balls[i].parent == nil {   // 3 decreasing balls = a snowman
-            var b = balls[i]
-            var formed = false
-            if b.state == .resting, let m = balls.first(where: { $0.parent == b.id }), let h = balls.first(where: { $0.parent == m.id }) {
-                formed = m.radius < b.radius - 0.5 && h.radius < m.radius - 0.5
+        if balls.count >= 3, canSpawnFigure {   // 3 decreasing balls = a snowman: it stands up as a figure
+            for i in balls.indices where balls[i].parent == nil && balls[i].state == .resting {
+                if promote(bottomBall: balls[i].id) != nil { break }
             }
-            b.snowmanAge = formed ? min(1, max(b.snowmanAge, 0) + dt) : -1
-            if b != balls[i] { balls[i] = b; ballsVersion &+= 1 }
         }
         var gone = false
         for i in balls.indices where balls[i].melting {
@@ -178,7 +166,6 @@ extension SnowField {
 
     private func setFalling(_ i: Int, _ v: SIMD2<Float>) {
         balls[i].state = .falling; balls[i].surfaceID = nil; balls[i].parent = nil; balls[i].vel = v
-        balls[i].snowmanAge = -1
         ballsVersion &+= 1
     }
 
@@ -195,7 +182,7 @@ extension SnowField {
 
     private func follow(_ i: Int) {
         guard let p = balls[i].parent, let j = index(of: p) else { setFalling(i, .zero); return }
-        let pos = SIMD2(balls[j].pos.x, balls[j].pos.y + balls[j].radius + balls[i].radius - SnowField.overlap)
+        let pos = SIMD2(balls[j].pos.x, balls[j].pos.y + balls[j].radius + balls[i].radius - SnowField.stackOverlap)
         if pos != balls[i].pos || balls[i].surfaceID != balls[j].surfaceID { balls[i].pos = pos; balls[i].surfaceID = balls[j].surfaceID; ballsVersion &+= 1 }
     }
 
@@ -215,7 +202,7 @@ extension SnowField {
             guard dist < minD * 0.98, d.y > -o.radius * 0.2 else { continue }
             if b.radius <= o.radius + 0.01, abs(d.x) <= 0.4 * o.radius, !hasChild(j), depth(j) < 3 {   // stacks
                 b.state = .resting; b.parent = o.id; b.surfaceID = o.surfaceID; b.vel = .zero
-                b.pos = SIMD2(o.pos.x, o.pos.y + o.radius + b.radius - SnowField.overlap)
+                b.pos = SIMD2(o.pos.x, o.pos.y + o.radius + b.radius - SnowField.stackOverlap)
             } else {   // slides off the side
                 let n = dist > 1e-3 ? d / dist : SIMD2<Float>(1, 0)
                 b.pos = o.pos + n * minD
@@ -224,6 +211,7 @@ extension SnowField {
             landed = true
             break
         }
+        if !landed, hitFigures(&b) { landed = true; if b.melting { balls[i] = b; ballsVersion &+= 1; return } }
         if !landed, let (si, _, top) = supportTop(x: b.pos.x, fromY: prev.y),
            b.pos.y <= top + b.radius * SnowField.sink {
             b.pos.y = top + b.radius * SnowField.sink
@@ -232,6 +220,29 @@ extension SnowField {
         if b.pos.y < -b.radius * 2 { balls[i].melting = true; balls[i].fade = 0; balls[i].state = .falling; return }
         balls[i] = b
         ballsVersion &+= 1
+    }
+
+    /// A falling ball against the standing figures: a head that fits lands back on a headless body (and is used up),
+    /// anything else slides off the side. True when it touched one.
+    private func hitFigures(_ b: inout Snowball) -> Bool {
+        for j in figures.indices where figures[j].phase != .hidden && figures[j].phase != .collapsing {
+            let f = figures[j], a = anchors(of: f)
+            for k in 0..<ballCount(f) {
+                let (c, r) = circle(a, f, k), d = b.pos - c, minD = b.radius + r
+                let dist = (d.x * d.x + d.y * d.y).squareRoot()
+                guard dist < minD * 0.98, d.y > -r * 0.2 else { continue }
+                if f.headless, k == 1, b.radius <= r + 0.01, abs(d.x) <= 0.4 * r {
+                    reattach(j, radius: b.radius)
+                    b.melting = true; b.fade = 0; b.state = .resting   // used up: removed at the end of this step
+                } else {
+                    let n = dist > 1e-3 ? d / dist : SIMD2<Float>(1, 0)
+                    b.pos = c + n * minD
+                    b.vel = SIMD2((n.x >= 0 ? 1 : -1) * max(abs(b.vel.x), 70), min(b.vel.y, 0) * 0.2)
+                }
+                return true
+            }
+        }
+        return false
     }
 
     /// Windows moved / closed: balls on them travel along (x shift) or are knocked off, same rules as piles.
@@ -247,7 +258,7 @@ extension SnowField {
         }
     }
 
-    /// Cursor segment a->b through a loose ball breaks it (a whole snowman breaks together) into debris chunks.
+    /// Cursor segment a->b through a loose ball breaks it into debris chunks (a figure breaks whole, see `sweepFigures`).
     func breakBalls(_ ax: Float, _ ay: Float, _ bx: Float, _ by: Float, _ r: Float, _ v: SIMD2<Float>) {
         guard !balls.isEmpty else { return }
         let dx = bx - ax, dy = by - ay, len2 = max(dx * dx + dy * dy, 1e-6)
@@ -258,12 +269,7 @@ extension SnowField {
             let c = balls[i].pos, t = min(max(((c.x - ax) * dx + (c.y - ay) * dy) / len2, 0), 1)
             let ex = ax + t * dx - c.x, ey = ay + t * dy - c.y
             guard ex * ex + ey * ey <= (r + balls[i].radius) * (r + balls[i].radius) else { continue }
-            let root = rootIndex(i), rid = balls[root].id
-            if balls[root].snowmanAge >= 0 {
-                while let j = balls.indices.first(where: { !hasChild($0) && balls[rootIndex($0)].id == rid }) { pop(j, v) }   // leaves first
-            } else {
-                pop(i, v)
-            }
+            pop(i, v)
         }
         ballsVersion &+= 1
     }

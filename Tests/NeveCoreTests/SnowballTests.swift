@@ -13,7 +13,6 @@ private func snowy(_ h: Float = 12) -> SnowField {
 
 private func volume(_ f: SnowField, _ id: Int = Tuning.groundID) -> Float { f.pile(id: id)!.heights.reduce(0, +) }
 private func run(_ f: SnowField, _ s: Float) { for _ in 0..<Int(s * 60) { f.step(dt: 1 / 60) } }
-private func ball(_ f: SnowField, _ id: Int) -> Snowball { f.balls.first { $0.id == id }! }
 
 /// Scoops at the pile (x, y), sets the radius, lifts it to `at` and drops it.
 @discardableResult
@@ -98,15 +97,15 @@ private func stack(_ f: SnowField, _ radii: [Float]) -> [Int] {
     return ids
 }
 
-@Test func threeDecreasingBallsFormASnowmanAndTwoDoNot() {
+@Test func threeDecreasingBallsFormAFigureAndTwoDoNot() {
     let f = snowy()
-    let ids = stack(f, [16, 11])
-    #expect(ball(f, ids[0]).snowmanAge < 0)
+    _ = stack(f, [16, 11])
+    #expect(f.figures.isEmpty && f.balls.count == 2)
     let g = snowy()
     let j = stack(g, [16, 11, 7])
-    #expect(ball(g, j[0]).snowmanAge > 0)
-    #expect(g.snowmanChain(of: ball(g, j[0]))?.1.id == j[2])
-    #expect(ball(g, j[2]).parent == j[1] && ball(g, j[1]).parent == j[0])
+    #expect(g.balls.isEmpty && g.figures.count == 1)   // the stack was promoted: its three balls became one figure
+    let m = g.figures[0]
+    #expect(m.fromBalls && m.radii == SIMD3(16, 11, 7) && m.at == .surface(id: Tuning.groundID, x: m.foot.x) && j.count == 3)
 }
 
 @Test func fourthBallCannotJoinTheStack() {
@@ -114,7 +113,7 @@ private func stack(_ f: SnowField, _ radii: [Float]) -> [Int] {
     _ = stack(f, [16, 11, 7])
     let d = dropBall(f, scoop: CGPoint(x: 600, y: 8), r: 5, at: CGPoint(x: 300, y: 300))
     run(f, 3)
-    #expect(ball(f, d).parent == nil)
+    #expect(ball(f, d).parent == nil && f.figures.count == 1 && f.balls.count == 1)
 }
 
 @Test func windowCloseKnocksBallsOffAndMovingTransportsThem() {
@@ -152,10 +151,10 @@ private func stack(_ f: SnowField, _ radii: [Float]) -> [Int] {
     f.sweep(from: CGPoint(x: 250, y: y), to: CGPoint(x: 350, y: y), radius: 10)
     #expect(f.balls.isEmpty && f.debris.count - d0 >= 10)
     let g = snowy()
-    let ids = stack(g, [16, 11, 7])
-    let hy = CGFloat(ball(g, ids[2]).pos.y)
+    _ = stack(g, [16, 11, 7])
+    let hy = CGFloat(g.anchors(of: g.figures[0]).head.y), d1 = g.debris.count
     g.sweep(from: CGPoint(x: 250, y: hy), to: CGPoint(x: 350, y: hy), radius: 10)
-    #expect(g.balls.isEmpty)
+    #expect(g.balls.isEmpty && g.figures.isEmpty && g.debris.count - d1 >= 30)   // the figure breaks whole, a few chunks per ball
 }
 
 @Test func clearRemovesBallsAndOldestMeltsBeyondTheCap() {
@@ -180,4 +179,8 @@ private func stack(_ f: SnowField, _ radii: [Float]) -> [Int] {
     let b = ball(f, id)
     #expect(f.hitTest(point: CGPoint(x: Double(b.pos.x), y: Double(b.pos.y) + 12)))
     #expect(f.pickSnowball(at: CGPoint(x: Double(b.pos.x), y: Double(b.pos.y))) == id)
+    let g = snowy()
+    stand(g, x: 300)
+    let a = g.anchors(of: g.figures[0])
+    #expect(g.hitTest(point: CGPoint(x: CGFloat(a.head.x), y: CGFloat(a.head.y) + 12)))   // a stacked snowman is interactive too
 }

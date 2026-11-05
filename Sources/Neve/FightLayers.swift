@@ -2,7 +2,7 @@ import NeveCore
 import AppKit
 import QuartzCore
 
-/// The snowballs thrown in a snowball fight: a small pool of round layers, positioned from `field.walk.shots`.
+/// The snowballs thrown in a snowball fight: a small pool of round layers, positioned from `field.shots`.
 /// Does nothing (no layer work) while nothing is in the air.
 @MainActor
 final class FightLayers {
@@ -30,7 +30,7 @@ final class FightLayers {
 
     /// Called every frame.
     func update(_ field: SnowField) {
-        let shots = field.walk.shots
+        let shots = field.shots
         guard !shots.isEmpty || visible > 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)

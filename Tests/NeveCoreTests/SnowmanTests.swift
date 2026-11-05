@@ -20,13 +20,13 @@ private func run(_ f: SnowField, _ seconds: Float) { for _ in 0..<Int(seconds * 
 @Test func noSnowmanUntilTheStretchIsDeepEnough() {
     let shallow = groundField(Tuning.snowmanDepth - 3)
     run(shallow, 5)
-    #expect(shallow.snowman == nil)
+    #expect(shallow.figures.isEmpty)
     let narrow = groundField(Tuning.snowmanDepth + 4, 100...120)   // 20pt wide stretch
     run(narrow, 5)
-    #expect(narrow.snowman == nil)
+    #expect(narrow.figures.isEmpty)
     let deep = groundField(Tuning.snowmanDepth + 4)
     run(deep, 5)
-    #expect(deep.snowman != nil && deep.snowman!.stage == 0)
+    #expect(deep.figures.count == 1 && deep.figures[0].built == 0 && !deep.figures[0].fromBalls && deep.figures[0].phase == .building)
 }
 
 @Test func siteIsTheCentreOfTheWidestVisibleStretch() {
@@ -35,24 +35,23 @@ private func run(_ f: SnowField, _ seconds: Float) { for _ in 0..<Int(seconds * 
     level(f, Tuning.snowmanDepth + 4, 0...298)
     level(f, Tuning.snowmanDepth + 4, 400...998)
     run(f, 2)
-    let x = f.snowman!.x
-    #expect(x > 400 && x < 1000 && f.snowman!.surfaceID == Tuning.groundID)
+    let x = f.figures[0].foot.x
+    #expect(x > 400 && x < 1000 && f.figures[0].at == .surface(id: Tuning.groundID, x: x))
 }
 
 @Test func stagesAdvanceInOrderWithTimeAndScoopSnow() {
     let f = groundField(Tuning.snowmanDepth + 4)
     run(f, 1.5)
-    let x = f.snowman!.x, before = f.pile(id: Tuning.groundID)!.heights[Int(x / 2)]
+    let x = f.figures[0].foot.x, before = f.pile(id: Tuning.groundID)!.heights[Int(x / 2)]
     var seen: [Int] = [], last = -1
     for _ in 0..<(80 * 20) {
         f.step(dt: 1 / 20)
-        let s = f.snowman!.stage
+        let s = f.figures[0].built
         if s != last { seen.append(s); last = s }
     }
     #expect(seen == [0, 1, 2, 3, 4, 5, 6, 7])
-    #expect(f.snowman!.complete)
+    #expect(f.figures[0].built == Snowman.stageCount && f.figures[0].phase != .hidden)
     #expect(f.pile(id: Tuning.groundID)!.heights[Int(x / 2)] < before)
-    #expect(f.snowmanPlacement() != nil)
 }
 
 private func built() -> SnowField {
@@ -63,20 +62,20 @@ private func built() -> SnowField {
 
 @Test func sweepThroughTheSnowmanCollapsesItIntoDebris() {
     let f = built()
-    let m = f.snowman!, d0 = f.debris.count, y = m.y + 25
-    f.sweep(from: CGPoint(x: CGFloat(m.x) - 40, y: CGFloat(y)), to: CGPoint(x: CGFloat(m.x) + 40, y: CGFloat(y)), radius: 10)
-    #expect(f.snowman!.collapsing)
+    let m = f.figures[0], d0 = f.debris.count, y = m.foot.y + 25
+    f.sweep(from: CGPoint(x: CGFloat(m.foot.x) - 40, y: CGFloat(y)), to: CGPoint(x: CGFloat(m.foot.x) + 40, y: CGFloat(y)), radius: 10)
+    #expect(f.figures[0].phase == .collapsing)
     #expect(f.debris.count - d0 >= 60)   // three balls, a few dozen chunks each (plus swept pile snow)
     run(f, 0.6)
-    #expect(f.snowman == nil)
+    #expect(f.figures.isEmpty)
 }
 
 @Test func sweepNextToTheSnowmanLeavesItStanding() {
     let f = built()
-    let m = f.snowman!
-    f.sweep(from: CGPoint(x: CGFloat(m.x) + 60, y: CGFloat(m.y) + 25), to: CGPoint(x: CGFloat(m.x) + 90, y: CGFloat(m.y) + 25), radius: 10)
-    f.sweep(from: CGPoint(x: CGFloat(m.x) - 40, y: CGFloat(m.y) + 90), to: CGPoint(x: CGFloat(m.x) + 40, y: CGFloat(m.y) + 90), radius: 10)
-    #expect(f.snowman?.collapsing == false)
+    let m = f.figures[0]
+    f.sweep(from: CGPoint(x: CGFloat(m.foot.x) + 60, y: CGFloat(m.foot.y) + 25), to: CGPoint(x: CGFloat(m.foot.x) + 90, y: CGFloat(m.foot.y) + 25), radius: 10)
+    f.sweep(from: CGPoint(x: CGFloat(m.foot.x) - 40, y: CGFloat(m.foot.y) + 90), to: CGPoint(x: CGFloat(m.foot.x) + 40, y: CGFloat(m.foot.y) + 90), radius: 10)
+    #expect(f.figures.count == 1 && f.figures[0].phase != .collapsing)
 }
 
 @Test func debrisIsCappedAtMaxDebris() {
@@ -89,26 +88,28 @@ private func built() -> SnowField {
 @Test func clearRemovesTheSnowmanAndClearedPileCollapsesIt() {
     let f = built()
     f.clear()
-    #expect(f.snowman == nil)
+    #expect(f.figures.isEmpty)
     let g = built()
     level(g, 0, 100...800)   // pile knocked off under it
     g.step(dt: 1 / 60)
-    #expect(g.snowman!.collapsing)
+    #expect(g.figures[0].phase == .collapsing)
 }
 
 @Test func cooldownBeforeRebuildingAndNeverMoreThanOne() {
     let f = built()
     f.collapse()
     run(f, 1)
-    #expect(f.snowman == nil)
+    #expect(f.figures.isEmpty)
     level(f, Tuning.snowmanDepth + 4, 100...800)
     run(f, Tuning.snowmanCooldown - 10)
-    #expect(f.snowman == nil)
+    #expect(f.figures.isEmpty)
     level(f, Tuning.snowmanDepth + 4, 100...800)
     run(f, 20)
-    #expect(f.snowman != nil && f.snowman!.stage == 0)
+    #expect(f.figures.count == 1 && f.figures[0].built == 0)
+    run(f, 60)
+    #expect(f.figures.filter { !$0.fromBalls }.count == 1)   // never more than one auto snowman
     f.collapse()   // second snowman only ever replaces the first
-    #expect(f.snowman!.collapsing)
+    #expect(f.figures[0].phase == .collapsing)
 }
 
 @Test func siteKeepsClearOfTheDockEndsAndScreenEdges() {
@@ -116,7 +117,7 @@ private func built() -> SnowField {
     f.update(windows: [win(0, 300, 10, 600, 60)])   // floating Dock bar x 300...900
     level(f, Tuning.snowmanDepth + 4, 0...998)
     run(f, 2)
-    let x = f.snowman!.x, half = Tuning.snowmanStretch * f.snowmanScale / 2
+    let x = f.figures[0].foot.x, half = Tuning.snowmanStretch * f.snowmanScale / 2
     for edge in [Float(0), 300, 900, 1000] { #expect(abs(x - edge) >= Tuning.snowmanClearance + half - 3) }
 }
 
@@ -125,14 +126,14 @@ private func built() -> SnowField {
     f.update(windows: [win(1, 0, 0, 300, 60), win(2, 430, 0, 570, 60)])   // 130pt of ground left: 105pt + 2x20 does not fit
     level(f, Tuning.snowmanDepth + 4, 300...428)
     run(f, 5)
-    #expect(f.snowman == nil)
+    #expect(f.figures.isEmpty)
 }
 
 @Test func disabledSnowmanNeverBuilds() {
     let f = groundField(Tuning.snowmanDepth + 4)
     f.snowmanEnabled = false
     run(f, 5)
-    #expect(f.snowman == nil)
+    #expect(f.figures.isEmpty)
 }
 
 private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant }.count }
@@ -152,9 +153,10 @@ private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant
 @Test func collapseAllEmptiesPilesIntoDebrisAndBreaksBallsAndSnowman() {
     let f = groundField(10)   // 350 bins x 10pt: more snow than the debris cap
     f.update(windows: [win(1, 100, 300, 200, 100)])
-    f.snowman = Snowman(x: 500, surfaceID: Tuning.groundID, scale: 1, y: 100)
+    standAuto(f, x: 500)
+    stand(f, x: 700)
     f.collapseAll(spread: 0.3)
-    #expect(f.snowman!.collapsing && f.balls.isEmpty && f.outro)
+    #expect(f.figures.count == 1 && f.figures[0].phase == .collapsing && f.balls.isEmpty && f.outro)   // the stack shatters at once, the auto one fades
     var peak = 0
     for _ in 0..<8 { f.step(dt: 1 / 20); peak = max(peak, f.debris.count) }   // 0.4s
     #expect(f.surfaces.allSatisfy { $0.pile.heights.allSatisfy { $0 == 0 } })
@@ -181,11 +183,11 @@ private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant
     for i in 0..<(5 * 60 * 30) {   // coarse 1/30 s steps: the same 5 simulated minutes in half the work
         f.step(dt: 1 / 30)
         if i % 3 == 0 { f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84))], dt: 0.1) }
-        let c = f.snowman?.collapsing ?? false
+        let c = f.figures.first?.phase == .collapsing
         if c && !was { collapses += 1 }
         was = c
     }
     #expect(f.pile(id: Tuning.groundID)!.heights.reduce(0, +) > 2000)
-    #expect(f.snowman?.complete == true)
+    #expect(f.figures.first?.built == Snowman.stageCount)
     #expect(collapses == 0)
 }

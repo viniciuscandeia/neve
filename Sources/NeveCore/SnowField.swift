@@ -31,13 +31,19 @@ public final class SnowField {
     var windGain: Float = 8
     var wind: Float = 0
     public var pilesDirty = false
-    /// The snowman (at most one per screen) and its bookkeeping; see Snowman.swift.
-    public internal(set) var snowman: Snowman?
-    public var walk = WalkState()      // walking snowmen and snowball fights; see Walkers.swift
-    public var snowmanEnabled = true { didSet { if !snowmanEnabled { snowman = nil } } }
-    var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next build may start
+    /// Everyone standing on a surface (at most `Tuning.maxFigures`): the auto snowman, snowmen made of user balls; see Figures.swift.
+    /// `figuresVersion` changes whenever one moves, poses, appears or leaves.
+    public internal(set) var figures: [Figure] = []
+    public internal(set) var figuresVersion = 0
+    var nextFigureID = 1
+    public internal(set) var fights: [Fight] = []     // snowball fights; see Fights.swift
+    public internal(set) var shots: [Shot] = []
+    public var walkEnabled = true      // figures walk and fight (Walk.swift)
+    var gustOverride: Float?           // tests
+    public var snowmanEnabled = true { didSet { if !snowmanEnabled { dropAutoFigure() } } }
+    var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next auto build may start
     var snowmanScan: Float = 0
-    /// Snowballs the user rolled and stacked; see Snowball.swift. `ballsVersion` changes whenever one moves / grows / fades.
+    /// Loose snowballs the user rolled; see Snowball.swift. `ballsVersion` changes whenever one moves / grows / fades.
     public internal(set) var balls: [Snowball] = []
     public internal(set) var ballsVersion = 0
     var nextBallID = 1
@@ -67,6 +73,7 @@ public final class SnowField {
         let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
+        figures.reserveCapacity(Tuning.maxFigures); fights.reserveCapacity(4); shots.reserveCapacity(6)
         flakes.reserveCapacity(pool)
         for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
         skyEnd = skyCount; bgEnd = pool - skyCount
@@ -106,6 +113,7 @@ public final class SnowField {
         let n = balls.count
         balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
         if balls.count != n { ballsVersion &+= 1 }
+        dropWindowFigures()
         for i in surfaces.indices where surfaces[i].id != Tuning.groundID { surfaces[i].pile.empty() }   // the ground is not tied to a window
         pilesDirty = true
     }
@@ -125,8 +133,8 @@ public final class SnowField {
     public func collapseAll(spread: Float) {
         outro = true
         introDur = 0
+        for i in figures.indices.reversed() where i < figures.count { shatter(figures[i].id) }   // stacks go at once, the auto one fades
         snowmanCooldown = .infinity
-        collapse()
         while !balls.isEmpty { pop(balls.count - 1, .zero) }
         ballsVersion &+= 1
         outroT = 0; outroSpread = max(spread, 0.001); outroRel = -1
@@ -135,7 +143,8 @@ public final class SnowField {
     }
 
     public func clear() {
-        snowman = nil
+        figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true)
+        figuresVersion &+= 1
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
         for i in surfaces.indices { surfaces[i].pile.empty() }
         debris.removeAll(keepingCapacity: true)
@@ -155,7 +164,7 @@ public final class SnowField {
 
     public func step(dt: Float) {
         time += dt
-        stepSnowman(dt: dt)
+        stepBuilder(dt: dt)
         if outro, outroRel < 1 {
             outroT += dt
             let to = min(1, outroT / outroSpread)
@@ -164,7 +173,7 @@ public final class SnowField {
         }
         if introDur > 0 { introT += dt }
         stepBalls(dt: dt)
-        stepWalkers(dt: dt)
+        stepFigures(dt: dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
         stepFlakes(dt: dt)
