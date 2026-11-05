@@ -195,6 +195,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         apply(prefs)
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
         field.setIntensity(prefs.intensity, immediate: true)
+        intro()
     }
 
     /// True when the screen's frame or scale differs from creation: needs a full rebuild.
@@ -229,6 +230,30 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         forcePath = true                    // re-place the piles at once, dropping any drag offset
     }
     func clear() { field.clear() }
+
+    private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
+    /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.
+    func intro() {
+        outroGen += 1
+        if !reduceMotion { field.beginIntro(duration: 2.5) }
+    }
+    /// Being shown right now (the only state an outro makes sense in).
+    var showing: Bool { run && !fullscreen && window.isVisible }
+    /// Piles, balls and the snowman collapse into falling snow, then the window fades; `done` runs ~1.4s later.
+    /// Reduce Motion / still snow: just a 0.4s fade.
+    func outro(_ done: @escaping @MainActor () -> Void) {
+        outroGen += 1
+        let gen = outroGen, fade = reduceMotion || still
+        if !fade { field.collapseAll(spread: 0.3) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (fade ? 0 : 1.0)) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.outroGen == gen else { return }
+                NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; self.window.animator().alphaValue = 0 }) {
+                    MainActor.assumeIsolated { if self.outroGen == gen { done() } }
+                }
+            }
+        }
+    }
     func dropPiles() { field.dropPiles() }
     func setLowPower(_ on: Bool) {
         lowPower = on

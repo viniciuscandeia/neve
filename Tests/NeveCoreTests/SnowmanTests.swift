@@ -134,3 +134,39 @@ private func built() -> SnowField {
     run(f, 5)
     #expect(f.snowman == nil)
 }
+
+private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant }.count }
+
+@Test func introRampsTheFlakeCountFromZeroToTheTarget() {
+    let f = makeField(flakes: 400)
+    let target = live(f)
+    f.beginIntro(duration: 2.5)
+    #expect(live(f) == 0)
+    run(f, 1.25)
+    #expect(live(f) > target / 3 && live(f) < target * 2 / 3)
+    #expect(f.flakes.filter { $0.kind != .dormant }.allSatisfy { $0.pos.y > 800 - 1.25 * 120 })   // they came in from above
+    run(f, 1.35)
+    #expect(live(f) == target)
+}
+
+@Test func collapseAllEmptiesPilesIntoDebrisAndBreaksBallsAndSnowman() {
+    let f = groundField(10)   // 350 bins x 10pt: more snow than the debris cap
+    f.update(windows: [win(1, 100, 300, 200, 100)])
+    f.snowman = Snowman(x: 500, surfaceID: Tuning.groundID, scale: 1, y: 100)
+    f.collapseAll(spread: 0.3)
+    #expect(f.snowman!.collapsing && f.balls.isEmpty && f.outro)
+    var peak = 0
+    for _ in 0..<8 { f.step(dt: 1 / 20); peak = max(peak, f.debris.count) }   // 0.4s
+    #expect(f.surfaces.allSatisfy { $0.pile.heights.allSatisfy { $0 == 0 } })
+    #expect(peak > 200 && peak <= Tuning.maxDebris)
+    run(f, 3)
+    #expect(f.debris.isEmpty && f.pile(id: Tuning.groundID)!.heights.allSatisfy { $0 == 0 })   // nothing lands back
+}
+
+@Test func collapseAllWithoutSpreadActsAtOnceAndIntroEndsTheOutro() {
+    let f = groundField(10)
+    f.collapseAll(spread: 0)
+    #expect(f.pile(id: Tuning.groundID)!.heights.allSatisfy { $0 == 0 } && !f.debris.isEmpty)
+    f.beginIntro(duration: 1)
+    #expect(!f.outro)
+}

@@ -267,7 +267,7 @@ extension SnowField {
         ballsVersion &+= 1
     }
 
-    private func pop(_ i: Int, _ v: SIMD2<Float>) {
+    func pop(_ i: Int, _ v: SIMD2<Float>) {
         let b = balls[i]
         if CFAbsoluteTimeGetCurrent() >= silentUntil {
             for _ in 0..<(Int(b.radius * 1.5) + 4) {

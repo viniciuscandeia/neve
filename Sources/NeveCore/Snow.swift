@@ -317,6 +317,9 @@ public final class SnowField {
     private var lastPoll: CFAbsoluteTime = 0
     var rng: SplitMix64
     var silentUntil: CFAbsoluteTime = 0   // no knock-off debris until then (Space switches)
+    private var introT: Float = 0, introDur: Float = 0   // intro: flake slots wake in order over introDur seconds (0 = no intro running)
+    public private(set) var outro = false                // outro: no new snow, flakes fade, nothing lands (see collapseAll)
+    private var outroT: Float = 0, outroSpread: Float = 0, outroRel: Float = 1   // piles released so far: 0...1 of the spread (1 = all)
 
     public var capacity: Int { flakes.count + Tuning.maxDebris }
 
@@ -359,6 +362,9 @@ public final class SnowField {
         }
     }
 
+    /// 0..<1 position of slot `i` among the active ones of its pool (the order they wake in during the intro).
+    private func introRank(_ i: Int) -> Float { i < skyCount ? Float(i) / Float(skyLimit) : Float(i - skyCount) / Float(bgLimit) }
+
     private func isActive(_ i: Int) -> Bool { i < skyCount ? i < skyLimit : i - skyCount < bgLimit }
 
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
@@ -398,6 +404,46 @@ public final class SnowField {
         balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
         if balls.count != n { ballsVersion &+= 1 }
         for i in surfaces.indices where surfaces[i].id != Tuning.groundID { surfaces[i].pile.empty() }   // the ground is not tied to a window
+        pilesDirty = true
+    }
+
+    /// Intro: every flake goes dormant, then wakes from above the top edge, one slot after another,
+    /// so the active count ramps linearly from 0 to the intensity's target over `duration` seconds of stepping. Piles are kept.
+    public func beginIntro(duration: Float) {
+        outro = false; outroRel = 1
+        snowmanCooldown = 0
+        for i in flakes.indices { flakes[i].kind = .dormant }
+        introT = 0; introDur = max(duration, 0.01)
+    }
+
+    /// Outro: spawning stops, flakes fade, balls and the snowman break, and every pile turns into heavy debris
+    /// (capped by maxDebris), released left to right with jitter over `spread` seconds of stepping (0 = at once).
+    /// Debris vanishes where it would land, so nothing rebuilds. `beginIntro` ends it.
+    public func collapseAll(spread: Float) {
+        outro = true
+        introDur = 0
+        snowmanCooldown = .infinity
+        collapse()
+        while !balls.isEmpty { pop(balls.count - 1, .zero) }
+        ballsVersion &+= 1
+        outroT = 0; outroSpread = max(spread, 0.001); outroRel = -1
+        if spread <= 0 { releasePiles(from: -1, to: 1); outroRel = 1 }
+        pilesDirty = true
+    }
+
+    /// Releases the bins whose (x-ordered, jittered) rank lies in (from, to].
+    private func releasePiles(from: Float, to: Float) {
+        for si in surfaces.indices {
+            let c0 = surfaces[si].c0, edgeY = surfaces[si].edgeY
+            for b in surfaces[si].pile.heights.indices {
+                let h = surfaces[si].pile.heights[b], col = c0 + b
+                guard h > 0 else { continue }
+                let rank = 0.7 * binCenter(col) / size.x + 0.3 * Float(UInt32(truncatingIfNeeded: col &* 2654435761) % 1000) / 1000
+                guard rank > from, rank <= to else { continue }
+                surfaces[si].pile.heights[b] = 0
+                _ = shedBin(col: col, edgeY: edgeY + surfaces[si].pile.base[b], from: 0, amount: h, velocity: .zero)
+            }
+        }
         pilesDirty = true
     }
 
@@ -701,6 +747,7 @@ public final class SnowField {
     // MARK: Physics
 
     private func tryLand(x: Float, prevY: Float, newY: Float, volume: Float) -> Bool {
+        if outro { return false }   // nothing lands, so nothing rebuilds: snow falls through
         let c = column(x)
         var best = -1
         var bestTop = -Float.infinity
@@ -722,6 +769,13 @@ public final class SnowField {
         let w = size.x
         time += dt
         stepSnowman(dt: dt)
+        if outro, outroRel < 1 {
+            outroT += dt
+            let to = min(1, outroT / outroSpread)
+            releasePiles(from: outroRel, to: to)
+            outroRel = to
+        }
+        if introDur > 0 { introT += dt }
         stepBalls(dt: dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
@@ -730,11 +784,12 @@ public final class SnowField {
             let i = n < skyEnd ? n : skyCount + n - skyEnd
             var f = flakes[i]
             if f.kind == .dormant {
-                if isActive(i), Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
+                if isActive(i), !outro, introDur > 0 ? introRank(i) < introT / introDur : Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
                 continue
             }
             let prevY = f.pos.y
-            f.fade = min(1, f.fade + dt * 2.5)   // ~0.4s fade-in
+            f.fade = outro ? max(0, f.fade - dt * 1.5) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
+            if outro, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             f.phase += f.freq * dt
             f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
@@ -761,6 +816,7 @@ public final class SnowField {
             if f.kind != .dormant { if i < skyCount { liveSky = i + 1 } else { liveBg = i - skyCount + 1 } }
         }
         skyEnd = max(skyLimit, liveSky); bgEnd = max(bgLimit, liveBg)
+        if introT >= introDur { introDur = 0 }
         var i = debris.count - 1
         while i >= 0 {
             var f = debris[i]
