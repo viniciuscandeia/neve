@@ -22,5 +22,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-codesign --force --sign - --identifier io.github.viniciuscandeia.neve "$APP"
+# Stable identity keeps privacy permissions across rebuilds (create it with scripts/make-cert.sh).
+SIGN="-"
+security find-identity -p codesigning | grep -q "Neve Local Signing" && SIGN="Neve Local Signing"
+codesign --force --sign "$SIGN" --identifier io.github.viniciuscandeia.neve "$APP"
 echo "Built $APP"
