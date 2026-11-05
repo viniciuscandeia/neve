@@ -1,13 +1,14 @@
 import NeveCore
 import AppKit
 import os
+import ServiceManagement
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var overlays: [Overlay] = []
     private var timer: Timer?
-    private var enabled = true
+    private var enabled = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true
     private var screensAsleep = false
     private var sessionInactive = false
     private let metalItem = NSMenuItem(title: "Metal indisponível", action: nil, keyEquivalent: "")
@@ -18,6 +19,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
     private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
     private var economy = UserDefaults.standard.bool(forKey: "economy")
+    private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -30,7 +32,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         let quit = NSMenuItem(title: "Sair", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         toggleItem.target = self
         clear.target = self
-        toggleItem.state = .on
+        toggleItem.state = enabled ? .on : .off
+        loginItem.target = self
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         let amount = NSMenuItem(title: "Quantidade", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for v in Intensity.allCases {
@@ -46,7 +50,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         axItem.target = self
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
-        for i in [metalItem, toggleItem, amount, economyItem, clear, axItem, .separator(), quit] { menu.addItem(i) }
+        for i in [metalItem, toggleItem, amount, economyItem, clear, axItem, loginItem, .separator(), quit] { menu.addItem(i) }
         item.menu = menu
         statusItem = item
 
@@ -171,6 +175,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func toggle() {
         enabled.toggle()
         toggleItem.state = enabled ? .on : .off
+        UserDefaults.standard.set(enabled, forKey: "enabled")
         refreshRunState()
     }
 
@@ -190,6 +195,30 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func askAccessibility() {
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        axPoll?.invalidate()
+        axTicks = 0
+        axPoll = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(axPollTick), userInfo: nil, repeats: true)
+    }
+    private var axTicks = 0
+    @objc private func axPollTick() {
+        axTicks += 1
+        guard AXIsProcessTrusted() || axTicks >= 60 else { return }
+        axPoll?.invalidate()
+        axPoll = nil
+        refreshDock()   // hides the item and starts the Dock watch
+    }
+    private var axPoll: Timer?
+
+    /// Register / unregister as a login item (needs the app bundle; /Applications is most reliable).
+    @objc private func toggleLogin() {
+        let svc = SMAppService.mainApp
+        do {
+            if svc.status == .enabled || svc.status == .requiresApproval { try svc.unregister() } else { try svc.register() }
+        } catch {
+            Logger(subsystem: "io.github.viniciuscandeia.neve", category: "login").error("login item: \(error.localizedDescription)")
+        }
+        if svc.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+        loginItem.state = svc.status == .enabled ? .on : .off
     }
 
     /// Switching Spaces hides every window at once: drop piles silently instead of an avalanche.
@@ -214,6 +243,11 @@ final class AppController: NSObject, NSApplicationDelegate {
 if CommandLine.arguments.contains("--selftest") {
     runSelfTest()
     exit(0)
+}
+
+if let id = Bundle.main.bundleIdentifier,
+   NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0 != .current }) {
+    exit(0)   // already running
 }
 
 let app = NSApplication.shared

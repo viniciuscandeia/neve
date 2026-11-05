@@ -57,6 +57,23 @@ Tests/run.sh
 
 Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; o script `Tests/run.sh` cuida de rodá-los.
 
+## Instalação
+
+1. Gere o app: `scripts/make-cert.sh` (uma vez) e `scripts/make-app.sh`.
+2. Mova `build/Neve.app` para `/Applications` (necessário para o item de login funcionar de forma confiável) e abra.
+3. No menu, marque **Abrir no login** para iniciar o Neve junto com o Mac. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
+
+O Neve permite apenas uma instância: abrir de novo não faz nada. A opção **Nevar** é lembrada entre execuções.
+
+### Abrir em outro Mac
+
+O app não é notarizado (não há Apple Developer ID), então o Gatekeeper o bloqueia ao ser copiado para outro Mac. Para abrir:
+
+- clique com o botão direito no app e escolha **Abrir**; ou, no macOS 15 ou superior, vá em Ajustes do Sistema > Privacidade e Segurança > **Abrir Mesmo Assim**; ou
+- rode `xattr -dr com.apple.quarantine /Applications/Neve.app`.
+
+Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
+
 ## Como funciona
 
 - Uma janela de overlay transparente cobre a tela, acima das demais e ignorando eventos do mouse.
