@@ -133,6 +133,8 @@ Tests/run.sh             # testes (Swift Testing)
 
 `NEVE_SCENARIO=heavy` (variável de ambiente) monta um cenário pesado e determinístico (Nevasca, pilhas cheias, bonecos brigando) a cada 20 s, para comparar desempenho.
 
+`scripts/perf.sh [heavy|media|max] [segundos=60] [--drag] [--runs N=3] [--bin CAMINHO]` mede CPU e wakeups ociosos do Neve e a CPU do WindowServer (via `top`) com janelas do Finder abertas (`max` = janela maximizada; `--drag` arrasta uma janela). Ele fecha o Neve em execução, ajusta e restaura os defaults, e reabre o app ao terminar; com `NEVE_PERF=1` (sempre ligado no script) também mostra o log de fases.
+
 Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; `Tests/run.sh` carrega o bundle num runner mínimo e os roda.
 
 Para demonstrações, `NEVE_SNOWMAN_FAST=1` faz o boneco se montar 20 vezes mais rápido (e sobre uma pilha mais rasa):
