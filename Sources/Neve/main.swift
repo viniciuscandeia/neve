@@ -16,6 +16,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let dock = DockWatcher()
     private var slowTimer: Timer?
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
+    private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
+    private var economy = UserDefaults.standard.bool(forKey: "economy")
     private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -39,10 +41,12 @@ final class AppController: NSObject, NSApplicationDelegate {
             sub.addItem(m)
         }
         amount.submenu = sub
+        economyItem.target = self
+        economyItem.state = economy ? .on : .off
         axItem.target = self
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
-        for i in [metalItem, toggleItem, amount, clear, axItem, .separator(), quit] { menu.addItem(i) }
+        for i in [metalItem, toggleItem, amount, economyItem, clear, axItem, .separator(), quit] { menu.addItem(i) }
         item.menu = menu
         statusItem = item
 
@@ -63,11 +67,27 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func rebuildOverlays() {
         for o in overlays { o.teardown() }
-        overlays = NSScreen.screens.compactMap { Overlay(screen: $0) }
-        if overlays.count < NSScreen.screens.count && !loggedMetal {
+        overlays = wantedScreens.compactMap { Overlay(screen: $0) }
+        if overlays.count < wantedScreens.count && !loggedMetal {
             loggedMetal = true
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
         }
+        metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
+        refreshRunState()
+    }
+
+    /// Economy mode: only the screen with the menu bar gets an overlay; the others are torn down.
+    private var wantedScreens: [NSScreen] { economy ? Array(NSScreen.screens.prefix(1)) : NSScreen.screens }
+
+    @objc private func toggleEconomy() {
+        economy.toggle()
+        UserDefaults.standard.set(economy, forKey: "economy")
+        economyItem.state = economy ? .on : .off
+        let wanted = wantedScreens
+        overlays.filter { o in !wanted.contains(o.screen) }.forEach { $0.teardown() }
+        overlays.removeAll { o in !wanted.contains(o.screen) }   // main-screen piles are kept
+        for o in overlays { o.setEconomy(economy) }
+        overlays += wanted.filter { s in !overlays.contains { $0.screen == s } }.compactMap { Overlay(screen: $0) }
         metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
         refreshRunState()
     }

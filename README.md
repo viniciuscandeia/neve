@@ -15,6 +15,7 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
 - Ícone de floco de neve na barra de menus com:
   - **Nevar**: liga e desliga a neve.
   - **Quantidade**: Leve, Média, Forte ou Nevasca (a Nevasca adiciona um vento que muda de direção continuamente).
+  - **Modo econômico**: 30 fps e neve só no monitor principal (o da barra de menus), para reduzir o custo de composição do sistema. A escolha é lembrada.
   - **Limpar neve**: remove a neve acumulada.
   - **Sair**.
 - Não exige Gravação de Tela: apenas os limites (bounds) das janelas são lidos.
@@ -47,6 +48,14 @@ Autoteste rápido:
 ```sh
 .build/release/Neve --selftest
 ```
+
+Testes unitários (Swift Testing):
+
+```sh
+Tests/run.sh
+```
+
+Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; o script `Tests/run.sh` cuida de rodá-los.
 
 ## Como funciona
 

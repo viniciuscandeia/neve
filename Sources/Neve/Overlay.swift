@@ -57,7 +57,7 @@ private struct Gpu {
 final class Overlay: NSObject {
     private static let sharedGpu = Gpu()
 
-    private let screen: NSScreen
+    let screen: NSScreen
     private let field: SnowField
     private let gpu: Gpu
     private let window: NSWindow
@@ -73,6 +73,7 @@ final class Overlay: NSObject {
     private var run = false, fullscreen = false, hot = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
     private var occluded = false
     private var lowPower = false
+    private var economy = UserDefaults.standard.bool(forKey: "economy")
     private var lastTimestamp: CFTimeInterval = 0
     private var lastPathTime: CFTimeInterval = 0
     private let groundY: CGFloat
@@ -161,8 +162,12 @@ final class Overlay: NSObject {
         field.setLowPower(on)
         link?.preferredFrameRateRange = frameRange
     }
+    func setEconomy(_ on: Bool) {
+        economy = on
+        link?.preferredFrameRateRange = frameRange
+    }
     private var frameRange: CAFrameRateRange {
-        lowPower ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        lowPower || economy ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
