@@ -343,10 +343,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
         guard window.isVisible else { return }
+        var t0 = Perf.now()
         let now = time, resumed = lastTimestamp == 0
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
         if !still { field.step(dt: Float(dt)) }
+        Perf.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
         let cursor = NSEvent.mouseLocation
         let option = NSEvent.modifierFlags.contains(.option)
@@ -363,6 +365,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let moved = lastCursor.map { SIMD2(Float(cursor.x - $0.x), Float(cursor.y - $0.y)) / Float(dt) } ?? .zero
         field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
         lastCursor = cursor
+        Perf.add(.input, t0); t0 = Perf.now()
         let drag = field.draggingID
         if field.pilesDirty, forcePath || now - lastPathTime >= 1.0 / 15 {
             lastPathTime = now
@@ -387,10 +390,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             dragPile.setTransform(t)
             CATransaction.commit()
         }
+        Perf.add(.pile, t0); t0 = Perf.now()
         snowmanLayers.update(field, reduceMotion: reduceMotion)
         ballLayers.update(field, reduceMotion: reduceMotion)
         fightLayers.update(field)
-        render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
+        Perf.add(.actors, t0)
+        render(drawable)
+        Perf.frame(field)   // after the drag transform: a skipped Metal frame never starves the pile
     }
 
     private func mouseDown(_ e: NSEvent) {
@@ -419,8 +425,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         let buffer = buffers[bufferIndex]
         bufferIndex = (bufferIndex + 1) % buffers.count
+        var t0 = Perf.now()
         let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
 
+        Perf.add(.write, t0); t0 = Perf.now()
+        Perf.setInstances(count)
         pass.colorAttachments[0].texture = drawable.texture
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
@@ -433,7 +442,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         cmd.present(drawable)
         let sem = inFlight
-        cmd.addCompletedHandler { _ in sem.signal() }
+        cmd.addCompletedHandler { c in Perf.gpuDone(c); sem.signal() }
         cmd.commit()
+        Perf.add(.encode, t0)
     }
 }

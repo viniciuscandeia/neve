@@ -345,6 +345,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func pollWindows() {
+        let t0 = Perf.now()
+        defer { Perf.add(.poll, t0) }
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
         let covering = windows.map(\.frame)
