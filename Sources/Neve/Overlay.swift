@@ -66,7 +66,16 @@ private struct Gpu {
     }
 }
 
-/// Click-through snow window covering one screen.
+/// Content view that hands mouse events to the overlay (only delivered while the window is interactive: ⌥ over snow).
+final class InteractView: NSView {
+    var onDown: ((NSEvent) -> Void)?, onDrag: ((NSEvent) -> Void)?, onUp: ((NSEvent) -> Void)?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onDown?(event) }
+    override func mouseDragged(with event: NSEvent) { onDrag?(event) }
+    override func mouseUp(with event: NSEvent) { onUp?(event) }
+}
+
+/// Click-through snow window covering one screen (interactive only while ⌥ is held over snow or a snowball).
 @MainActor
 final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private static let sharedGpu = Gpu()
@@ -75,7 +84,10 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let field: SnowField
     private let gpu: Gpu
     private let window: NSWindow
-    private let view = NSView()
+    private let view = InteractView()
+    private let ballLayers = BallLayers()
+    private var held: Int?                // snowball being dragged
+    private var lastDragTime: CFTimeInterval = 0
     private let pileLayer = CAShapeLayer()
     private let highlightLayer = CAShapeLayer()
     private let dragLayer = CAShapeLayer()        // the pile of a window being dragged: slid with the mouse between polls
@@ -144,8 +156,15 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         self.gpu = gpu
         self.field = field
         self.buffers = buffers
-        window = NSWindow(contentRect: f, styleMask: .borderless, backing: .buffered, defer: false)
+        // A non-activating panel: clicking a snowball must not pull Neve (and its menu bar) in front of the user's app.
+        let panel = NSPanel(contentRect: f, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        window = panel
         super.init()
+        view.onDown = { [weak self] e in MainActor.assumeIsolated { self?.mouseDown(e) } }
+        view.onDrag = { [weak self] e in MainActor.assumeIsolated { self?.mouseDragged(e) } }
+        view.onUp = { [weak self] e in MainActor.assumeIsolated { self?.mouseUp(throwing: e.timestamp - (self?.lastDragTime ?? 0) < 0.08) } }
 
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -188,6 +207,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
 
         root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
+        root.addSublayer(ballLayers.root)
         field.snowmanEnabled = UserDefaults.standard.object(forKey: "snowman") as? Bool ?? true
 
         let scale = screen.backingScaleFactor
@@ -238,6 +258,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let hc = ws.accessibilityDisplayShouldIncreaseContrast
         contrast = hc ? 1 : 0
         snowmanLayers.setContrast(hc)
+        ballLayers.setContrast(hc)
         pileLayer.shadowOpacity = hc ? 0.8 : 0.45
         pileLayer.shadowColor = hc ? CGColor(red: 0.15, green: 0.28, blue: 0.5, alpha: 1) : CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
         dragLayer.shadowOpacity = pileLayer.shadowOpacity
@@ -344,8 +365,14 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if !still { field.step(dt: Float(dt)) }
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
         let cursor = NSEvent.mouseLocation
-        if !resumed, let prev = lastCursor, prev != cursor, NSEvent.pressedMouseButtons & 1 == 0 {
-            let o = frame.origin
+        let option = NSEvent.modifierFlags.contains(.option)
+        let o = frame.origin
+        let here = CGPoint(x: cursor.x - o.x, y: cursor.y - o.y)
+        if held != nil, !option { mouseUp() }   // ⌥ released mid-drag: let go
+        // Interactive only where there is snow or a snowball (and ⌥ is down): everywhere else clicks pass through.
+        let interactive = held != nil || (option && frame.contains(cursor) && field.hitTest(point: here))
+        if window.ignoresMouseEvents == interactive { window.ignoresMouseEvents = !interactive }
+        if !resumed, let prev = lastCursor, prev != cursor, NSEvent.pressedMouseButtons & 1 == 0, !option, held == nil {
             field.sweep(from: CGPoint(x: prev.x - o.x, y: prev.y - o.y), to: CGPoint(x: cursor.x - o.x, y: cursor.y - o.y), dt: Float(dt))
         }
         let local = SIMD2(Float(cursor.x - frame.origin.x), Float(cursor.y - frame.origin.y))
@@ -385,7 +412,26 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             CATransaction.commit()
         }
         snowmanLayers.update(field, reduceMotion: reduceMotion)
+        ballLayers.update(field, reduceMotion: reduceMotion)
         render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
+    }
+
+    private func mouseDown(_ e: NSEvent) {
+        guard e.modifierFlags.contains(.option) || NSEvent.modifierFlags.contains(.option) else { return }
+        held = field.pickSnowball(at: e.locationInWindow) ?? field.scoop(at: e.locationInWindow)
+        lastDragTime = e.timestamp
+    }
+
+    private func mouseDragged(_ e: NSEvent) {
+        guard let id = held else { return }
+        field.drag(id, to: e.locationInWindow, dt: Float(max(e.timestamp - lastDragTime, 1.0 / 240)))
+        lastDragTime = e.timestamp
+    }
+
+    private func mouseUp(throwing: Bool = false) {   // a pause before letting go is not a throw
+        guard let id = held else { return }
+        held = nil
+        field.drop(id, throwing: throwing)
     }
 
     private func render(_ drawable: CAMetalDrawable) {

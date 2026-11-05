@@ -111,6 +111,23 @@ private func built() -> SnowField {
     #expect(f.snowman!.collapsing)
 }
 
+@Test func siteKeepsClearOfTheDockEndsAndScreenEdges() {
+    let f = makeField()
+    f.update(windows: [win(0, 300, 10, 600, 60)])   // floating Dock bar x 300...900
+    level(f, Tuning.snowmanDepth + 4, 0...998)
+    run(f, 2)
+    let x = f.snowman!.x, half = Tuning.snowmanStretch * f.snowmanScale / 2
+    for edge in [Float(0), 300, 900, 1000] { #expect(abs(x - edge) >= Tuning.snowmanClearance + half - 3) }
+}
+
+@Test func waitsWhenNoStretchHasClearance() {
+    let f = makeField()
+    f.update(windows: [win(1, 0, 0, 300, 60), win(2, 430, 0, 570, 60)])   // 130pt of ground left: 105pt + 2x20 does not fit
+    level(f, Tuning.snowmanDepth + 4, 300...428)
+    run(f, 5)
+    #expect(f.snowman == nil)
+}
+
 @Test func disabledSnowmanNeverBuilds() {
     let f = groundField(Tuning.snowmanDepth + 4)
     f.snowmanEnabled = false

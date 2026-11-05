@@ -25,8 +25,8 @@ public struct Snowman {
 }
 
 extension SnowField {
-    /// Size factor: smaller screens get a smaller snowman.
-    var snowmanScale: Float { min(1, max(0.6, size.x / 1000)) }
+    /// Size factor on top of the 51pt design: 1.5 (~76pt tall) from 1000pt-wide screens up, down to 1 on small ones.
+    var snowmanScale: Float { min(1.5, max(1, size.x / 1000 * 1.5)) }
 
     /// Snowfall time advances building; a collapse starts the cooldown. Runs from `step`.
     func stepSnowman(dt: Float) {
@@ -98,6 +98,7 @@ extension SnowField {
     private func findSite() -> (Int, Float, Float)? {
         let w = Int(Tuning.snowmanStretch * snowmanScale / Tuning.binWidth)
         let need = Tuning.snowmanDepth * Float(w), room = (Snowman.height + 20) * snowmanScale
+        let clear = Int((Tuning.snowmanClearance / Tuning.binWidth).rounded(.up))
         for id in [Tuning.groundID, 0] {
             guard let si = surfaces.firstIndex(where: { $0.id == id }) else { continue }
             let p = surfaces[si].pile, n = p.heights.count
@@ -107,15 +108,16 @@ extension SnowField {
                 guard p.visible[b] else { b += 1; continue }
                 var e = b
                 while e < n && p.visible[e] { e += 1 }
-                if e - b >= w {
+                let (rb, re) = (b + clear, e - clear)   // keep clear of the Dock ends, covering windows and screen edges: wait rather than squeeze
+                if re - rb >= w {
                     seen = true
                     var sum: Float = 0, tight = 0, top: Float = 0, at = -1
-                    for i in b..<e {
+                    for i in rb..<re {
                         sum += p.heights[i]; if p.cap[i] < room { tight += 1 }
-                        if i - b >= w { sum -= p.heights[i - w]; if p.cap[i - w] < room { tight -= 1 } }
-                        if i - b >= w - 1, tight == 0, sum >= need, sum > top { top = sum; at = i - w + 1 }
+                        if i - rb >= w { sum -= p.heights[i - w]; if p.cap[i - w] < room { tight -= 1 } }
+                        if i - rb >= w - 1, tight == 0, sum >= need, sum > top { top = sum; at = i - w + 1 }
                     }
-                    if at >= 0, e - b > bestRun { bestRun = e - b; bestAt = at }
+                    if at >= 0, re - rb > bestRun { bestRun = re - rb; bestAt = at }
                 }
                 b = e
             }

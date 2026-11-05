@@ -26,6 +26,11 @@ public enum Tuning {
     static let snowmanSpeed: Float = snowmanFast ? 20 : 1
     static let snowmanDepth: Float = snowmanFast ? 4 : 14   // average pile height over the stretch that triggers a build
     static let snowmanStretch: Float = 70                   // pt of visible ground the snowman needs
+    static let snowmanClearance: Float = 20                 // pt kept free to the Dock ends, covering windows and screen edges
+    static let ballStart: Float = 5                         // scooped snowball radius (10pt across)
+    static let ballMax: Float = 20                          // rolled snowball radius cap (40pt across)
+    static let ballGrowth: Float = 0.1                      // radius per pt rolled
+    public static let maxBalls = 6
     static let snowmanCooldown: Float = 120                 // s of snowfall after a collapse
     static let pointerRadius: Float = 60     // falling snow avoids the cursor within this distance
     static let pointerPush: Float = 450      // pt/s radial speed at point blank (scaled by (1 - d/R)^2)
@@ -272,8 +277,8 @@ public final class SnowField {
     public private(set) var flakes: [Flake] = []
     public internal(set) var debris: [Flake] = []
     var surfaces: [Surface] = []
-    private var offsets: [Int32]       // CSR: per column range into entries
-    private var entries: [Entry] = []
+    var offsets: [Int32]       // CSR: per column range into entries
+    var entries: [Entry] = []
     private var lastWindows: [WindowInfo] = []
     /// Window moved (same size) in the last poll: the overlay may slide its pile layer with the mouse until the next poll.
     public private(set) var draggingID: Int?
@@ -296,6 +301,10 @@ public final class SnowField {
     public var snowmanEnabled = true { didSet { if !snowmanEnabled { snowman = nil } } }
     var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next build may start
     var snowmanScan: Float = 0
+    /// Snowballs the user rolled and stacked; see Snowball.swift. `ballsVersion` changes whenever one moves / grows / fades.
+    public internal(set) var balls: [Snowball] = []
+    public internal(set) var ballsVersion = 0
+    var nextBallID = 1
     private var pointer: SIMD2<Float>?
     private var pointerVel: SIMD2<Float> = .zero
     private var pollDt: Float = 0.1        // seconds between the last two window polls
@@ -379,6 +388,9 @@ public final class SnowField {
     /// Space switch: windows vanish all at once. Drop piles without debris (and mute knock-offs briefly).
     public func dropPiles() {
         silentUntil = CFAbsoluteTimeGetCurrent() + 1.5
+        let n = balls.count
+        balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
+        if balls.count != n { ballsVersion &+= 1 }
         for i in surfaces.indices where surfaces[i].id != Tuning.groundID {   // the ground is not tied to a window
             for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
         }
@@ -387,6 +399,7 @@ public final class SnowField {
 
     public func clear() {
         snowman = nil
+        if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
         for i in surfaces.indices {
             for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
         }
@@ -478,7 +491,8 @@ public final class SnowField {
         rects.reserveCapacity(windows.count)
         for w in windows { rects.append(w.frame.offsetBy(dx: -ox, dy: -oy)) }
 
-        var old = surfaces
+        let before = surfaces
+        var old = before
         var built: [Surface] = []
         var spawned = 0
         moved = nil
@@ -494,6 +508,7 @@ public final class SnowField {
         draggingID = moved
         surfaces = built
         buildColumns()
+        transportBalls(before: before)
         pilesDirty = true
         return spawned
     }
@@ -626,6 +641,7 @@ public final class SnowField {
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
         collapseIfSwept(ax, ay, Float(b.x), Float(b.y), r, v)
+        breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         defer { for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let s = surfaces[si]
@@ -702,6 +718,7 @@ public final class SnowField {
         let w = size.x
         time += dt
         stepSnowman(dt: dt)
+        stepBalls(dt: dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
