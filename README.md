@@ -1,78 +1,91 @@
-# Neve ❄
+<p align="center">
+  <img src="docs/banner.svg" alt="Neve: um inverno aconchegante na sua tela" width="720">
+</p>
 
-Neve faz nevar sobre a tela do seu Mac, acumulando nas janelas, no Dock e no pé da tela.
+<h1 align="center">❄️ Neve</h1>
 
-![Neve: neve caindo e acumulando sobre janelas e o Dock](docs/demo.gif)
+<p align="center"><b>Faz nevar sobre o seu Mac. Pegue um chocolate quente ☕ e veja a neve se acumular.</b></p>
 
-App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, sem dependências externas.
+<p align="center">
+  <img src="docs/demo.gif" alt="Neve: neve caindo e acumulando sobre janelas e o Dock">
+</p>
 
-## Recursos
+App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Metal, sem dependências externas. A neve cai por cima de tudo, se acumula nas janelas, no Dock e no pé da tela, e nunca bloqueia os seus cliques.
 
-- A neve cai sobre toda a tela, por cima de tudo, e nunca bloqueia cliques (overlay click-through).
-- Os flocos se acumulam na borda superior das janelas e no Dock.
-- A neve também acumula no pé da tela, onde nada a cobre (janelas e o Dock escondem a parte coberta).
-- A neve escorrega pelos cantos arredondados das janelas.
-- Passe o cursor sobre a neve acumulada para derrubá-la.
-- Ao arrastar, minimizar ou fechar uma janela, a neve acumulada nela cai.
-- Ícone de floco de neve na barra de menus (fica esmaecido quando a neve está pausada ou desligada). O menu nativo mostra:
-  - Linha de status no topo, atualizada ao abrir o menu (ex.: "Nevando · Média", "Pausado — app em tela cheia", "Desligado").
-  - **Nevar** (⌘N): liga e desliga a neve.
-  - **Quantidade**: Leve, Média, Forte ou Nevasca (a Nevasca adiciona um vento que muda de direção continuamente).
-  - **Opções** (todas lembradas entre execuções):
-    - **Nevar em**: Todas as telas, Só na tela principal ou uma tela específica (listada pelo nome). Se a tela escolhida for desconectada, a neve volta a cair em todas.
-    - **Modo econômico**: 30 fps e neve só no monitor principal, o da barra de menus (a linha de status avisa).
-    - **Modo ambiente**: desativa a pausa após 5 minutos sem uso, para usar o Neve como decoração passiva.
-    - **Atrás das janelas**: a neve cai só sobre o papel de parede, atrás das janelas dos apps e dos ícones da mesa; nesse modo não há acúmulo em janelas nem no Dock, só no pé da tela.
-    - **Neve parada (movimento reduzido)**: aparece só quando Reduzir Movimento está ativo no sistema; mostra a neve já acumulada, sem flocos caindo.
-    - **Boneco de neve**: quando o pé da tela acumula neve suficiente num trecho livre (a pelo menos 20 pt das pontas do Dock, das bordas da tela e de janelas; se não houver espaço, ele espera), um boneco de neve de uns 75 pt se monta sozinho (base, corpo, cabeça, olhos e botões de carvão, nariz de cenoura, braços e cachecol, em cerca de 1 a 1,5 minuto de nevada). Se o cursor passar por ele, ou a neve sob ele for removida (inclusive por "Limpar neve"), ele desmorona em pedaços de neve e, depois de uns 2 minutos, outro pode começar a ser montado. No máximo um por tela; ligado por padrão. Para demonstração, `NEVE_SNOWMAN_FAST=1` acelera a construção 20 vezes.
-    - **Monte você mesmo**: segure ⌥ (Option) e clique na neve acumulada para pegar uma bolinha; arraste-a ao longo da pilha para rolá-la (ela gira, cresce até uns 40 pt e leva a neve que encontra pelo caminho). Ao soltar, a bola cai e fica sobre a janela, o Dock ou o chão; uma bola menor, solta bem no centro de outra maior, fica empilhada, senão rola para o lado. Três bolas em ordem decrescente viram um boneco de neve (olhos, botões, nariz, braços e cachecol aparecem); duas ficam como bolas. Bolas sobre uma janela acompanham a janela e caem se ela se mover rápido, fechar ou minimizar. No máximo 6 bolas soltas por tela (a mais antiga derrete). Passar o cursor sem ⌥ derruba bolas e bonecos. Sem ⌥ nada muda: o Neve continua deixando os cliques passarem.
-    - **Bonecos andam e brigam**: todo boneco completo (o que se monta sozinho e os que você faz) passeia devagar pela superfície onde está (topo de janela, Dock ou pé da tela), com pulinhos e um leve balanço, para antes das pontas, dos cantos arredondados e de trechos cobertos por outra janela, e dá meia-volta; de vez em quando para um pouco. Acompanha a janela quando ela se move. Com "Reduzir movimento" ligado, ficam parados. Dois bonecos completos na mesma superfície, a até 250 pt um do outro, começam uma guerra de bolas de neve: param, ficam de frente e se alternam arremessando bolinhas em arco (quanto mais longe, menor a chance de acertar; acerto vira um espirro de neve e o alvo balança; erro passa direto). Quem leva 3 acertos na cabeça perde a cabeça: ela cai como uma bola solta (pegue-a com ⌥ e arraste) e o vencedor comemora com pulinhos por uns 2 s e volta a passear. O boneco sem cabeça fica parado e não briga; solte uma bola do tamanho do corpo do meio (ou menor) bem no centro dele para recolocar a cabeça: acessórios voltam, ele volta a andar e pode haver revanche. Bonecos em superfícies diferentes nunca brigam; se a distância passar de 250 pt (janela redimensionada) ou um deles cair, a briga termina sem vencedor. No máximo 2 brigas por tela. Opção "Bonecos andam e brigam" no menu (ligada por padrão).
-    - **Mostrar em capturas**, **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
-  - **Limpar neve** (⌘K): remove a neve acumulada, bolas e bonecos.
-  - **Sair** (⌘Q).
-- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative 'Mostrar em capturas' para incluí-la.
-- Não exige Gravação de Tela: apenas os limites (bounds) das janelas são lidos.
-- A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (apenas Dock na parte inferior da tela). Sem ela, tudo o mais funciona. Use "Permitir neve no Dock…" no menu.
-- A animação pausa sozinha sob apps em tela cheia e com o Mac em estado térmico alto; no Modo de Baixo Consumo roda a 30 fps.
+## 🎿 Como brincar
 
-## Requisitos
+1. **Deixe nevar.** Em alguns instantes a neve forma pilhas no topo das janelas, no Dock e no pé da tela.
+2. **Arraste uma janela devagar.** A neve viaja junto com ela. **Sacuda ou arraste rápido** e tudo cai.
+3. **Minimize, feche ou esconda** uma janela e veja a neve despencar.
+4. **Varra com o cursor.** Ele apaga as pilhas e faz os flocos rodopiarem para longe.
+5. **Segure ⌥ (Option)** sobre a neve e arraste: você pega uma bolinha, rola e ela cresce. Solte e empilhe três bolas em ordem decrescente: ☃️ um boneco de neve!
+6. **Monte dois bonecos** na mesma superfície, a até 250 pt um do outro, e assista à guerra de bolas de neve.
+7. **Quem leva 3 acertos na cabeça perde a cabeça.** Pegue-a com ⌥ e arraste-a de volta para o corpo; ele volta a andar (e a revanche pode rolar).
+8. **Escolha Nevasca** em Quantidade, com vento que muda de direção e empurra os bonecos. 🌨️
 
-- macOS 14 ou superior
-- Toolchain Swift 6. As Command Line Tools bastam; o Xcode não é necessário.
+## ☃️ Recursos
 
-## Como rodar
+| | |
+|---|---|
+| ❄️ **Neve em todo lugar** | Cai sobre a tela inteira, em overlay click-through. Pilhas no topo das janelas (precisam de espaço livre abaixo da barra de menus), no Dock (opcional) e no pé da tela. |
+| 🪟 **Janelas vivas** | Cantos arredondados fazem a neve escorregar; o contorno é natural e irregular; a neve acompanha janelas arrastadas devagar e cai se o arrasto for rápido ou a janela for minimizada, fechada ou escondida. Pedaços pesados caem de uma vez. |
+| 🖱️ **Cursor** | Passar o cursor derruba a neve acumulada e afasta os flocos em redemoinho. |
+| 🌨️ **Intensidade** | Leve, Média, Forte e Nevasca (vento em mudança constante). |
+| ☃️ **Boneco automático** | Quando o pé da tela junta neve suficiente, um boneco se monta sozinho: base, corpo, cabeça, olhos e botões de carvão, nariz de cenoura, braços e 🧣 cachecol. |
+| ⌥ **Bolas de neve** | Pegue, role, solte e empilhe. Três bolas em ordem decrescente viram um boneco. |
+| 🛷 **Bonecos passeiam** | Andam sobre janelas, Dock e pé da tela, com pulinhos e balanço, e brigam com bolas de neve (a cabeça cai, o vencedor comemora). O cachecol esvoaça. |
 
-```sh
-swift build -c release
-.build/release/Neve
-```
+<details>
+<summary>Detalhes dos bonecos e das bolas</summary>
 
-Para gerar um app (`build/Neve.app`) cujas permissões sobrevivem a recompilações, crie uma vez uma identidade de assinatura local e depois empacote:
+- **Boneco automático:** precisa de um trecho livre no pé da tela, a pelo menos 20 pt das pontas do Dock, das bordas da tela e de janelas (se não houver espaço, ele espera). Leva cerca de 1 a 1,5 minuto de nevada. Se o cursor passar por ele ou a neve sob ele for removida (inclusive por Limpar neve), ele desmorona e, depois de uns 2 minutos, outro pode começar. No máximo um por tela.
+- **Bolas (⌥):** a bola cresce até uns 40 pt levando a neve do caminho. Ao soltar, ela cai e fica sobre a janela, o Dock ou o chão; uma bola menor solta bem no centro de outra maior fica empilhada, senão rola para o lado. Bolas sobre uma janela acompanham a janela. No máximo 6 bolas soltas por tela (a mais antiga derrete). Passar o cursor sem ⌥ derruba bolas e bonecos. Sem ⌥, os cliques continuam passando.
+- **Passeio:** todo boneco completo anda pela superfície onde está, para antes das pontas, dos cantos arredondados e de trechos cobertos por outra janela, dá meia-volta e de vez em quando para um pouco. Com Reduzir Movimento ligado, ficam parados.
+- **Briga:** dois bonecos completos na mesma superfície, a até 250 pt, param de frente e alternam arremessos em arco (quanto mais longe, menor a chance de acertar). Acerto vira um espirro de neve. Se a distância passar de 250 pt ou um deles cair, a briga termina sem vencedor. No máximo 2 brigas por tela. Boneco sem cabeça fica parado: solte uma bola do tamanho do corpo do meio (ou menor) bem no centro dele para recolocar a cabeça.
+- Os detalhes da briga (cachecol, comemoração) ainda estão em evolução.
+
+</details>
+
+## 🧣 Menu
+
+O ícone de floco ❄️ fica na barra de menus (esmaecido quando a neve está pausada ou desligada). Todas as opções são lembradas entre execuções.
+
+| Item | O que faz |
+|---|---|
+| Linha de status | Ex.: "Nevando · Média", "Pausado — app em tela cheia", "Pausado — inativo", "Desligado" |
+| **Nevar** (⌘N) | Liga e desliga a neve |
+| **Quantidade** | Leve, Média, Forte, Nevasca |
+| **Nevar em** | Todas as telas, Só na tela principal ou uma tela específica pelo nome (se ela for desconectada, volta a nevar em todas) |
+| **Modo econômico** | 30 fps e neve só na tela principal |
+| **Modo ambiente** | Não pausa após 5 minutos sem uso, para usar como decoração |
+| **Atrás das janelas** | Neve só sobre o papel de parede; acumula apenas no pé da tela |
+| **Neve parada (movimento reduzido)** | Aparece com Reduzir Movimento ativo no sistema; mostra a neve acumulada, sem flocos caindo |
+| **Boneco de neve** | Liga o boneco que se monta sozinho |
+| **Bonecos andam e brigam** | Liga passeios e guerras de bolas de neve |
+| **Mostrar em capturas** | Inclui a neve em capturas e compartilhamentos |
+| **Abrir no login** | Inicia o Neve com o Mac |
+| **Permitir neve no Dock…** | Só aparece quando falta a permissão de Acessibilidade |
+| **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
+| **Sair** (⌘Q) | Encerra o Neve |
+
+## 🔥 Instalação
+
+Requisitos: macOS 14 ou superior e toolchain Swift 6 (as Command Line Tools bastam; o Xcode não é necessário).
 
 ```sh
 scripts/make-cert.sh   # uma vez; pede a senha do login para confiar no certificado
-scripts/make-app.sh
+scripts/make-app.sh    # gera build/Neve.app
 ```
 
-O macOS associa a permissão de Acessibilidade à assinatura do app. Com a assinatura ad-hoc (padrão), cada build muda a assinatura e a permissão é perdida; com a identidade estável "Neve Local Signing" ela é mantida. Se a identidade não existir, `make-app.sh` avisa e assina ad-hoc.
+1. Mova `build/Neve.app` para `/Applications` (necessário para o item de login funcionar de forma confiável) e abra.
+2. No menu, marque **Abrir no login**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
 
-Testes unitários (Swift Testing):
+O Neve permite uma única instância. A permissão de Acessibilidade fica associada à assinatura do app: com a identidade estável "Neve Local Signing" ela sobrevive a recompilações; com a assinatura ad-hoc (usada se a identidade não existir, e `make-app.sh` avisa) ela se perde a cada build.
 
-```sh
-Tests/run.sh
-```
+Para só experimentar, sem empacotar: `swift build -c release && .build/release/Neve`.
 
-Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; o script `Tests/run.sh` cuida de rodá-los.
-
-## Instalação
-
-1. Gere o app: `scripts/make-cert.sh` (uma vez) e `scripts/make-app.sh`.
-2. Mova `build/Neve.app` para `/Applications` (necessário para o item de login funcionar de forma confiável) e abra.
-3. No menu, marque **Abrir no login** para iniciar o Neve junto com o Mac. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
-
-O Neve permite apenas uma instância: abrir de novo não faz nada. A opção **Nevar** é lembrada entre execuções.
-
-### Abrir em outro Mac
+<details>
+<summary>Abrir em outro Mac (Gatekeeper)</summary>
 
 O app não é notarizado (não há Apple Developer ID), então o Gatekeeper o bloqueia ao ser copiado para outro Mac. Para abrir:
 
@@ -81,24 +94,51 @@ O app não é notarizado (não há Apple Developer ID), então o Gatekeeper o bl
 
 Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 
-## Como funciona
+</details>
 
-- Uma janela de overlay transparente (uma por tela) cobre a tela, acima das demais e ignorando eventos do mouse.
-- Com a permissão de Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; os eventos só marcam "mudou" e, no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega a ordem e os limites das janelas (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll de segurança a cada 2 s cobre eventos perdidos e mudanças da área visível (Dock ou barra de menus recolhendo). Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s (10 vezes por segundo enquanto o botão do mouse está apertado, para acompanhar arrastos).
-- As janelas viram um mapa de superfícies por coluna de pixels: para cada coluna, a altura da superfície mais alta em que um floco pode pousar. O Dock (lido via Acessibilidade) e o pé da tela também são superfícies; o pé da tela fica atrás de tudo, então janelas e Dock escondem a parte coberta, que guarda a neve até aparecer de novo.
-- Ao pousar, o floco alimenta uma pilha de neve naquela coluna. As pilhas escorregam nos cantos arredondados e desabam quando a janela se move rápido, é minimizada ou fechada.
-- Quando o pé da tela acumula neve suficiente num trecho livre, um boneco de neve se monta sozinho, etapa por etapa. Ele desmorona se o cursor passar por ele ou se a neve sob ele sumir.
-- Com ⌥ pressionado, o overlay deixa de ser click-through só sobre a neve ou uma bola: dá para pegar uma bolinha, rolá-la (ela cresce levando neve da pilha), soltá-la e empilhar até três bolas num boneco.
+## ☕ Desempenho e energia
+
+- Renderização com `CAMetalDisplayLink` e Metal instanciado: todos os flocos em uma única draw call.
+- Física sobre um pool fixo de structs, sem alocação por frame; as pilhas só são redesenhadas quando mudam.
+- Acompanhamento de janelas guiado por eventos de Acessibilidade, com poll leve apenas como rede de segurança.
+- A animação **pausa** sob apps em tela cheia, com o Mac em estado térmico alto, após 5 minutos sem uso (a menos que o Modo ambiente esteja ligado) e com as telas em repouso ou a sessão bloqueada.
+- Modo de Baixo Consumo do sistema: 30 fps e menos flocos. Modo econômico: 30 fps e só a tela principal.
+
+## 🔒 Privacidade
+
+- Apenas os limites (bounds) das janelas são lidos. Não exige Gravação de Tela.
+- A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (Dock na parte inferior da tela). Sem ela, todo o resto funciona.
+- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Mostrar em capturas** para incluí-la.
+
+## ♿ Acessibilidade
+
+- **Reduzir Movimento:** a neve fica parada (opção "Neve parada") e os bonecos não andam.
+- **Aumentar Contraste:** sombra mais forte e contorno azul-escuro nas bolas e bonecos.
+- **VoiceOver** ignora o overlay.
+
+## 🌨️ Como funciona
+
+- Uma janela de overlay transparente por tela fica acima das demais e ignora o mouse. Com ⌥ pressionado, ela deixa de ser click-through só sobre a neve ou uma bola.
+- Com Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega ordem e limites (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll a cada 2 s cobre eventos perdidos. Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s (10 vezes por segundo com o botão do mouse apertado).
+- As janelas viram um mapa de superfícies por coluna de pixels; o Dock (lido via Acessibilidade) e o pé da tela também são superfícies. O pé da tela fica atrás de tudo, então janelas e Dock escondem a parte coberta, que guarda a neve até reaparecer.
+- Ao pousar, o floco alimenta uma pilha naquela coluna. As pilhas escorregam nos cantos arredondados e desabam quando a janela se move rápido, é minimizada ou fechada.
 - O shader Metal é compilado em tempo de execução a partir de código-fonte, porque as Command Line Tools não incluem o compilador `metal`.
 
-## Desempenho
+## 🛠️ Desenvolvimento
 
-- Renderização instanciada na GPU: todos os flocos em uma única draw call.
-- Física sobre um pool fixo de structs, sem alocação por frame.
-- As pilhas só são redesenhadas quando mudam.
-- A animação pausa quando a tela entra em repouso ou a neve está desligada.
-- Menos flocos quando o Modo de Baixo Consumo está ativo.
+```sh
+swift build -c release   # compila
+Tests/run.sh             # testes (Swift Testing)
+```
 
-## Licença
+Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; `Tests/run.sh` carrega o bundle num runner mínimo e os roda.
+
+Para demonstrações, `NEVE_SNOWMAN_FAST=1` faz o boneco se montar 20 vezes mais rápido (e sobre uma pilha mais rasa):
+
+```sh
+NEVE_SNOWMAN_FAST=1 .build/release/Neve
+```
+
+## 📜 Licença
 
 MIT. Veja o arquivo `LICENSE`.

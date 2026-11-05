@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" role="img" aria-label="Neve">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b4a7a"/><stop offset="1" stop-color="#6f93c4"/></linearGradient></defs>
+  <rect width="800" height="200" rx="16" fill="url(#g)"/>
+  <g fill="#fff" opacity=".85">
+    <circle cx="60" cy="30" r="3"/><circle cx="130" cy="90" r="2"/><circle cx="210" cy="40" r="4"/><circle cx="290" cy="130" r="2.5"/>
+    <circle cx="360" cy="25" r="2"/><circle cx="470" cy="70" r="3"/><circle cx="540" cy="30" r="2"/><circle cx="620" cy="110" r="3.5"/>
+    <circle cx="700" cy="45" r="2.5"/><circle cx="750" cy="95" r="2"/><circle cx="90" cy="150" r="3"/><circle cx="430" cy="140" r="2"/>
+  </g>
+  <text x="400" y="108" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="72" font-weight="700" fill="#fff">Neve</text>
+  <text x="400" y="145" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="20" fill="#e8f0fb">um inverno aconchegante na sua tela</text>
+  <path d="M0 185 Q100 165 200 183 T400 180 T600 184 T800 178 V200 H0Z" fill="#f4f8ff"/>
+</svg>
