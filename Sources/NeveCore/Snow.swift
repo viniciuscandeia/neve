@@ -8,6 +8,7 @@ public enum Tuning {
     static let maxPileHeight: Float = 18
     static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
     static let groundID = -1
+    static let bankSlope: Float = 0.35      // repose slope (pt per pt) of the ground snowbank rising toward a bottom Dock bar
     static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
@@ -129,6 +130,8 @@ public struct Pile {
     var cap: [Float]             // per-bin height ceiling imposed by windows in front (inf = none)
     let inset: Float
     var maxHeight = Tuning.maxPileHeight
+    var maxes: [Float] = []      // optional per-column maximum (ground snowbank beside the Dock); empty = maxHeight
+    var splits: Set<Int> = []    // columns where drawing starts a new run (ground at the Dock bar ends, so the bank can merge with the Dock pile)
     let c0: Int                  // first global column, and the REAL (unclipped) window ends in x:
     let x0: Float, x1: Float     // taper and spill-off are measured against these, not the screen-clipped pile
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField
@@ -156,7 +159,7 @@ public struct Pile {
     }
 
     func limit(_ bin: Int) -> Float {
-        var l = maxHeight
+        var l = maxes.isEmpty ? maxHeight : maxes[bin]
         if inset > 0 {
             let x = binCenter(c0 + bin)
             l *= min(1, max(min(x - x0, x1 - x), 0) / inset)
@@ -209,7 +212,9 @@ public struct Pile {
         let tj = ok ? base[j] + heights[j] : (inRange ? base[i] : base[i] - 4)
         let excess = base[i] + heights[i] - tj - Tuning.slope
         guard excess > 0, heights[i] > 0 else { return false }
-        let m = min(excess * 0.5, heights[i])
+        var m = min(excess * 0.5, heights[i])
+        if ok, cap[j].isFinite { m = min(m, max(cap[j] - heights[j], 0)) }   // a roofed / under-Dock column takes no more than its room: nothing is lost there
+        guard m > 0 else { return false }
         heights[i] -= m
         if ok { heights[j] += m } else if !inRange { if j < 0 { spillL += m } else { spillR += m } }
         return true
@@ -555,7 +560,7 @@ public final class SnowField {
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
         }
-        if let g = buildGround(rects: rects, windows: windows, old: &old) { built.append(g) }   // behind everything: every window and the Dock hide it
+        if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
         for s in old { spawned += knockOff(s) }   // gone surfaces
         draggingID = moved
         surfaces = built
@@ -566,25 +571,46 @@ public final class SnowField {
     }
 
     /// Screen-bottom pile: full width, flat, no taper, edges drain nothing. Snow under covered columns stays (hidden), not knocked off.
-    private func buildGround(rects: [CGRect], windows: [WindowInfo], old: inout [Surface]) -> Surface? {
+    private func buildGround(rects: [CGRect], windows: [WindowInfo], old: inout [Surface], spawned: inout Int) -> Surface? {
         let bw = Tuning.binWidth
         let frame = CGRect(x: -1e5, y: -1, width: 2e5 + CGFloat(size.x), height: 1)   // "window" extends past the screen: no edge spill
         var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: Float(frame.minX), x1: Float(frame.maxX))
         pile.maxHeight = Tuning.groundMaxHeight
+        // A floating bottom Dock bar (top inside the Dock strip): the bank beside it rises to its top, sloping down with distance.
+        let docks = rects.indices.filter { windows[$0].number == 0 && rects[$0].minY >= -1 && rects[$0].maxY > 1 && rects[$0].minY < CGFloat(groundY) && rects[$0].width > rects[$0].height }.map { rects[$0] }
+        if !docks.isEmpty {
+            for r in docks { pile.splits.insert(Int(Float(r.minX) / bw)); pile.splits.insert(Int(Float(r.maxX) / bw)) }
+            pile.maxes = (0..<numCols).map { b in
+                let x = Float(b) + 0.5, cx = x * bw
+                var m = Tuning.groundMaxHeight
+                for r in docks {
+                    let d = max(Float(r.minX) - cx, cx - Float(r.maxX), 0)
+                    m = max(m, min(Float(r.maxY) - Tuning.bankSlope * d, groundY))
+                }
+                return m
+            }
+        }
         for b in 0..<numCols {
             let x = CGFloat((Float(b) + 0.5) * bw)
             var ceiling = Float.infinity
             for (i, r) in rects.enumerated() {
                 // The floating Dock bar hovers a few points above the screen bottom: it still hides the ground under it.
-                let covers = windows[i].number == 0 ? r.maxY > 1 && x >= r.minX && x < r.maxX : r.contains(CGPoint(x: x, y: 1))
-                if covers { pile.visible[b] = false; break }
+                if windows[i].number == 0 {   // Dock bar: snow may flow under it, up to its bottom edge (the overlay sits above the Dock)
+                    if r.maxY > 1, x >= r.minX, x < r.maxX { ceiling = min(ceiling, max(Float(r.minY), 0)) }
+                    continue
+                }
+                if r.contains(CGPoint(x: x, y: 1)) { pile.visible[b] = false; break }
                 if r.minY > 1, x >= r.minX, x < r.maxX { ceiling = min(ceiling, Float(r.minY)) }
             }
             pile.cap[b] = ceiling
         }
         if let k = old.firstIndex(where: { $0.id == Tuning.groundID }) {
             let prev = old.swapRemove(k)
-            for b in 0..<numCols { pile.heights[b] = min(prev.pile.heights[b], pile.limit(b)) }
+            for b in 0..<numCols {   // a lowered limit (Dock shrank / moved) sheds the excess as debris, visible columns only
+                let keep = min(prev.pile.heights[b], pile.limit(b)), over = prev.pile.heights[b] - keep
+                if over > 0.5, pile.visible[b] { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero) }
+                pile.heights[b] = keep
+            }
         }
         return Surface(id: Tuning.groundID, frame: frame, edgeY: 0, c0: 0, anchor: 0, pile: pile)
     }
@@ -857,9 +883,10 @@ public final class SnowField {
     /// Top edge = midpoint quadratic curves through every 3rd bin of the lightly blurred surface.
     /// `forDrag` false: every pile except window `dragging`'s; true: only that one (it gets its own layer while dragged).
     public func pilePath(dragging: Int = .min, forDrag: Bool = false) -> CGPath {
-        let path = CGMutablePath()
+        struct Run { var id: Int; var pts: [CGPoint] = [], ceil: [CGFloat] = [], bottom: [CGPoint] = [] }
         let bw = CGFloat(Tuning.binWidth)
-        var idx: [Int] = [], pts: [CGPoint] = []
+        var runs: [Run] = []
+        var idx: [Int] = []
         for s in surfaces where (s.id == dragging) == forDrag {
             let h = s.pile.heights, vis = s.pile.visible, base = s.pile.base
             let n = h.count
@@ -867,7 +894,8 @@ public final class SnowField {
             func x(_ i: Int) -> CGFloat { (CGFloat(s.c0 + i) + 0.5) * bw }
             func ceiling(_ i: Int) -> CGFloat { edge + CGFloat(base[i] + s.pile.cap[i]) }   // infinite where no window is in front
             func top(_ i: Int, _ b: Int, _ e: Int) -> CGPoint {
-                let l = i > b ? h[i - 1] : 0, r = i < e - 1 ? h[i + 1] : 0
+                // Runs split at the Dock bar ends keep their full height there (no taper): that edge is a wall, not a pile end.
+                let l = i > b ? h[i - 1] : (s.pile.splits.contains(b) ? h[i] : 0), r = i < e - 1 ? h[i + 1] : (s.pile.splits.contains(e) ? h[i] : 0)
                 let sm = (l + 2 * h[i] + r) / 4
                 // Stable irregularity keyed on the window-relative column (travels with the pile), scaled by height so it vanishes at the ends.
                 let n = Float(noise(s.c0 + i - s.anchor)) * min(sm * 0.08, 1.5)
@@ -877,7 +905,7 @@ public final class SnowField {
             while b < n {
                 guard vis[b] else { b += 1; continue }
                 var e = b
-                while e < n && vis[e] { e += 1 }
+                while e < n && vis[e] && (e == b || !s.pile.splits.contains(e)) { e += 1 }
                 var lo = b, hi = e - 1
                 while lo <= hi && h[lo] <= 0.15 { lo += 1 }
                 while hi >= lo && h[hi] <= 0.15 { hi -= 1 }
@@ -886,22 +914,45 @@ public final class SnowField {
                     idx.removeAll(keepingCapacity: true)
                     for i in lo..<hi where i == lo || (s.c0 + i - s.anchor) % 3 == 0 { idx.append(i) }
                     idx.append(hi)
-                    pts.removeAll(keepingCapacity: true)
-                    for i in idx { pts.append(top(i, b, e)) }
-                    path.move(to: pts[0])
-                    if idx.count > 2 {
-                        for k in 1..<(idx.count - 1) {
-                            let c = pts[k], nx = pts[k + 1]
-                            // Control and end points all stay under the ceiling, so the quad cannot cross it.
-                            path.addQuadCurve(to: CGPoint(x: (c.x + nx.x) / 2, y: min((c.y + nx.y) / 2, ceiling(idx[k]), ceiling(idx[k + 1]))), control: c)
-                        }
-                    }
-                    if idx.count > 1 { path.addLine(to: pts[idx.count - 1]) }
-                    for k in idx.reversed() { path.addLine(to: CGPoint(x: x(k), y: edge + CGFloat(base[k]) - (s.id == Tuning.groundID ? 0 : 1))) }
-                    path.closeSubpath()
+                    let drop: CGFloat = s.id == Tuning.groundID ? 0 : 1
+                    runs.append(Run(id: s.id, pts: idx.map { top($0, b, e) }, ceil: idx.map(ceiling),
+                                    bottom: idx.map { CGPoint(x: x($0), y: edge + CGFloat(base[$0]) - drop) }))
                 }
                 b = e
             }
+        }
+        // A ground bank that meets the Dock pile (ends within ~2.5pt in y (the top has up to 1.5pt of noise), close in x) reads as one snowbank: one contour.
+        var merged = true
+        while merged {
+            merged = false
+            search: for i in runs.indices where runs[i].id == Tuning.groundID {
+                for j in runs.indices where runs[j].id == 0 {
+                    let (g, d) = (runs[i], runs[j])
+                    if g.pts.last!.x <= d.pts.first!.x, d.pts.first!.x - g.pts.last!.x < 60, abs(d.pts.first!.y - g.pts.last!.y) <= 2.5 {
+                        runs[j] = Run(id: 0, pts: g.pts + d.pts, ceil: g.ceil + d.ceil, bottom: g.bottom + d.bottom)
+                    } else if d.pts.last!.x <= g.pts.first!.x, g.pts.first!.x - d.pts.last!.x < 60, abs(g.pts.first!.y - d.pts.last!.y) <= 2.5 {
+                        runs[j] = Run(id: 0, pts: d.pts + g.pts, ceil: d.ceil + g.ceil, bottom: d.bottom + g.bottom)
+                    } else { continue }
+                    runs.remove(at: i)   // the chain keeps id 0 so the bank on the Dock's other end can join it too
+                    merged = true
+                    break search
+                }
+            }
+        }
+        let path = CGMutablePath()
+        for r in runs {
+            let pts = r.pts
+            path.move(to: pts[0])
+            if pts.count > 2 {
+                for k in 1..<(pts.count - 1) {
+                    let c = pts[k], nx = pts[k + 1]
+                    // Control and end points all stay under the ceiling, so the quad cannot cross it.
+                    path.addQuadCurve(to: CGPoint(x: (c.x + nx.x) / 2, y: min((c.y + nx.y) / 2, r.ceil[k], r.ceil[k + 1])), control: c)
+                }
+            }
+            if pts.count > 1 { path.addLine(to: pts[pts.count - 1]) }
+            for p in r.bottom.reversed() { path.addLine(to: p) }
+            path.closeSubpath()
         }
         return path
     }

@@ -292,14 +292,14 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     #expect(f.pile(id: Tuning.groundID)!.heights.max()! <= Tuning.groundMaxHeight)
 }
 
-@Test func noGroundDepositsUnderDockBarButItsOwnPileStays() {
+@Test func groundUnderDockBarFillsUpToItsBottomEdgeAndDockPileStays() {
     let f = makeField()
     f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 400, y: 10, width: 200, height: 70), radius: 18)])
     pileUp(f, id: 0)
     pileUp(f, id: Tuning.groundID)
     #expect(f.pile(id: 0)!.heights.max()! > 4)
     let g = f.pile(id: Tuning.groundID)!
-    for b in 200..<300 { #expect(!g.visible[b]); #expect(g.heights[b] == 0) }
+    for b in 200..<300 { #expect(g.visible[b]); #expect(g.heights[b] > 0 && g.heights[b] <= 10 + 1e-4) }
     #expect(g.heights[10] > 4)
 }
 
@@ -308,7 +308,7 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     for b in 0..<500 { for _ in 0..<12 { f.deposit(surface: 0, bin: b, volume: 4) } }
     let h = f.pile(id: Tuning.groundID)!.heights[250]
     #expect(h > 5)
-    f.update(windows: [win(0, 400, 10, 200, 70)])
+    f.update(windows: [win(7, 400, 0, 200, 70)])
     #expect(!f.pile(id: Tuning.groundID)!.visible[250])
     #expect(f.pile(id: Tuning.groundID)!.heights[250] == h)
     f.update(windows: [])
@@ -332,4 +332,70 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     #expect(f.pile(id: Tuning.groundID)!.heights.max()! > 4)
     f.clear()
     #expect(f.pile(id: Tuning.groundID)!.heights.max()! == 0)
+}
+
+// MARK: - Ground snowbank beside a bottom Dock bar (1440x900, Dock (171,10,1098,84): dockTop 94, groundY 90)
+
+private func bankField() -> SnowField {
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
+    f.update(windows: [win(0, 171, 10, 1098, 84)])
+    return f
+}
+
+private func heavy(_ f: SnowField, id: Int) {
+    let i = f.surfaces.firstIndex { $0.id == id }!
+    for _ in 0..<400 { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: 4) } }
+}
+
+@Test func groundBankRisesToDockTopNextToTheBarAndFillsUnderIt() {
+    let f = bankField()
+    heavy(f, id: Tuning.groundID)
+    let g = f.pile(id: Tuning.groundID)!
+    #expect(g.heights[84] >= 85 && g.heights[84] <= 90)      // x 169, left of the bar
+    #expect(g.heights[634] >= 85 && g.heights[634] <= 90)    // x 1269, right of the bar
+    #expect(g.heights[5] <= 38.5)                             // screen edge, 171pt from the bar
+    for b in 85..<634 { #expect(g.visible[b] && g.heights[b] <= 10 + 1e-4) }   // never inside the bar rect
+    #expect(g.heights[300] > 5)                              // snow fills the gap under the bar
+}
+
+@Test func groundBankNoDockKeepsTheOldMaximum() {
+    let f = makeField()
+    f.update(windows: [])
+    heavy(f, id: Tuning.groundID)
+    #expect(f.pile(id: Tuning.groundID)!.heights.max()! <= Tuning.groundMaxHeight)
+}
+
+@Test func snowBesideTheDockSpreadsUnderTheBarWithoutLoss() {
+    let f = bankField()
+    let i = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
+    for b in 70..<85 { f.surfaces[i].pile.heights[b] = 60 }
+    let before = f.pile(id: Tuning.groundID)!.heights.reduce(0, +)
+    for _ in 0..<300 { f.deposit(surface: i, bin: 80, volume: 0.001) }
+    let g = f.pile(id: Tuning.groundID)!
+    #expect(abs(g.heights.reduce(0, +) - before) < 1)
+    #expect(g.heights[86...88].allSatisfy { $0 > 0 && $0 <= 10 + 1e-4 })
+}
+
+@Test func groundBankLimitSlopesDownFromTheDock() {
+    let p = bankField().pile(id: Tuning.groundID)!
+    #expect(p.limit(84) == 90)                 // min(dockTop, groundY)
+    #expect(abs(p.limit(0) - (94 - 0.35 * 171)) < 1)   // screen edge is 171pt from the bar: still on the slope
+    for b in 1..<84 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }
+}
+
+@Test func groundAndDockPilesMergeIntoOneBankContourWhereTheyMeet() {
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 94, visibleTop: 880, flakeCount: 0, seed: 1)
+    f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: 0)])
+    heavy(f, id: Tuning.groundID)
+    heavy(f, id: 0)
+    var subpaths = 0
+    f.pilePath().applyWithBlock { if $0.pointee.type == .moveToPoint { subpaths += 1 } }
+    #expect(subpaths <= 2)   // left bank + Dock + right bank = 1, plus the under-bar run
+}
+
+@Test func dockShrinkingShedsGroundSnowAsDebrisNotSilently() {
+    let f = bankField()
+    heavy(f, id: Tuning.groundID)
+    let n = f.update(windows: [win(0, 600, 10, 240, 84)])
+    #expect(n > 0)
 }
