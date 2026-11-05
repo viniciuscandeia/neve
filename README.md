@@ -55,12 +55,6 @@ scripts/make-app.sh
 
 O macOS associa a permissão de Acessibilidade à assinatura do app. Com a assinatura ad-hoc (padrão), cada build muda a assinatura e a permissão é perdida; com a identidade estável "Neve Local Signing" ela é mantida. Se a identidade não existir, `make-app.sh` avisa e assina ad-hoc.
 
-Autoteste rápido:
-
-```sh
-.build/release/Neve --selftest
-```
-
 Testes unitários (Swift Testing):
 
 ```sh

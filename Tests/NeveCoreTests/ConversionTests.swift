@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-import NeveCore
+@testable import NeveCore
 
 // Primary screen is 1440x900 in all examples. CG: origin top-left, y down. AppKit: origin bottom-left, y up.
 

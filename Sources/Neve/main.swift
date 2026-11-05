@@ -397,11 +397,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-if CommandLine.arguments.contains("--selftest") {
-    runSelfTest()
-    exit(0)
-}
-
 if let id = Bundle.main.bundleIdentifier,
    NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0 != .current }) {
     exit(0)   // already running

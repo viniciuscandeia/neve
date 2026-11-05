@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-import NeveCore
+@testable import NeveCore
 
 /// Window top edge at y=500, x 200...500; snows until a 300pt pile is at least `h` tall across x 250...450.
 private func pileField(draggingFirst: Bool = false) -> SnowField {

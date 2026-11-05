@@ -86,7 +86,7 @@ extension SnowField {
         let lo = max(column(m.x - rad), s.c0), hi = min(column(m.x + rad), s.c0 + s.pile.heights.count - 1)
         guard lo <= hi else { return }
         for c in lo...hi {
-            let d = abs((Float(c) + 0.5) * Tuning.binWidth - m.x)
+            let d = abs(binCenter(c) - m.x)
             guard d < rad else { continue }
             surfaces[si].pile.heights[c - s.c0] *= 1 - share[stage - 1] * 0.5 * (1 + cos(.pi * d / rad))
         }
@@ -123,7 +123,7 @@ extension SnowField {
             }
             if bestRun > 0 {
                 let c = bestAt + w / 2
-                return (id, (Float(surfaces[si].c0 + c) + 0.5) * Tuning.binWidth, surfaces[si].edgeY + p.base[c] + p.heights[c])
+                return (id, binCenter(surfaces[si].c0 + c), surfaces[si].edgeY + p.base[c] + p.heights[c])
             }
             if seen { return nil }   // ground is visible, just not deep enough yet
         }

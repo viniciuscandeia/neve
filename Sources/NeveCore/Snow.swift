@@ -14,7 +14,7 @@ public enum Tuning {
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
     /// Window corner radius: ~20pt from macOS 26 (Tahoe) on, ~10pt before.
-    public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }
+    static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }
     public static let windowRadius = windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
     static let calmSway: Float = 0.25       // Reduce Motion: share of the lateral flake sway kept
     static let calmDebrisFall: Float = 30   // Reduce Motion: uniform initial fall speed of knocked-off snow
@@ -123,8 +123,8 @@ public func readWindows(primaryHeight: CGFloat) -> [WindowInfo] {
 
 /// Snow height per bin along one surface.
 public struct Pile {
-    public internal(set) var heights: [Float]
-    public internal(set) var visible: [Bool]
+    var heights: [Float]
+    var visible: [Bool]
     var base: [Float]            // baseline offset per bin (<= 0): drops along rounded corners
     var cap: [Float]             // per-bin height ceiling imposed by windows in front (inf = none)
     let inset: Float
@@ -143,11 +143,13 @@ public struct Pile {
         self.inset = inset
     }
 
+    mutating func empty() { for b in heights.indices { heights[b] = 0 } }
+
     /// Baseline follows the corner arcs within `radius` of each end.
     mutating func round(radius: Float, c0: Int, minX: Float, maxX: Float) {
         guard radius > 0 else { return }
         for b in base.indices {
-            let x = (Float(c0 + b) + 0.5) * Tuning.binWidth
+            let x = binCenter(c0 + b)
             let d = max(min(x - minX, maxX - x), 0)
             if d < radius { let k = radius - d; base[b] = -(radius - (radius * radius - k * k).squareRoot()) }
         }
@@ -156,7 +158,7 @@ public struct Pile {
     func limit(_ bin: Int) -> Float {
         var l = maxHeight
         if inset > 0 {
-            let x = (Float(c0 + bin) + 0.5) * Tuning.binWidth
+            let x = binCenter(c0 + bin)
             l *= min(1, max(min(x - x0, x1 - x), 0) / inset)
         }
         return min(l, cap[bin])
@@ -179,8 +181,8 @@ public struct Pile {
         let lo = max(0, bin - 8), hi = min(heights.count - 1, bin + 8)
         for _ in 0..<6 {
             for i in lo...hi {
-                if shed(i, i - 1) { changed = true }
-                if shed(i, i + 1) { changed = true }
+                if relax(i, i - 1) { changed = true }
+                if relax(i, i + 1) { changed = true }
             }
         }
         for i in max(lo - 1, 0)...min(hi + 1, heights.count - 1) {   // relaxation reaches one bin past the window
@@ -193,12 +195,16 @@ public struct Pile {
         return changed
     }
 
+    /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.
+    private func continuesPastScreen(left: Bool) -> Bool {
+        left ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth
+    }
+
     /// Moves half the excess slope (on baseline + height) from bin i to lower neighbour j.
     /// Hidden j drains silently; past the ends the snow spills off as debris.
-    private mutating func shed(_ i: Int, _ j: Int) -> Bool {
+    private mutating func relax(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
-        // The window continues past the screen edge: that end is not a drop-off.
-        if !inRange, j < 0 ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth { return false }
+        if !inRange && continuesPastScreen(left: j < 0) { return false }
         let ok = inRange && visible[j]
         let tj = ok ? base[j] + heights[j] : (inRange ? base[i] : base[i] - 4)
         let excess = base[i] + heights[i] - tj - Tuning.slope
@@ -391,18 +397,14 @@ public final class SnowField {
         let n = balls.count
         balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
         if balls.count != n { ballsVersion &+= 1 }
-        for i in surfaces.indices where surfaces[i].id != Tuning.groundID {   // the ground is not tied to a window
-            for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
-        }
+        for i in surfaces.indices where surfaces[i].id != Tuning.groundID { surfaces[i].pile.empty() }   // the ground is not tied to a window
         pilesDirty = true
     }
 
     public func clear() {
         snowman = nil
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
-        for i in surfaces.indices {
-            for b in surfaces[i].pile.heights.indices { surfaces[i].pile.heights[b] = 0 }
-        }
+        for i in surfaces.indices { surfaces[i].pile.empty() }
         debris.removeAll(keepingCapacity: true)
         pilesDirty = true
     }
@@ -411,26 +413,29 @@ public final class SnowField {
 
     func column(_ x: Float) -> Int { min(max(Int(x * invBin), 0), numCols - 1) }
 
-    public func edgeVisible(id: Int, x: Float) -> Bool {
+    func edgeVisible(id: Int, x: Float) -> Bool {
         let c = column(x)
         for k in Int(offsets[c])..<Int(offsets[c + 1]) where surfaces[Int(entries[k].surface)].id == id { return true }
         return false
     }
 
-    /// Direct deposit (used by the self-test).
+    /// One flake lands on a surface (also the test entry point for building piles without simulating snowfall).
     func deposit(surface: Int, bin: Int, volume: Float) {
         if surfaces[surface].pile.deposit(bin: bin, volume: volume) { pilesDirty = true }
-        let p = surfaces[surface].pile
-        if p.spillL > 2 || p.spillR > 2 { spill(surface) }
+        if surfaces[surface].pile.spillL > 2 || surfaces[surface].pile.spillR > 2 { spill(surface) }
     }
 
     /// Snow that slid off a surface end falls as debris.
     private func spill(_ si: Int) {
-        let s = surfaces[si], last = s.pile.heights.count - 1
-        if s.pile.spillL > 2 { addDebris(x: Float(s.c0) * Tuning.binWidth, y: s.edgeY + s.pile.base[0], vx: -Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng)) }
-        if s.pile.spillR > 2 { addDebris(x: Float(s.c0 + last + 1) * Tuning.binWidth, y: s.edgeY + s.pile.base[last], vx: Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng)) }
-        if s.pile.spillL > 2 { surfaces[si].pile.spillL = 0 }
-        if s.pile.spillR > 2 { surfaces[si].pile.spillR = 0 }
+        let c0 = surfaces[si].c0, edgeY = surfaces[si].edgeY, last = surfaces[si].pile.heights.count - 1
+        for left in [true, false] {
+            let amount = left ? surfaces[si].pile.spillL : surfaces[si].pile.spillR
+            guard amount > 2 else { continue }
+            let sign: Float = left ? -1 : 1
+            addDebris(x: Float(left ? c0 : c0 + last + 1) * Tuning.binWidth, y: edgeY + surfaces[si].pile.base[left ? 0 : last],
+                      vx: sign * Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng))
+            if left { surfaces[si].pile.spillL = 0 } else { surfaces[si].pile.spillR = 0 }
+        }
     }
 
     /// `fall` is the current downward speed; `step` accelerates it. Heavy snow: bigger and brighter than sky flakes.
@@ -449,7 +454,7 @@ public final class SnowField {
         boundsDirty = true
     }
 
-    public func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
+    func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
 
     /// Rebuilds surfaces from the front-to-back window list. Returns debris spawned by knocked-off piles.
     @discardableResult
@@ -548,7 +553,7 @@ public final class SnowField {
         pile.round(radius: Float(min(radius, frame.width / 2, frame.height / 2)), c0: c0, minX: Float(frame.minX), maxX: Float(frame.maxX))
         let y = CGFloat(edgeY) + 1
         for b in 0..<(c1 - c0) {
-            let x = CGFloat((Float(c0 + b) + 0.5) * bw)
+            let x = CGFloat(binCenter(c0 + b))
             var hidden = false
             var ceiling = Float.infinity   // lowest underside of a front window above the edge in this column
             for j in 0..<front {
@@ -588,7 +593,7 @@ public final class SnowField {
                 spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.perUpdate(SnowField.shedFraction(v: vel, prev: prev.vel), dt: pollDt), velocity: vel)
             } else {   // resized: snow stays where it is in x; the part no longer over the window falls
                 carry(shift: 0)
-                let v = (d / pollDt).clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
+                let v = (d / pollDt).limited()
                 for k in prev.pile.heights.indices {
                     let col = prev.c0 + k
                     if col < c0 || col >= c1 { spawned += shedBin(col: col, edgeY: prev.edgeY + prev.pile.base[k], from: 0, amount: prev.pile.heights[k], velocity: v) }
@@ -618,11 +623,11 @@ public final class SnowField {
     /// Takes `fraction` of the pile off as debris, preferring the tops and the window ends.
     private func shed(_ pile: inout Pile, c0: Int, edgeY: Float, frame: CGRect, fraction: Float, velocity v: SIMD2<Float>) -> Int {
         guard fraction > 0 else { return 0 }
-        let v = v.clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
+        let v = v.limited()
         let zone = max(Float(frame.width) * Tuning.shedEdgeZone, 1)
         var n = 0
         for b in pile.heights.indices where pile.heights[b] > 0.5 {
-            let x = (Float(c0 + b) + 0.5) * Tuning.binWidth
+            let x = binCenter(c0 + b)
             let edge = max(0, 1 - min(x - Float(frame.minX), Float(frame.maxX) - x) / zone)
             let h = pile.heights[b], r = h * min(1, fraction * (1 + Tuning.shedEdgeBias * edge))
             n += shedBin(col: c0 + b, edgeY: edgeY + pile.base[b], from: h - r, amount: r, velocity: v)
@@ -637,22 +642,21 @@ public final class SnowField {
         let ax = Float(a.x), ay = Float(a.y), dx = Float(b.x) - ax, dy = Float(b.y) - ay
         let len2 = dx * dx + dy * dy, r = radius
         guard len2 > 0, dt > 0 else { return }
-        let v = (SIMD2(dx, dy) / dt).clamped(lowerBound: SIMD2(repeating: -800), upperBound: SIMD2(repeating: 800))
+        let v = (SIMD2(dx, dy) / dt).limited()
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
         collapseIfSwept(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         defer { for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
-            let s = surfaces[si]
-            guard hi >= s.edgeY - Tuning.maxPileHeight, lo <= s.edgeY + Tuning.maxPileHeight else { continue }
-            let c = s.c0
-            let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(s.pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
+            let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
+            guard hi >= edgeY - Tuning.maxPileHeight, lo <= edgeY + Tuning.maxPileHeight else { continue }
+            let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(surfaces[si].pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
             guard b0 <= b1 else { continue }
             for k in b0...b1 {
-                let h = s.pile.heights[k]
+                let h = surfaces[si].pile.heights[k]
                 guard h > 0.5 else { continue }
-                let x = (Float(c + k) + 0.5) * Tuning.binWidth, bottom = s.edgeY + s.pile.base[k], my = bottom + h / 2
+                let x = binCenter(c + k), bottom = edgeY + surfaces[si].pile.base[k], my = bottom + h / 2
                 let t = min(max(((x - ax) * dx + (my - ay) * dy) / len2, 0), 1)
                 let qx = ax + t * dx, qy = ay + t * dy
                 guard abs(qx - x) <= r, abs(qy - my) <= r + h / 2 else { continue }
@@ -797,7 +801,7 @@ public final class SnowField {
     public func pilePath(dragging: Int = -1, forDrag: Bool = false) -> CGPath {
         let path = CGMutablePath()
         let bw = CGFloat(Tuning.binWidth)
-        var idx: [Int] = []
+        var idx: [Int] = [], pts: [CGPoint] = []
         for s in surfaces where (s.id == dragging) == forDrag {
             let h = s.pile.heights, vis = s.pile.visible, base = s.pile.base
             let n = h.count
@@ -824,15 +828,17 @@ public final class SnowField {
                     idx.removeAll(keepingCapacity: true)
                     for i in lo..<hi where i == lo || (s.c0 + i - s.anchor) % 3 == 0 { idx.append(i) }
                     idx.append(hi)
-                    path.move(to: top(idx[0], b, e))
+                    pts.removeAll(keepingCapacity: true)
+                    for i in idx { pts.append(top(i, b, e)) }
+                    path.move(to: pts[0])
                     if idx.count > 2 {
                         for k in 1..<(idx.count - 1) {
-                            let c = top(idx[k], b, e), nx = top(idx[k + 1], b, e)
+                            let c = pts[k], nx = pts[k + 1]
                             // Control and end points all stay under the ceiling, so the quad cannot cross it.
                             path.addQuadCurve(to: CGPoint(x: (c.x + nx.x) / 2, y: min((c.y + nx.y) / 2, ceiling(idx[k]), ceiling(idx[k + 1]))), control: c)
                         }
                     }
-                    if idx.count > 1 { path.addLine(to: top(idx[idx.count - 1], b, e)) }
+                    if idx.count > 1 { path.addLine(to: pts[idx.count - 1]) }
                     for k in idx.reversed() { path.addLine(to: CGPoint(x: x(k), y: edge + CGFloat(base[k]) - 1)) }
                     path.closeSubpath()
                 }
@@ -843,12 +849,20 @@ public final class SnowField {
     }
 }
 
+/// Centre x (points) of global column `c`.
+func binCenter(_ c: Int) -> Float { (Float(c) + 0.5) * Tuning.binWidth }
+
 /// Deterministic value noise in -1...1 for a column index.
 func noise(_ i: Int) -> CGFloat {
     var z = UInt64(bitPattern: Int64(i)) &+ 0x9E37_79B9_7F4A_7C15
     z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
     z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
     return CGFloat(Double((z ^ (z >> 31)) >> 11) / Double(1 << 52) - 1)
+}
+
+extension SIMD2<Float> {
+    /// Debris launch speeds are capped per axis (pt/s).
+    func limited(_ m: Float = 800) -> SIMD2<Float> { clamped(lowerBound: SIMD2(repeating: -m), upperBound: SIMD2(repeating: m)) }
 }
 
 private extension Array {

@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-import NeveCore
+@testable import NeveCore
 
 @Test func skyFlakesLandOnAWindowAndBuildItsPile() {
     let f = makeField(flakes: 600)

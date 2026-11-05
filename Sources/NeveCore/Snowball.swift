@@ -138,7 +138,7 @@ extension SnowField {
     public func drop(_ id: Int, throwing: Bool = true) {
         guard let i = index(of: id), balls[i].state == .held else { return }
         balls[i].state = .falling
-        balls[i].vel = (throwing ? balls[i].vel : .zero).clamped(lowerBound: SIMD2(repeating: -600), upperBound: SIMD2(repeating: 600))
+        balls[i].vel = (throwing ? balls[i].vel : .zero).limited(600)
         ballsVersion &+= 1
     }
 
