@@ -24,4 +24,6 @@ CFG
 /usr/bin/openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
   -name "$NAME" -passout pass:neve -out "$tmp/id.p12"
 security import "$tmp/id.p12" -k ~/Library/Keychains/login.keychain-db -P neve -T /usr/bin/codesign
+echo "Trusting the certificate for code signing (macOS will ask for your login password)..."
+security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db "$tmp/cert.pem"
 echo "Created '$NAME'."
