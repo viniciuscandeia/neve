@@ -1,0 +1,131 @@
+import CoreGraphics
+import Testing
+import NeveCore
+
+// Field 1000x800 at origin (0,0): ground (dock top) at y=90, menu-bar area starts at y=780.
+func makeField(flakes: Int = 0, seed: UInt64 = 1) -> SnowField {
+    SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: flakes, seed: seed)
+}
+
+func win(_ n: Int, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> WindowInfo {
+    WindowInfo(number: n, frame: CGRect(x: x, y: y, width: w, height: h))
+}
+
+/// Steps a snowing field until window `id` carries a pile at least `height` tall.
+@discardableResult
+func snowUntilPiled(_ f: SnowField, id: Int, height: Float = 8) -> Bool {
+    for _ in 0..<6000 {
+        f.step(dt: 1 / 60)
+        if (f.pile(id: id)?.heights.max() ?? 0) >= height { return true }
+    }
+    return false
+}
+
+// Back window top edge y=400 (x 100...400); front window covers x 200...500, y 300...600.
+let back = win(1, 100, 200, 300, 200)
+let front = win(2, 200, 300, 300, 300)
+
+@Test func frontWindowHidesBackWindowEdgeOnlyWhereTheyOverlap() {
+    let f = makeField()
+    f.update(windows: [front, back])
+    #expect(!f.edgeVisible(id: 1, x: 300))   // under the front window
+    #expect(f.edgeVisible(id: 1, x: 150))    // left of it
+    #expect(f.edgeVisible(id: 2, x: 300))    // the front window's own edge is never hidden
+}
+
+@Test func windowListOrderDecidesWhoIsInFront() {
+    let f = makeField()
+    f.update(windows: [back, front])   // back now in front, and its rect does not reach y=601
+    #expect(f.edgeVisible(id: 2, x: 300))
+    #expect(f.edgeVisible(id: 1, x: 300))
+}
+
+@Test func windowWiderThanScreenIsClippedToScreen() {
+    let f = makeField()
+    f.update(windows: [win(1, -100, 200, 300, 200), win(2, 900, 200, 300, 200)])
+    // x -100...200 shows 0...200 = 100 bins of 2pt; x 900...1200 shows 900...1000 = 50 bins.
+    #expect(f.pile(id: 1)?.heights.count == 100)
+    #expect(f.pile(id: 2)?.heights.count == 50)
+    #expect(f.edgeVisible(id: 1, x: 5))
+    #expect(f.edgeVisible(id: 2, x: 995))
+}
+
+@Test func windowEntirelyOffScreenGetsNoSurface() {
+    let f = makeField()
+    f.update(windows: [win(1, 1100, 200, 300, 200), win(2, -400, 200, 300, 200)])
+    #expect(f.pile(id: 1) == nil)
+    #expect(f.pile(id: 2) == nil)
+}
+
+@Test func edgeInMenuBarAreaGetsNoSurface() {
+    let f = makeField()
+    f.update(windows: [win(1, 100, 500, 300, 290), win(2, 500, 500, 300, 270)])   // tops at 790 and 770
+    #expect(f.pile(id: 1) == nil)
+    #expect(f.pile(id: 2) != nil)
+}
+
+@Test func windowTopAtOrBelowGroundGetsNoSurface() {
+    let f = makeField()
+    f.update(windows: [win(1, 100, 20, 300, 70)])   // top at 90 = ground
+    #expect(f.pile(id: 1) == nil)
+}
+
+@Test func dockSurfaceExistsOnlyOverTheDockBar() {
+    let f = makeField()
+    f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 500, y: 20, width: 400, height: 60), radius: 18)])
+    #expect(f.edgeVisible(id: 0, x: 700))
+    #expect(!f.edgeVisible(id: 0, x: 200))
+    #expect(!f.edgeVisible(id: 0, x: 950))
+}
+
+@Test func offscreenHiddenDockGetsNoSurface() {
+    let f = makeField()
+    f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 500, y: -60, width: 400, height: 60), radius: 18)])
+    #expect(f.pile(id: 0) == nil)
+}
+
+@Test func movedWindowKnocksItsSnowOffAsDebrisAndClearsPile() {
+    let f = makeField(flakes: 600)
+    f.update(windows: [front, back])
+    #expect(snowUntilPiled(f, id: 1))
+    let before = f.debris.count
+    let n = f.update(windows: [front, win(1, 140, 200, 300, 200)])
+    #expect(n > 0)
+    #expect(f.debris.count == before + n)
+    #expect(f.pile(id: 1)!.heights.max()! == 0)
+}
+
+@Test func unchangedWindowKeepsItsPileAndSpawnsNothing() {
+    let f = makeField(flakes: 600)
+    f.update(windows: [front, back])
+    #expect(snowUntilPiled(f, id: 1))
+    let before = f.debris.count
+    let tall = f.pile(id: 1)!.heights.max()!
+    #expect(f.update(windows: [front, back, win(3, 600, 200, 100, 100)]) == 0)   // another window appears
+    #expect(f.debris.count == before)
+    #expect(f.pile(id: 1)!.heights.max()! == tall)
+}
+
+@Test func vanishedWindowDropsItsSnowAsDebrisAndLosesItsSurface() {
+    let f = makeField(flakes: 600)
+    f.update(windows: [front, back])
+    #expect(snowUntilPiled(f, id: 1))
+    let before = f.debris.count
+    let n = f.update(windows: [front])
+    #expect(n > 0)
+    #expect(f.debris.count == before + n)
+    #expect(f.pile(id: 1) == nil)
+}
+
+@Test func spaceSwitchDropsPilesWithoutDebris() {
+    let f = makeField(flakes: 600)
+    f.update(windows: [front, back])
+    #expect(snowUntilPiled(f, id: 1))
+    f.dropPiles()
+    #expect(f.pile(id: 1)!.heights.max()! == 0)
+    for _ in 0..<90 { f.step(dt: 1 / 60) }   // snow keeps landing on the not-yet-removed windows
+    #expect(f.pile(id: 1)!.heights.max()! > 0.5)
+    let before = f.debris.count
+    #expect(f.update(windows: []) == 0)   // windows vanish in the same switch: no avalanche
+    #expect(f.debris.count == before)
+}
