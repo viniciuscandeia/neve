@@ -12,12 +12,14 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
 - Os flocos se acumulam na borda superior das janelas e no Dock.
 - A neve escorrega pelos cantos arredondados das janelas.
 - Ao arrastar, minimizar ou fechar uma janela, a neve acumulada nela cai.
-- Ícone de floco de neve na barra de menus com:
-  - **Nevar**: liga e desliga a neve.
+- Ícone de floco de neve na barra de menus (fica esmaecido quando a neve está pausada ou desligada). O menu nativo mostra:
+  - Linha de status no topo, atualizada ao abrir o menu (ex.: "Nevando · Média", "Pausado — app em tela cheia", "Desligado").
+  - **Nevar** (⌘N): liga e desliga a neve.
   - **Quantidade**: Leve, Média, Forte ou Nevasca (a Nevasca adiciona um vento que muda de direção continuamente).
-  - **Modo econômico**: 30 fps e neve só no monitor principal (o da barra de menus), para reduzir o custo de composição do sistema. A escolha é lembrada.
-  - **Limpar neve**: remove a neve acumulada.
-  - **Sair**.
+  - **Opções**: **Modo econômico** (30 fps e neve só no monitor principal, o da barra de menus; a escolha é lembrada), **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
+  - **Limpar neve** (⌘K): remove a neve acumulada.
+  - **Sair** (⌘Q).
+- A neve aparece em capturas de tela e compartilhamentos; desligue "Nevar" antes de compartilhar a tela.
 - Não exige Gravação de Tela: apenas os limites (bounds) das janelas são lidos.
 - A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (apenas Dock na parte inferior da tela). Sem ela, tudo o mais funciona. Use "Permitir neve no Dock…" no menu.
 - A animação pausa sozinha sob apps em tela cheia e com o Mac em estado térmico alto; no Modo de Baixo Consumo roda a 30 fps.

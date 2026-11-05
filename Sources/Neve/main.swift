@@ -4,7 +4,7 @@ import os
 import ServiceManagement
 
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate {
+final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var overlays: [Overlay] = []
     private var timer: Timer?
@@ -16,46 +16,52 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var mouseDown = false
     private var userIdle = false   // no input for 5 min: rendering paused, polling kept to notice input
     private var mouseMonitor: Any?
-    private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
+    private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let dock = DockWatcher()
     private var slowTimer: Timer?
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
     private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
     private var economy = UserDefaults.standard.bool(forKey: "economy")
     private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
-    private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "")
+    private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "n")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let image = NSImage(systemSymbolName: "snowflake", accessibilityDescription: "Neve")
-        image?.isTemplate = true
-        item.button?.image = image
+        item.button?.image = Self.symbol("snowflake", "Neve")
         let menu = NSMenu()
-        let clear = NSMenuItem(title: "Limpar neve", action: #selector(clearSnow), keyEquivalent: "")
+        menu.delegate = self
+        let clear = NSMenuItem(title: "Limpar neve", action: #selector(clearSnow), keyEquivalent: "k")
         let quit = NSMenuItem(title: "Sair", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.image = Self.symbol("power")
+        clear.image = Self.symbol("sparkles")
+        toggleItem.image = Self.symbol("snowflake")
         toggleItem.target = self
         clear.target = self
         toggleItem.state = enabled ? .on : .off
         loginItem.target = self
+        loginItem.image = Self.symbol("arrow.right.circle")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        let amount = NSMenuItem(title: "Quantidade", action: nil, keyEquivalent: "")
-        let sub = NSMenu()
+        let symbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
+        var levels: [NSMenuItem] = []
         for v in Intensity.allCases {
             let m = NSMenuItem(title: v.title, action: #selector(pickIntensity(_:)), keyEquivalent: "")
             m.target = self
             m.tag = v.rawValue
+            m.image = Self.symbol(symbols[v.rawValue])
             m.state = v == Intensity.saved ? .on : .off
-            sub.addItem(m)
+            levels.append(m)
         }
-        amount.submenu = sub
         economyItem.target = self
+        economyItem.image = Self.symbol("leaf")
         economyItem.state = economy ? .on : .off
-        capturesItem.target = self
-        capturesItem.state = UserDefaults.standard.bool(forKey: "showInCaptures") ? .on : .off
         axItem.target = self
+        axItem.image = Self.symbol("exclamationmark.triangle")
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
-        for i in [metalItem, toggleItem, amount, economyItem, capturesItem, clear, axItem, loginItem, .separator(), quit] { menu.addItem(i) }
+        let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem, .sectionHeader(title: "QUANTIDADE")] + levels
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), economyItem, loginItem, axItem, .separator(), clear, quit]
+        for i in items { menu.addItem(i) }
+        updateStatus()
         item.menu = menu
         statusItem = item
 
@@ -132,7 +138,36 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var polling: Bool { running && !hot }
     private var fullscreenIdle: Bool { !overlays.isEmpty && overlays.allSatisfy(\.isFullscreen) }
 
+    private static func symbol(_ name: String, _ description: String? = nil) -> NSImage? {
+        let i = NSImage(systemSymbolName: name, accessibilityDescription: description)
+        i?.isTemplate = true
+        return i
+    }
+
+    /// Read-only summary derived from the existing pause reasons; refreshed when the menu opens.
+    private var statusText: String {
+        let level = Intensity.saved
+        if !enabled { return "Desligado" }
+        if screensAsleep || sessionInactive || userIdle { return "Pausado — inativo" }
+        if hot { return "Pausado — sistema quente" }
+        if fullscreenIdle { return "Pausado — app em tela cheia" }
+        var s = level == .nevasca ? "Nevasca · vento forte" : "Nevando · \(level.title)"
+        if economy { s += " · econômico" }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { s += " · movimento reduzido" }
+        return s
+    }
+
+    private func updateStatus() {
+        statusLine.attributedTitle = NSAttributedString(string: "❄ Neve — " + statusText, attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.menuFont(ofSize: 0)])
+        let paused = !enabled || !polling || userIdle || fullscreenIdle
+        statusItem?.button?.appearsDisabled = paused
+        axItem.isHidden = AXIsProcessTrusted()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) { updateStatus() }
+
     private func refreshRunState() {
+        updateStatus()
         for o in overlays { if running && !userIdle { o.start() } else { o.pause() } }
         scheduleTimers()
         if polling {
@@ -194,17 +229,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         refreshRunState()
     }
 
-    @objc private func toggleCaptures() {
-        let on = capturesItem.state != .on
-        UserDefaults.standard.set(on, forKey: "showInCaptures")
-        capturesItem.state = on ? .on : .off
-        for o in overlays { o.setShowInCaptures(on) }
-    }
-
     @objc private func pickIntensity(_ sender: NSMenuItem) {
         guard let v = Intensity(rawValue: sender.tag) else { return }
         UserDefaults.standard.set(v.rawValue, forKey: Intensity.key)
-        for m in sender.menu?.items ?? [] { m.state = m == sender ? .on : .off }
+        for m in sender.menu?.items ?? [] where Intensity(rawValue: m.tag) != nil && m.action == sender.action { m.state = m == sender ? .on : .off }
         for o in overlays { o.setIntensity(v) }
     }
 
