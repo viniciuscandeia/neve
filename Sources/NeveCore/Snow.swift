@@ -9,7 +9,11 @@ public enum Tuning {
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
-    public static let windowRadius: CGFloat = 20   // macOS 26 window corner radius
+    /// Window corner radius: ~20pt from macOS 26 (Tahoe) on, ~10pt before.
+    public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }
+    public static let windowRadius = windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
+    static let calmSway: Float = 0.25       // Reduce Motion: share of the lateral flake sway kept
+    static let calmDebrisFall: Float = 30   // Reduce Motion: uniform initial fall speed of knocked-off snow
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
@@ -195,13 +199,16 @@ public struct Flake {
     var size: Float
     var alpha: Float
     public var kind: FlakeKind
+    var seed: Float = 0     // per-flake shape variant / rotation (0..1)
+    var fade: Float = 1     // 0..1 fade-in after a spawn; multiplied into alpha
 }
 
-/// GPU instance, 16 bytes; layout mirrors the Metal struct.
+/// GPU instance, 24 bytes (8-aligned); layout mirrors the Metal struct.
 public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
     var alpha: Float
+    var seed: Float
 }
 
 struct Surface {
@@ -209,6 +216,7 @@ struct Surface {
     let frame: CGRect    // unclipped, local coords
     let edgeY: Float
     let c0: Int          // first global column
+    let anchor: Int      // window's left edge in whole columns (absolute): pile moves are differences of these, so rounding never accumulates
     var pile: Pile
     var vel: SIMD2<Float> = .zero   // window velocity (pt/s) at the last poll that moved it
 }
@@ -297,12 +305,14 @@ public final class SnowField {
             let s = Float.random(in: 1.5...3.5, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
                          phase: phase, amp: Float.random(in: 5...15, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
-                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background)
+                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         default:
             let s = Float.random(in: 2.5...7, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
                          phase: phase, amp: Float.random(in: 8...25, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
-                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky)
+                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         }
     }
 
@@ -385,7 +395,7 @@ public final class SnowField {
     @discardableResult
     private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
-        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris))
+        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 0))
         return true
     }
 
@@ -464,6 +474,7 @@ public final class SnowField {
         let c0 = max(0, Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)))
         let c1 = min(numCols, Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1)
         guard c1 > c0 else { return nil }
+        let anchor = Int((Float(frame.minX) / bw).rounded())
         var pile = Pile(columns: c1 - c0, inset: Tuning.cornerInset, c0: c0, x0: Float(frame.minX), x1: Float(frame.maxX))
         pile.round(radius: Float(min(radius, frame.width / 2, frame.height / 2)), c0: c0, minX: Float(frame.minX), maxX: Float(frame.maxX))
         let y = CGFloat(edgeY) + 1
@@ -484,6 +495,7 @@ public final class SnowField {
             let prev = old.swapRemove(k)
             let d = SIMD2(Float(frame.minX - prev.frame.minX), Float(frame.minY - prev.frame.minY))
             let sameSize = abs(prev.frame.width - frame.width) < 0.5 && abs(prev.frame.height - frame.height) < 0.5
+            let shift = anchor - prev.anchor
             func carry(shift: Int) {   // heights by global column, clipped to what is visible / allowed now
                 for b in pile.heights.indices where pile.visible[b] {
                     let k = c0 + b - shift - prev.c0
@@ -492,7 +504,7 @@ public final class SnowField {
             }
             if id == 0 {   // Dock bar resizes when apps come and go: keep snow by global column
                 carry(shift: 0)
-            } else if sameSize, abs(d.x) < 0.5, abs(d.y) < 0.5, prev.pile.heights.count == pile.heights.count {
+            } else if sameSize, shift == 0, abs(d.y) < 0.5, prev.pile.heights.count == pile.heights.count {
                 var kept = prev.pile
                 kept.visible = pile.visible
                 kept.cap = pile.cap
@@ -503,7 +515,7 @@ public final class SnowField {
                 let a = exp(-pollDt / Tuning.velSmoothing)
                 vel = prev.vel * a + d / pollDt * (1 - a)
                 if moved == nil { moved = id }
-                carry(shift: Int((d.x / bw).rounded()))
+                carry(shift: shift)
                 spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.perUpdate(SnowField.shedFraction(v: vel, prev: prev.vel), dt: pollDt), velocity: vel)
             } else {   // resized: snow stays where it is in x; the part no longer over the window falls
                 carry(shift: 0)
@@ -514,7 +526,7 @@ public final class SnowField {
                 }
             }
         }
-        return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, pile: pile, vel: vel)
+        return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel)
     }
 
     private func buildColumns() {
@@ -565,10 +577,11 @@ public final class SnowField {
             guard debris.count < Tuning.maxDebris else { break }
             let x = (Float(col) + Float.random(in: 0...1, using: &rng)) * Tuning.binWidth
             let y = edgeY + from + Float.random(in: 0...h, using: &rng)
-            let vx = Float.random(in: -12...12, using: &rng) + v.x * 0.5, fall = Float.random(in: 10...50, using: &rng) - v.y * 0.5
+            let vx = (calm ? 0 : Float.random(in: -12...12, using: &rng)) + v.x * 0.5
+            let fall = (calm ? Tuning.calmDebrisFall : Float.random(in: 10...50, using: &rng)) - v.y * 0.5
             if addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9) { n += 1 }
             // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
-            if Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
+            if !calm, Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
                 for _ in 0..<Int.random(in: 2...(2 + Int(h / 6)), using: &rng) {
                     if addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
                                  vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng)) { n += 1 }
@@ -610,8 +623,9 @@ public final class SnowField {
                 continue
             }
             let prevY = f.pos.y
+            f.fade = min(1, f.fade + dt * 2.5)   // ~0.4s fade-in
             f.phase += f.freq * dt
-            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * cos(f.phase)) * dt
+            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
             if f.pos.x < -10 { f.pos.x += w + 20 } else if f.pos.x > w + 10 { f.pos.x -= w + 20 }
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
@@ -628,6 +642,7 @@ public final class SnowField {
         while i >= 0 {
             var f = debris[i]
             let prevY = f.pos.y
+            f.fade = min(1, f.fade + dt * 2.5)
             f.vx -= (f.vx - wind * 0.15) * 0.5 * dt
             f.fall = min(f.fall + Tuning.debrisGravity * dt, Tuning.debrisTerminal)
             f.pos.x += f.vx * dt
@@ -648,9 +663,9 @@ public final class SnowField {
         var n = 0
         for i in 0..<(skyEnd + bgEnd) {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
-            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
+            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
         }
-        for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha); n += 1 }
+        for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
         return n
     }
 
@@ -668,9 +683,13 @@ public final class SnowField {
             let n = h.count
             let edge = CGFloat(s.edgeY)
             func x(_ i: Int) -> CGFloat { (CGFloat(s.c0 + i) + 0.5) * bw }
+            func ceiling(_ i: Int) -> CGFloat { edge + CGFloat(base[i] + s.pile.cap[i]) }   // infinite where no window is in front
             func top(_ i: Int, _ b: Int, _ e: Int) -> CGPoint {
                 let l = i > b ? h[i - 1] : 0, r = i < e - 1 ? h[i + 1] : 0
-                return CGPoint(x: x(i), y: edge + CGFloat(base[i] + (l + 2 * h[i] + r) / 4))
+                let sm = (l + 2 * h[i] + r) / 4
+                // Stable irregularity keyed on the window-relative column (travels with the pile), scaled by height so it vanishes at the ends.
+                let n = Float(noise(s.c0 + i - s.anchor)) * min(sm * 0.08, 1.5)
+                return CGPoint(x: x(i), y: min(edge + CGFloat(base[i] + sm + n), ceiling(i)))
             }
             var b = 0
             while b < n {
@@ -683,13 +702,14 @@ public final class SnowField {
                 if lo <= hi {
                     lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
                     idx.removeAll(keepingCapacity: true)
-                    idx.append(contentsOf: stride(from: lo, to: hi, by: 3))
+                    for i in lo..<hi where i == lo || (s.c0 + i - s.anchor) % 3 == 0 { idx.append(i) }
                     idx.append(hi)
                     path.move(to: top(idx[0], b, e))
                     if idx.count > 2 {
                         for k in 1..<(idx.count - 1) {
                             let c = top(idx[k], b, e), nx = top(idx[k + 1], b, e)
-                            path.addQuadCurve(to: CGPoint(x: (c.x + nx.x) / 2, y: (c.y + nx.y) / 2), control: c)
+                            // Control and end points all stay under the ceiling, so the quad cannot cross it.
+                            path.addQuadCurve(to: CGPoint(x: (c.x + nx.x) / 2, y: min((c.y + nx.y) / 2, ceiling(idx[k]), ceiling(idx[k + 1]))), control: c)
                         }
                     }
                     if idx.count > 1 { path.addLine(to: top(idx[idx.count - 1], b, e)) }
@@ -701,6 +721,14 @@ public final class SnowField {
         }
         return path
     }
+}
+
+/// Deterministic value noise in -1...1 for a column index.
+func noise(_ i: Int) -> CGFloat {
+    var z = UInt64(bitPattern: Int64(i)) &+ 0x9E37_79B9_7F4A_7C15
+    z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+    z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+    return CGFloat(Double((z ^ (z >> 31)) >> 11) / Double(1 << 52) - 1)
 }
 
 private extension Array {

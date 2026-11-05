@@ -1,0 +1,126 @@
+import CoreGraphics
+import Foundation
+import Testing
+@testable import NeveCore
+
+/// Field with a snowy pile on window 1 (x 300...700, top edge y=500) built by direct deposits; no flakes.
+private func piledField(extra: [WindowInfo] = []) -> SnowField {
+    let f = makeField()
+    f.update(windows: extra + [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for _ in 0..<40 { for b in stride(from: 5, to: f.surfaces[i].pile.heights.count - 5, by: 2) { f.deposit(surface: i, bin: b, volume: 4) } }
+    return f
+}
+
+/// Moves window 1 from x=300 to x=300+total in `n` equal steps (slow: 1 s per update, so nothing sheds).
+private func slide(_ n: Int, total: CGFloat) -> (c0: Int, heights: [Float]) {
+    let f = piledField()
+    for k in 1...n { f.update(windows: [win(1, 300 + total * CGFloat(k) / CGFloat(n), 300, 400, 200)], dt: 1) }
+    let p = f.pile(id: 1)!
+    return (p.c0, Array(p.heights.dropFirst(5).dropLast(5)))   // ends are clipped by the corner taper, which depends on the exact x
+}
+
+// 1. Pile travels exactly as far as the window, however the move is split.
+@Test func manySmallMovesEqualOneBigMove() {
+    let one = slide(1, total: 20)
+    for n in [2, 7, 20, 50] {
+        let r = slide(n, total: 20)
+        #expect(r.c0 == one.c0 && r.heights == one.heights)
+    }
+    let frac = slide(25, total: 10)          // 0.4 pt steps
+    #expect(frac.c0 == slide(1, total: 10).c0 && frac.heights == slide(1, total: 10).heights)
+}
+
+@Test func pileCenterFollowsWindowWithinOneColumn() {
+    let f = piledField()
+    func center() -> Float { let p = f.pile(id: 1)!; var m: Float = 0, w: Float = 0
+        for (b, h) in p.heights.enumerated() { m += h * (Float(p.c0 + b) + 0.5) * 2; w += h }; return m / w }
+    let before = center()
+    for k in 1...20 { f.update(windows: [win(1, 300 + CGFloat(k), 300, 400, 200)], dt: 1) }
+    #expect(abs((center() - before) - 20) <= 2)
+}
+
+// 2 + 3. Drawn contour stays under a front window's underside.
+private func flatten(_ path: CGPath) -> [CGPoint] {
+    var pts: [CGPoint] = [], cur = CGPoint.zero
+    path.applyWithBlock { e in
+        let p = e.pointee.points
+        switch e.pointee.type {
+        case .moveToPoint, .addLineToPoint: cur = p[0]; pts.append(cur)
+        case .addQuadCurveToPoint:
+            for t in stride(from: CGFloat(0.05), through: 1, by: 0.05) {
+                let u = 1 - t
+                pts.append(CGPoint(x: u * u * cur.x + 2 * u * t * p[0].x + t * t * p[1].x, y: u * u * cur.y + 2 * u * t * p[0].y + t * t * p[1].y))
+            }
+            cur = p[1]
+        default: break
+        }
+    }
+    return pts
+}
+
+@Test func drawnContourNeverEntersFrontWindow() {
+    // Back top edge y=400 (x 100...400); front window underside at y=410, x 200...500: ceiling = 10pt of snow.
+    let f = makeField()
+    let front410 = win(2, 200, 410, 300, 200)
+    f.update(windows: [front410, back])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for _ in 0..<40 { for b in 0..<f.surfaces[i].pile.heights.count { f.deposit(surface: i, bin: b, volume: 4) } }
+    let pts = flatten(f.pilePath()).filter { $0.x >= 200 && $0.x <= 400 }
+    #expect(pts.count > 20)
+    #expect(pts.map(\.y).max()! <= 410 + 1e-9)
+    #expect(flatten(f.pilePath()).filter { $0.x < 190 }.map(\.y).max()! > 410)   // snow left of the front window is still tall
+}
+
+@Test func contourIrregularityIsStableAndTravelsWithThePile() {
+    let f = piledField()
+    let a = flatten(f.pilePath()).filter { $0.x > 330 && $0.x < 670 }   // ends: corner taper clips on the next move
+    #expect(flatten(f.pilePath()).filter { $0.x > 330 && $0.x < 670 } == a)   // no frame-to-frame shimmer
+    let tops = a.filter { $0.y > 500 + 5 && $0.x > 400 && $0.x < 600 }.map(\.y)
+    #expect(Set(tops.map { ($0 * 100).rounded() }).count > 5)   // not a smooth band
+    #expect(a.map(\.y).max()! <= 500 + Double(Tuning.maxPileHeight) + 1.5 + 1e-9)
+    f.update(windows: [win(1, 340, 300, 400, 200)], dt: 1)      // 40 pt = 20 whole columns
+    let b = flatten(f.pilePath()).filter { $0.x > 370 && $0.x < 710 }
+    #expect(a.count > 100 && a.count == b.count && zip(a, b).allSatisfy { abs($1.x - $0.x - 40) < 1e-9 && abs($1.y - $0.y) < 1e-9 })
+}
+
+// 4. Corner radius by OS.
+@Test func windowRadiusDependsOnMacOSVersion() {
+    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)) == 20)
+    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 27, minorVersion: 1, patchVersion: 0)) == 20)
+    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 15, minorVersion: 6, patchVersion: 0)) == 10)
+    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)) == 10)
+}
+
+// 5. Reduce Motion.
+private func maxSway(calm: Bool) -> Float {
+    let f = makeField(flakes: 600, seed: 7)
+    f.setCalm(calm)
+    var m: Float = 0
+    for _ in 0..<600 {
+        let before = f.flakes
+        f.step(dt: 1 / 60)
+        for (a, b) in zip(before, f.flakes) where a.kind != .dormant && b.pos.y < a.pos.y && abs(b.pos.x - a.pos.x) < 5 { m = max(m, abs(b.pos.x - a.pos.x) * 60) }
+    }
+    return m
+}
+
+@Test func calmModeReducesSwayToAQuarter() {
+    // |vx| <= 6 * 1.3 = 7.8 pt/s (calm: no wind) plus sway amplitude <= 25 * 0.25 = 6.25.
+    #expect(maxSway(calm: true) <= 7.8 + 6.25 + 0.01)
+    #expect(maxSway(calm: false) > 20)
+}
+
+@Test func calmModeDebrisFallsWithoutClumpsOrJitter() {
+    let f = makeField(flakes: 0)
+    f.setCalm(true)
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for _ in 0..<40 { for b in stride(from: 5, to: 190, by: 2) { f.deposit(surface: i, bin: b, volume: 4) } }
+    let spilled = f.debris.count   // edge spill-off is not knock-off
+    f.update(windows: [])
+    #expect(f.debris.count - spilled > 10)
+    #expect(f.debris.dropFirst(spilled).allSatisfy { $0.vx == 0 && $0.fall == Tuning.calmDebrisFall })
+    f.step(dt: 0.05)
+    #expect(f.debris.dropFirst(spilled).allSatisfy { $0.fall > Tuning.calmDebrisFall })   // still falls (and accelerates)
+}

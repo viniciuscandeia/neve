@@ -16,10 +16,16 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
   - Linha de status no topo, atualizada ao abrir o menu (ex.: "Nevando · Média", "Pausado — app em tela cheia", "Desligado").
   - **Nevar** (⌘N): liga e desliga a neve.
   - **Quantidade**: Leve, Média, Forte ou Nevasca (a Nevasca adiciona um vento que muda de direção continuamente).
-  - **Opções**: **Modo econômico** (30 fps e neve só no monitor principal, o da barra de menus; a escolha é lembrada), **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
+  - **Opções** (todas lembradas entre execuções):
+    - **Nevar em**: Todas as telas, Só na tela principal ou uma tela específica (listada pelo nome). Se a tela escolhida for desconectada, a neve volta a cair em todas.
+    - **Modo econômico**: 30 fps e neve só no monitor principal, o da barra de menus (a linha de status avisa).
+    - **Modo ambiente**: desativa a pausa após 5 minutos sem uso, para usar o Neve como decoração passiva.
+    - **Atrás das janelas**: a neve cai só sobre o papel de parede, atrás das janelas dos apps e dos ícones da mesa; nesse modo não há acúmulo em janelas nem no Dock.
+    - **Neve parada (movimento reduzido)**: aparece só quando Reduzir Movimento está ativo no sistema; mostra a neve já acumulada, sem flocos caindo.
+    - **Mostrar em capturas**, **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
   - **Limpar neve** (⌘K): remove a neve acumulada.
   - **Sair** (⌘Q).
-- Por padrão a neve não aparece em capturas de tela, gravações de tela nem compartilhamento de tela; ative "Mostrar em capturas" (em OPÇÕES) para incluí-la, por exemplo ao gravar uma demo.
+- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative 'Mostrar em capturas' para incluí-la.
 - Não exige Gravação de Tela: apenas os limites (bounds) das janelas são lidos.
 - A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (apenas Dock na parte inferior da tela). Sem ela, tudo o mais funciona. Use "Permitir neve no Dock…" no menu.
 - A animação pausa sozinha sob apps em tela cheia e com o Mac em estado térmico alto; no Modo de Baixo Consumo roda a 30 fps.
