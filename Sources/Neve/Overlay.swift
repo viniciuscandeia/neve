@@ -232,6 +232,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         forcePath = true                    // re-place the piles at once, dropping any drag offset
     }
     func clear() { field.clear() }
+    func stage(_ s: Scenario) { field.stage(s) }
 
     private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
     /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.

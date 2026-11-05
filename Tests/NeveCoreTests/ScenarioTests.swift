@@ -1,0 +1,32 @@
+import CoreGraphics
+import Testing
+@testable import NeveCore
+
+private func heavyField() -> SnowField {
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 7)
+    f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: 25), win(1, 300, 300, 500, 300)])
+    return f
+}
+
+@Test func heavyScenarioFillsPilesAndStartsAFight() {
+    let f = heavyField()
+    f.stage(.heavy)
+    for s in f.surfaces {
+        for b in s.pile.heights.indices where s.pile.visible[b] { #expect(s.pile.heights[b] >= 0.7 * max(s.pile.limit(b), 0) - 0.001) }
+    }
+    var fought = false, shot = false
+    for _ in 0..<600 {
+        f.step(dt: 1 / 60)
+        fought = fought || !f.walk.fights.isEmpty
+        shot = shot || !f.walk.shots.isEmpty
+    }
+    #expect(fought && shot)
+}
+
+@Test func stagingTwiceDoesNotDuplicate() {
+    let f = heavyField()
+    f.stage(.heavy)
+    let n = f.balls.count
+    f.stage(.heavy)
+    #expect(n == 6 && f.balls.count == 6 && f.snowman?.complete == true)
+}

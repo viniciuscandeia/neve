@@ -344,6 +344,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !userIdle { pollWindows() }
     }
 
+    private let scenarioHeavy = ProcessInfo.processInfo.environment["NEVE_SCENARIO"] == "heavy"
+    private var lastStage = Date.distantPast
+
     @objc private func pollWindows() {
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
@@ -356,6 +359,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             o.setFullscreen(fs)
             if !o.isFullscreen { o.update(windows: windows) }   // under fullscreen the list is just that app: keep piles untouched
         }
+        if scenarioHeavy, Date().timeIntervalSince(lastStage) >= 20 { lastStage = Date(); overlays.forEach { $0.stage(.heavy) } }   // perf A/B load
         if fullscreenIdle != idleWatch {
             scheduleTimers()
             if !fullscreenIdle { refreshDock() }
