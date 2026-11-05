@@ -135,24 +135,16 @@ extension SnowField {
 
     /// Where a snowman may stand: the visible stretch of its surface around x, kept clear of ends, corners and covered columns.
     func walkRange(surface sid: Int, x: Float, half: Float) -> (Float, Float)? {
-        guard let s = surfaces.first(where: { $0.id == sid }) else { return nil }
-        let p = s.pile, n = p.heights.count, c = column(x) - s.c0
-        guard c >= 0, c < n, p.visible[c] else { return nil }
-        var a = c, b = c
-        while a > 0 && p.visible[a - 1] { a -= 1 }
-        while b < n - 1 && p.visible[b + 1] { b += 1 }
-        let lo = max(Float(s.c0 + a) * Tuning.binWidth, p.x0), hi = min(Float(s.c0 + b + 1) * Tuning.binWidth, p.x1)
+        guard let si = index[sid], let run = visibleRun(si: si, bin: column(x) - surfaces[si].c0) else { return nil }
+        let s = surfaces[si]
+        let lo = max(Float(s.c0 + run.lowerBound) * Tuning.binWidth, s.pile.x0), hi = min(Float(s.c0 + run.upperBound) * Tuning.binWidth, s.pile.x1)
         return (lo + half + 8, hi - half - 8)
     }
 
     /// Whether there is snow (mean height over +-3 columns >= 1.5) under x on the surface.
     private func snowUnder(_ sid: Int, _ x: Float) -> Bool {
-        guard let s = surfaces.first(where: { $0.id == sid }) else { return false }
-        let n = s.pile.heights.count, c = column(x) - s.c0
-        guard c >= 0, c < n else { return false }
-        var sum: Float = 0
-        for b in max(0, c - 3)...min(n - 1, c + 3) { sum += s.pile.heights[b] }
-        return sum / Float(min(n - 1, c + 3) - max(0, c - 3) + 1) >= 1.5
+        guard let si = index[sid], let m = meanHeight(si: si, col: column(x), span: 3) else { return false }
+        return m >= 1.5
     }
 
     /// -1...1: how hard the wind blows sideways. Zero below a dead zone, so only Nevasca gusts count (Leve / Media peak at 8).

@@ -184,7 +184,7 @@ extension SnowField {
 
     /// On a surface: follows the pile top; falls when that column is no longer visible snow ground.
     private func rest(_ i: Int, _ dt: Float) {
-        guard let sid = balls[i].surfaceID, let si = surfaces.firstIndex(where: { $0.id == sid }) else { setFalling(i, .zero); return }
+        guard let sid = balls[i].surfaceID, let si = index[sid] else { setFalling(i, .zero); return }
         let s = surfaces[si], c = column(balls[i].pos.x) - s.c0
         guard c >= 0, c < s.pile.heights.count, s.pile.visible[c] else { setFalling(i, .zero); return }
         var sum: Float = 0, n: Float = 0
@@ -239,7 +239,8 @@ extension SnowField {
         guard !balls.isEmpty else { return }
         for i in balls.indices where balls[i].state == .resting && balls[i].parent == nil {
             guard let sid = balls[i].surfaceID, sid != Tuning.groundID, sid != 0 else { continue }
-            guard let n = surfaces.first(where: { $0.id == sid }), let o = before.first(where: { $0.id == sid }) else { setFalling(i, .zero); continue }
+            guard let ni = index[sid], let o = before.first(where: { $0.id == sid }) else { setFalling(i, .zero); continue }
+            let n = surfaces[ni]
             if SnowField.shedFraction(v: n.vel, prev: o.vel) > 0.5 { setFalling(i, n.vel * 0.5); continue }
             let dx = Float(n.frame.minX - o.frame.minX)
             if dx != 0 { balls[i].pos.x += dx; ballsVersion &+= 1 }

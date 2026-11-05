@@ -11,6 +11,7 @@ public final class SnowField {
     public internal(set) var flakes: [Flake] = []
     public internal(set) var debris: [Flake] = []
     var surfaces: [Surface] = []
+    var index: [Int: Int] = [:]   // surface id -> index into `surfaces`, rebuilt with them in updateSurfaces
     var offsets: [Int32]       // CSR: per column range into entries
     var entries: [Entry] = []
     var lastWindows: [WindowInfo] = []

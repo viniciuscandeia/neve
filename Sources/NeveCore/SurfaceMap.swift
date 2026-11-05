@@ -9,6 +9,7 @@ struct Surface {
     let anchor: Int      // window's left edge in whole columns (absolute): pile moves are differences of these, so rounding never accumulates
     var pile: Pile
     var vel: SIMD2<Float> = .zero   // window velocity (pt/s) at the last poll that moved it
+    var runs: [Range<Int>] = []     // visible stretches of the pile (local bins), set when the surfaces are built
 }
 
 struct Entry {
@@ -25,7 +26,30 @@ extension SnowField {
         return false
     }
 
-    func pile(id: Int) -> Pile? { surfaces.first { $0.id == id }?.pile }
+    func surface(id: Int) -> Int? { index[id] }
+
+    func pile(id: Int) -> Pile? { index[id].map { surfaces[$0].pile } }
+
+    /// Mean pile height over the global columns col-span...col+span (clipped to the surface); nil when `col` is off it.
+    func meanHeight(si: Int, col: Int, span: Int) -> Float? {
+        let c = col - surfaces[si].c0, n = surfaces[si].pile.heights.count
+        guard c >= 0, c < n else { return nil }
+        let lo = max(0, c - span), hi = min(n - 1, c + span)
+        var sum: Float = 0
+        for b in lo...hi { sum += surfaces[si].pile.heights[b] }
+        return sum / Float(hi - lo + 1)
+    }
+
+    /// The visible run (local bins) containing local bin `c`, by binary search.
+    func visibleRun(si: Int, bin c: Int) -> Range<Int>? {
+        let runs = surfaces[si].runs
+        var lo = 0, hi = runs.count
+        while lo < hi {
+            let m = (lo + hi) / 2
+            if runs[m].upperBound <= c { lo = m + 1 } else { hi = m }
+        }
+        return lo < runs.count && runs[lo].contains(c) ? runs[lo] : nil
+    }
 
     func buildColumns() {
         for i in offsets.indices { offsets[i] = 0 }

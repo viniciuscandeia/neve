@@ -25,6 +25,18 @@ public struct Pile {
         self.inset = inset
     }
 
+    /// Column ranges (local bins) where the pile is visible, in order.
+    func visibleRuns() -> [Range<Int>] {
+        var r: [Range<Int>] = [], b = 0
+        while b < visible.count {
+            guard visible[b] else { b += 1; continue }
+            var e = b
+            while e < visible.count && visible[e] { e += 1 }
+            r.append(b..<e); b = e
+        }
+        return r
+    }
+
     mutating func empty() { for b in heights.indices { heights[b] = 0 } }
 
     /// Baseline follows the corner arcs within `radius` of each end.
@@ -62,14 +74,14 @@ public struct Pile {
         }
         let lo = max(0, bin - 8), hi = min(heights.count - 1, bin + 8)
         for _ in 0..<6 {
-            for i in lo...hi {
+            for i in lo...hi where visible[i] {   // hidden bins are frozen: no flow out of them (nor into them, see relax)
                 if relax(i, i - 1) { changed = true }
                 if relax(i, i + 1) { changed = true }
             }
         }
         for i in max(lo - 1, 0)...min(hi + 1, heights.count - 1) {   // relaxation reaches one bin past the window
             let over = heights[i] - max(limit(i), 0)
-            guard over > 0 else { continue }
+            guard visible[i], over > 0 else { continue }
             heights[i] -= over
             if i == 0 { spillL += over } else if i == heights.count - 1 { spillR += over }
             changed = true
@@ -83,12 +95,13 @@ public struct Pile {
     }
 
     /// Moves half the excess slope (on baseline + height) from bin i to lower neighbour j.
-    /// Hidden j drains silently; past the ends the snow spills off as debris.
+    /// A hidden j is a wall (no flow, nothing lost); past the ends the snow spills off as debris.
     private mutating func relax(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
         if !inRange && continuesPastScreen(left: j < 0) { return false }
-        let ok = inRange && visible[j]
-        let tj = ok ? base[j] + heights[j] : (inRange ? base[i] : base[i] - 4)
+        if inRange && !visible[j] { return false }
+        let ok = inRange
+        let tj = ok ? base[j] + heights[j] : base[i] - 4
         let excess = base[i] + heights[i] - tj - Tuning.slope
         guard excess > 0, heights[i] > 0 else { return false }
         var m = min(excess * 0.5, heights[i])

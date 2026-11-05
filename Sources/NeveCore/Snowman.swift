@@ -66,12 +66,8 @@ extension SnowField {
 
     /// Surface index, mean pile height over the base, base y, and whether the spot is visible.
     private func site(of m: Snowman) -> (Int, Float, Float, Bool)? {
-        guard let si = surfaces.firstIndex(where: { $0.id == m.surfaceID }) else { return nil }
+        guard let si = index[m.surfaceID], let avg = meanHeight(si: si, col: column(m.x), span: 3) else { return nil }
         let s = surfaces[si], c = column(m.x) - s.c0
-        guard c >= 0, c < s.pile.heights.count else { return nil }
-        var sum: Float = 0, n: Float = 0
-        for b in max(0, c - 3)...min(s.pile.heights.count - 1, c + 3) { sum += s.pile.heights[b]; n += 1 }
-        let avg = sum / n
         return (si, avg, s.edgeY + s.pile.base[c] + avg - 2 * m.scale, s.pile.visible[c])
     }
 
@@ -102,7 +98,7 @@ extension SnowField {
         let need = Tuning.snowmanDepth * Float(w), room = (Snowman.height + 20) * snowmanScale
         let clear = Int((Tuning.snowmanClearance / Tuning.binWidth).rounded(.up))
         for id in [Tuning.groundID, 0] {
-            guard let si = surfaces.firstIndex(where: { $0.id == id }) else { continue }
+            guard let si = index[id] else { continue }
             let p = surfaces[si].pile, n = p.heights.count
             var seen = false, bestRun = 0, bestAt = 0
             var b = 0

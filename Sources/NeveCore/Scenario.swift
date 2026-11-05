@@ -15,7 +15,7 @@ extension SnowField {
             }
         }
         pilesDirty = true
-        guard let gi = surfaces.firstIndex(where: { $0.id == Tuning.groundID }) else { return }
+        guard let gi = index[Tuning.groundID] else { return }
         let g = surfaces[gi], n = g.pile.heights.count, clear = Int((Tuning.snowmanClearance / Tuning.binWidth).rounded(.up))
         var best = (0, 0), b = 0   // widest visible run [lo, hi) of ground bins, clear of the ends
         while b < n {

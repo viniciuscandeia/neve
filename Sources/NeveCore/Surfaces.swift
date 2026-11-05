@@ -74,7 +74,10 @@ extension SnowField {
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
         for s in old { spawned += knockOff(s) }   // gone surfaces
         draggingID = moved
+        for i in built.indices { built[i].runs = built[i].pile.visibleRuns() }
         surfaces = built
+        index.removeAll(keepingCapacity: true)
+        for (i, s) in surfaces.enumerated() { index[s.id] = i }
         buildColumns()
         transportBalls(before: before)
         pilesDirty = true
@@ -117,9 +120,9 @@ extension SnowField {
         }
         if let k = old.firstIndex(where: { $0.id == Tuning.groundID }) {
             let prev = old.swapRemove(k)
-            for b in 0..<numCols {   // a lowered limit (Dock shrank / moved) sheds the excess as debris, visible columns only
-                let keep = min(prev.pile.heights[b], pile.limit(b)), over = prev.pile.heights[b] - keep
-                if over > 0.5, pile.visible[b] { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero) }
+            for b in 0..<numCols {   // a lowered limit (Dock shrank / moved) sheds the excess as debris; hidden columns keep their snow
+                let keep = pile.visible[b] ? min(prev.pile.heights[b], pile.limit(b)) : prev.pile.heights[b], over = prev.pile.heights[b] - keep   // hidden snow stays as it was
+                if over > 0.5 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero) }
                 pile.heights[b] = keep
             }
         }
@@ -154,10 +157,15 @@ extension SnowField {
             let d = SIMD2(Float(frame.minX - prev.frame.minX), Float(frame.minY - prev.frame.minY))
             let sameSize = abs(prev.frame.width - frame.width) < 0.5 && abs(prev.frame.height - frame.height) < 0.5
             let shift = anchor - prev.anchor
-            func carry(shift: Int) {   // heights by global column, clipped to what is visible / allowed now
-                for b in pile.heights.indices where pile.visible[b] {
+            func carry(shift: Int) {   // heights by global column; hidden bins travel too (frozen), visible ones are clipped to the limit
+                for b in pile.heights.indices {
                     let k = c0 + b - shift - prev.c0
-                    if k >= 0, k < prev.pile.heights.count { pile.heights[b] = min(prev.pile.heights[k], pile.limit(b)) }
+                    guard k >= 0, k < prev.pile.heights.count else { continue }
+                    let h = prev.pile.heights[k]
+                    guard pile.visible[b] else { pile.heights[b] = h; continue }
+                    let keep = min(h, pile.limit(b))
+                    pile.heights[b] = keep
+                    if !prev.pile.visible[k] { spawned += shedBin(col: c0 + b, edgeY: edgeY + pile.base[b], from: keep, amount: h - keep, velocity: .zero) }   // uncovered: the excess falls
                 }
             }
             if id == 0 {   // Dock bar resizes when apps come and go: keep snow by global column
@@ -166,7 +174,11 @@ extension SnowField {
                 var kept = prev.pile
                 kept.visible = pile.visible
                 kept.cap = pile.cap
-                for b in kept.heights.indices { kept.heights[b] = pile.visible[b] ? min(kept.heights[b], kept.cap[b]) : 0 }
+                for b in kept.heights.indices where pile.visible[b] {   // hidden bins stay frozen; uncovered ones shed what no longer fits
+                    let h = kept.heights[b], keep = min(h, kept.cap[b])
+                    kept.heights[b] = keep
+                    if !prev.pile.visible[b] { spawned += shedBin(col: c0 + b, edgeY: edgeY + kept.base[b], from: keep, amount: h - keep, velocity: .zero) }
+                }
                 pile = kept
             } else if sameSize {   // moved: the pile travels with the window; a speed-dependent share falls off
                 // Smooth over ~100 ms: at frame-rate updates raw d/dt is noisy; at the old 0.1-0.5 s polls this is ~raw.
@@ -178,7 +190,7 @@ extension SnowField {
             } else {   // resized: snow stays where it is in x; the part no longer over the window falls
                 carry(shift: 0)
                 let v = (d / pollDt).limited()
-                for k in prev.pile.heights.indices {
+                for k in prev.pile.heights.indices where prev.pile.visible[k] {
                     let col = prev.c0 + k
                     if col < c0 || col >= c1 { spawned += shedBin(col: col, edgeY: prev.edgeY + prev.pile.base[k], from: 0, amount: prev.pile.heights[k], velocity: v) }
                 }
@@ -193,7 +205,7 @@ extension SnowField {
         let v = v.limited()
         let zone = max(Float(frame.width) * Tuning.shedEdgeZone, 1)
         var n = 0
-        for b in pile.heights.indices where pile.heights[b] > 0.5 {
+        for b in pile.heights.indices where pile.heights[b] > 0.5 && pile.visible[b] {
             let x = binCenter(c0 + b)
             let edge = max(0, 1 - min(x - Float(frame.minX), Float(frame.maxX) - x) / zone)
             let h = pile.heights[b], r = h * min(1, fraction * (1 + Tuning.shedEdgeBias * edge))
@@ -222,7 +234,7 @@ extension SnowField {
             guard b0 <= b1 else { continue }
             for k in b0...b1 {
                 let h = surfaces[si].pile.heights[k]
-                guard h > 0.5 else { continue }
+                guard h > 0.5, surfaces[si].pile.visible[k] else { continue }
                 let x = binCenter(c + k), bottom = edgeY + surfaces[si].pile.base[k], my = bottom + h / 2
                 let t = min(max(((x - ax) * dx + (my - ay) * dy) / len2, 0), 1)
                 let qx = ax + t * dx, qy = ay + t * dy
@@ -238,7 +250,7 @@ extension SnowField {
     /// Turns a whole pile into falling debris, inheriting some of the surface's motion.
     func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
         var n = 0
-        for (b, h) in s.pile.heights.enumerated() { n += shedBin(col: s.c0 + b, edgeY: s.edgeY + s.pile.base[b], from: 0, amount: h, velocity: v) }
+        for (b, h) in s.pile.heights.enumerated() where s.pile.visible[b] { n += shedBin(col: s.c0 + b, edgeY: s.edgeY + s.pile.base[b], from: 0, amount: h, velocity: v) }
         return n
     }
 
@@ -288,6 +300,7 @@ extension SnowField {
             for b in surfaces[si].pile.heights.indices {
                 let h = surfaces[si].pile.heights[b], col = c0 + b
                 guard h > 0 else { continue }
+                if !surfaces[si].pile.visible[b] { surfaces[si].pile.heights[b] = 0; continue }   // hidden: gone without debris over the front window
                 let rank = 0.7 * binCenter(col) / size.x + 0.3 * Float(UInt32(truncatingIfNeeded: col &* 2654435761) % 1000) / 1000
                 guard rank > from, rank <= to else { continue }
                 surfaces[si].pile.heights[b] = 0
