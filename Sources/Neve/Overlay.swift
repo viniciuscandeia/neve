@@ -372,7 +372,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             lastPathTime = now
             field.pilesDirty = false
             forcePath = false
-            let path = field.pilePath(dragging: drag ?? -1)
+            let path = field.pilePath(dragging: drag ?? .min)
             let dpath = drag == nil ? nil : field.pilePath(dragging: drag!, forDrag: true)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
