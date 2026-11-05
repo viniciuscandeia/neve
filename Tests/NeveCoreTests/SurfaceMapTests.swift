@@ -106,6 +106,25 @@ let front = win(2, 200, 300, 300, 300)
     #expect(f.pile(id: 1)!.heights.max()! == tall)
 }
 
+@Test func changingBoundsInPlaceKeepsPilesAndMovesCutoffs() {
+    let f = makeField(flakes: 600)
+    f.update(windows: [front, back])
+    #expect(snowUntilPiled(f, id: 1))
+    let tall = f.pile(id: 1)!.heights.max()!
+    f.setBounds(groundY: 90, visibleTop: 780)   // no-op
+    f.setBounds(groundY: 60, visibleTop: 750)   // menu bar grew, Dock shrank
+    #expect(f.update(windows: [front, back]) == 0)
+    #expect(f.pile(id: 1)!.heights.max()! == tall)
+    #expect(f.pile(id: 2) != nil)
+    f.setBounds(groundY: 90, visibleTop: 550)   // front window's top (y=600) now in the menu-bar area
+    f.update(windows: [front, back])
+    #expect(f.pile(id: 2) == nil)
+    #expect(f.pile(id: 1)!.heights.max()! == tall)
+    f.setBounds(groundY: 450, visibleTop: 780)  // back window's top (y=400) now below ground
+    f.update(windows: [front, back])
+    #expect(f.pile(id: 1) == nil)
+}
+
 @Test func vanishedWindowDropsItsSnowAsDebrisAndLosesItsSurface() {
     let f = makeField(flakes: 600)
     f.update(windows: [front, back])

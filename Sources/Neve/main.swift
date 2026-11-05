@@ -51,7 +51,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         statusItem = item
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
-        nc.addObserver(self, selector: #selector(rebuildOverlays), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         nc.addObserver(self, selector: #selector(powerChanged), name: .NSProcessInfoPowerStateDidChange, object: nil)
         ws.addObserver(self, selector: #selector(screensSlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionResigned), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
@@ -65,8 +65,23 @@ final class AppController: NSObject, NSApplicationDelegate {
         rebuildOverlays()
     }
 
-    @objc private func rebuildOverlays() {
+    /// Screen set / frame / scale of the last rebuild; Dock and menu-bar (visibleFrame) changes never rebuild.
+    private var builtKeys: [[CGFloat]] = []
+    private func keys(_ s: [NSScreen]) -> [[CGFloat]] { s.map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height, $0.backingScaleFactor] } }
+
+    /// Leaving / entering fullscreen reshuffles the menu bar and Dock mid-Space-animation: ignore geometry until ~1s after.
+    private var settleUntil = Date.distantPast
+    private var settling: Bool { overlays.contains(where: \.isFullscreen) || Date() < settleUntil }
+
+    /// Rebuild only if the screens really changed, else just move ground / menu-bar cutoffs in place.
+    @objc private func screensChanged() {
+        if polling && settling { return }   // the poll timer re-checks once settled
+        if keys(wantedScreens) != builtKeys { rebuildOverlays() } else { overlays.forEach { $0.refreshBounds() } }
+    }
+
+    private func rebuildOverlays() {
         for o in overlays { o.teardown() }
+        builtKeys = keys(wantedScreens)
         overlays = wantedScreens.compactMap { Overlay(screen: $0) }
         if overlays.count < wantedScreens.count && !loggedMetal {
             loggedMetal = true
@@ -87,6 +102,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         overlays.filter { o in !wanted.contains(o.screen) }.forEach { $0.teardown() }
         overlays.removeAll { o in !wanted.contains(o.screen) }   // main-screen piles are kept
         for o in overlays { o.setEconomy(economy) }
+        builtKeys = keys(wanted)
         overlays += wanted.filter { s in !overlays.contains { $0.screen == s } }.compactMap { Overlay(screen: $0) }
         metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
         refreshRunState()
@@ -135,13 +151,15 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func pollWindows() {
         idleTicks = 0
-        for o in overlays where o.geometryChanged { return rebuildOverlays() }
+        if !settling { screensChanged() }
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
         let covering = windows.map(\.frame)
         if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
         for o in overlays {
-            o.setFullscreen(covering.contains { o.covers($0) })
+            let fs = covering.contains { o.covers($0) }
+            if fs != o.isFullscreen { settleUntil = Date().addingTimeInterval(1) }
+            o.setFullscreen(fs)
             if !o.isFullscreen { o.update(windows: windows) }   // under fullscreen the list is just that app: keep piles untouched
         }
         if fullscreenIdle != (timer?.timeInterval == 1) {

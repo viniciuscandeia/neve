@@ -76,12 +76,15 @@ final class Overlay: NSObject {
     private var economy = UserDefaults.standard.bool(forKey: "economy")
     private var lastTimestamp: CFTimeInterval = 0
     private var lastPathTime: CFTimeInterval = 0
-    private let groundY: CGFloat
-    private let visibleTop: CGFloat
+    private var groundY: CGFloat
+    private var visibleTop: CGFloat
+    private let frame: CGRect, scale: CGFloat
 
     init?(screen: NSScreen) {
         guard let gpu = Overlay.sharedGpu else { return nil }
         let f = screen.frame, v = screen.visibleFrame
+        frame = f
+        scale = screen.backingScaleFactor
         groundY = v.minY - f.minY
         visibleTop = v.maxY - f.minY
         let areaScale = Float(f.width * f.height) / (1440 * 900)
@@ -149,9 +152,16 @@ final class Overlay: NSObject {
         field.setIntensity(Intensity.saved, immediate: true)
     }
 
-    /// True when the Dock / menu bar geometry moved since creation.
-    var geometryChanged: Bool {
-        screen.visibleFrame.minY - screen.frame.minY != groundY || screen.visibleFrame.maxY - screen.frame.minY != visibleTop
+    /// True when the screen's frame or scale differs from creation: needs a full rebuild.
+    func screenChanged(_ s: NSScreen) -> Bool { s.frame != frame || s.backingScaleFactor != scale }
+
+    /// Dock / menu bar moved (visibleFrame changed, frame unchanged): updated in place, piles kept.
+    func refreshBounds() {
+        let g = screen.visibleFrame.minY - frame.minY, t = screen.visibleFrame.maxY - frame.minY
+        guard g != groundY || t != visibleTop else { return }
+        groundY = g
+        visibleTop = t
+        field.setBounds(groundY: g, visibleTop: t)
     }
 
     func update(windows: [WindowInfo]) { field.update(windows: windows) }
