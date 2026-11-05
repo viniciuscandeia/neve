@@ -9,6 +9,49 @@ public struct Instance {
     var seed: Float
 }
 
+/// One SDF primitive for the Metal pass, 64 bytes; layout mirrors the Metal struct.
+/// kind 0 = ellipse (a = centre, b = radii, c.x = rotation), 1 = capsule (a -> b, `width` = thickness),
+/// 2 = convex quad / triangle (a, b, c, d; triangle: d = c). `soft` widens the edge (shadows). Colour is straight alpha.
+public struct Prim {
+    public var a = SIMD2<Float>.zero, b = SIMD2<Float>.zero, c = SIMD2<Float>.zero, d = SIMD2<Float>.zero
+    public var color = SIMD4<Float>.zero
+    public var kind: UInt32 = 0
+    public var soft: Float = 0
+    public var width: Float = 0
+    var _pad: Float = 0
+    public init() {}
+}
+
+/// Appends prims into a caller-owned buffer (no allocation); drops silently when full.
+public struct PrimWriter {
+    private let p: UnsafeMutablePointer<Prim>
+    private let capacity: Int
+    public private(set) var n = 0
+
+    public init(_ p: UnsafeMutablePointer<Prim>, capacity: Int) { self.p = p; self.capacity = capacity }
+
+    private mutating func put(_ q: Prim) {
+        guard n < capacity else { return }
+        p[n] = q
+        n += 1
+    }
+    public mutating func ellipse(center: SIMD2<Float>, radii: SIMD2<Float>, rotation: Float = 0, color: SIMD4<Float>, soft: Float = 0) {
+        var q = Prim(); q.kind = 0; q.a = center; q.b = radii; q.c = SIMD2(rotation, 0); q.color = color; q.soft = soft
+        put(q)
+    }
+    public mutating func capsule(from: SIMD2<Float>, to: SIMD2<Float>, width: Float, color: SIMD4<Float>, soft: Float = 0) {
+        var q = Prim(); q.kind = 1; q.a = from; q.b = to; q.width = width; q.color = color; q.soft = soft
+        put(q)
+    }
+    public mutating func quad(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ c: SIMD2<Float>, _ d: SIMD2<Float>, color: SIMD4<Float>, soft: Float = 0) {
+        var q = Prim(); q.kind = 2; q.a = a; q.b = b; q.c = c; q.d = d; q.color = color; q.soft = soft
+        put(q)
+    }
+    public mutating func triangle(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ c: SIMD2<Float>, color: SIMD4<Float>, soft: Float = 0) {
+        quad(a, b, c, c, color: color, soft: soft)
+    }
+}
+
 extension SnowField {
     /// Fills GPU instances; returns the count.
     public func writeInstances(to p: UnsafeMutablePointer<Instance>) -> Int {
