@@ -59,7 +59,7 @@ private struct Gpu {
 
 /// Click-through snow window covering one screen.
 @MainActor
-final class Overlay: NSObject {
+final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private static let sharedGpu = Gpu()
 
     let screen: NSScreen
@@ -77,7 +77,7 @@ final class Overlay: NSObject {
     private let buffers: [MTLBuffer]
     private var bufferIndex = 0
     private let inFlight = DispatchSemaphore(value: 3)
-    private var link: CADisplayLink?
+    private var link: CAMetalDisplayLink?
     private let pass = MTLRenderPassDescriptor()   // reused every frame; only the texture changes
     private var run = false, fullscreen = false, hot = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
     private var occluded = false
@@ -150,7 +150,6 @@ final class Overlay: NSObject {
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         metalLayer.framebufferOnly = true
-        metalLayer.maximumDrawableCount = 2   // default 3 makes nextDrawable block the main thread and costs extra CPU
         metalLayer.isOpaque = false
         metalLayer.contentsScale = scale
         metalLayer.frame = bounds
@@ -238,7 +237,10 @@ final class Overlay: NSObject {
         }
         if !window.isVisible { occluded = false; window.orderFrontRegardless(); lastTimestamp = 0 }
         if link == nil {
-            let l = view.displayLink(target: self, selector: #selector(tick(_:)))
+            // CAMetalDisplayLink hands over a ready drawable, so the main thread never blocks in nextDrawable.
+            let l = CAMetalDisplayLink(metalLayer: metalLayer)
+            l.delegate = self
+            l.preferredFrameLatency = 2
             l.preferredFrameRateRange = frameRange
             l.add(to: .main, forMode: .common)
             link = l
@@ -263,8 +265,18 @@ final class Overlay: NSObject {
         window.contentView = nil
     }
 
-    @objc private func tick(_ link: CADisplayLink) {
-        let now = link.timestamp
+    /// The SDK declares this nonisolated. The link is added to RunLoop.main, so it always fires on the main thread:
+    /// assumeIsolated is therefore sound (and traps if that ever changes).
+    nonisolated func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
+        // Update/drawable are not Sendable, but never leave the main thread here.
+        nonisolated(unsafe) let drawable = update.drawable
+        let time = update.targetTimestamp
+        MainActor.assumeIsolated { tick(drawable, time) }
+    }
+
+    private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
+        guard window.isVisible else { return }
+        let now = time
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
         field.step(dt: Float(dt))
@@ -297,12 +309,12 @@ final class Overlay: NSObject {
             dragHighlight.setAffineTransform(t)
             CATransaction.commit()
         }
-        render()
+        render(drawable)   // after the drag transform: a skipped Metal frame never starves the pile
     }
 
-    private func render() {
+    private func render(_ drawable: CAMetalDrawable) {
         guard inFlight.wait(timeout: .now()) == .success else { return }   // never block the main thread
-        guard let drawable = metalLayer.nextDrawable(), let cmd = gpu.queue.makeCommandBuffer() else {
+        guard let cmd = gpu.queue.makeCommandBuffer() else {
             inFlight.signal()
             return
         }
