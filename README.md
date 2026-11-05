@@ -135,6 +135,8 @@ Tests/run.sh             # testes (Swift Testing)
 
 `scripts/perf.sh [heavy|media|max] [segundos=60] [--drag] [--runs N=3] [--bin CAMINHO]` mede CPU e wakeups ociosos do Neve e a CPU do WindowServer (via `top`) com janelas do Finder abertas (`max` = janela maximizada; `--drag` arrasta uma janela). Ele fecha o Neve em execução, ajusta e restaura os defaults, e reabre o app ao terminar; com `NEVE_PERF=1` (sempre ligado no script) também mostra o log de fases.
 
+`NEVE_PERF=1` (opcional `NEVE_PERF_LOG=arquivo`) imprime a cada 5 s fps, tempos por etapa, GPU e CPU.
+
 Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; `Tests/run.sh` carrega o bundle num runner mínimo e os roda.
 
 Para demonstrações, `NEVE_SNOWMAN_FAST=1` faz o boneco se montar 20 vezes mais rápido (e sobre uma pilha mais rasa):
