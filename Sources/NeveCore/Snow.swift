@@ -6,6 +6,8 @@ public enum Tuning {
     public static let flakes = 400                 // per 1440x900 screen (scaled by area)
     static let backgroundFraction: Float = 0.35
     static let maxPileHeight: Float = 18
+    static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
+    static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
@@ -147,11 +149,12 @@ public struct Pile {
     /// Returns whether anything changed.
     @discardableResult
     mutating func deposit(bin: Int, volume: Float) -> Bool {
-        guard bin >= 0, bin < heights.count, visible[bin] else { return false }
+        guard bin >= 0, bin < heights.count, visible[bin], cap[bin] >= Tuning.minRoom else { return false }
         var changed = false
         for o in -1...1 {
             var i = bin + o
             if i < 0 || i >= heights.count || !visible[i] { i = bin }
+            guard cap[i] >= Tuning.minRoom else { continue }
             let before = heights[i]
             heights[i] = max(before, min(before + volume * (o == 0 ? 0.5 : 0.25), limit(i)))
             if heights[i] != before { changed = true }
@@ -163,7 +166,13 @@ public struct Pile {
                 if shed(i, i + 1) { changed = true }
             }
         }
-        for i in lo...hi { heights[i] = min(heights[i], max(limit(i), 0)) }
+        for i in max(lo - 1, 0)...min(hi + 1, heights.count - 1) {   // relaxation reaches one bin past the window
+            let over = heights[i] - max(limit(i), 0)
+            guard over > 0 else { continue }
+            heights[i] -= over
+            if i == 0 { spillL += over } else if i == heights.count - 1 { spillR += over }
+            changed = true
+        }
         return changed
     }
 
@@ -395,7 +404,7 @@ public final class SnowField {
     @discardableResult
     private func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
-        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 0))
+        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1))
         return true
     }
 
@@ -457,7 +466,7 @@ public final class SnowField {
             let id = windows[i].number, edge = Float(r.maxY)
             // Dock bar (id 0) sits below the visible frame's bottom; hidden/offscreen Dock has minY < 0.
             let lowOk = id == 0 ? r.minY >= -1 : edge > groundY
-            guard lowOk, edge < visibleTop - 1, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
+            guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
         }
         for s in old { spawned += knockOff(s) }   // gone surfaces

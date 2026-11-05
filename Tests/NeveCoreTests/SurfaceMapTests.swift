@@ -59,7 +59,7 @@ let front = win(2, 200, 300, 300, 300)
 
 @Test func edgeInMenuBarAreaGetsNoSurface() {
     let f = makeField()
-    f.update(windows: [win(1, 100, 500, 300, 290), win(2, 500, 500, 300, 270)])   // tops at 790 and 770
+    f.update(windows: [win(1, 100, 500, 300, 290), win(2, 500, 500, 300, 240)])   // tops at 790 and 740
     #expect(f.pile(id: 1) == nil)
     #expect(f.pile(id: 2) != nil)
 }
@@ -256,14 +256,27 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
 @Test func columnUnderFrontWindowWithTwoPointsClearanceGetsNoDeposit() {
     var p = Pile(columns: 50, inset: 0)
     for b in 20..<30 { p.cap[b] = 2 }
-    #expect(!p.deposit(bin: 25, volume: 5))
+    let first = p.deposit(bin: 25, volume: 5)
+    #expect(!first)
     #expect(p.heights.allSatisfy { $0 == 0 })
     p.cap[25] = 10
-    #expect(p.deposit(bin: 25, volume: 5))
+    let second = p.deposit(bin: 25, volume: 5)
+    #expect(second)
 }
 
 @Test func heightsNeverExceedLimitAfterManyDepositsNearAnEnd() {
     var p = Pile(columns: 100, inset: Tuning.cornerInset, c0: 0, x0: 0, x1: 200)
     for n in 0..<400 { p.deposit(bin: 3 + n % 4, volume: 3); p.deposit(bin: 96 - n % 4, volume: 3) }
     for b in p.heights.indices { #expect(p.heights[b] <= p.limit(b) + 1e-4) }
+}
+
+@Test func knockedOffSnowAppearsAtFullAlphaImmediately() {
+    let f = makeField(flakes: 600)
+    f.update(windows: [front, back])
+    #expect(snowUntilPiled(f, id: 1))
+    let n = f.update(windows: [front])
+    #expect(n > 0)
+    let b = UnsafeMutablePointer<Instance>.allocate(capacity: f.capacity); defer { b.deallocate() }
+    let total = f.writeInstances(to: b)
+    for k in (total - n)..<total { #expect(b[k].alpha == 0.95) }
 }
