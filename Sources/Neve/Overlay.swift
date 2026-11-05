@@ -19,9 +19,14 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.alpha = i.alpha;
     return o;
 }
-fragment float4 flakeFragment(VOut in [[stage_in]]) {
-    float a = (1.0 - smoothstep(0.35, 1.0, length(in.uv))) * in.alpha;
-    return float4(a, a, a, a);
+// White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
+// `contrast` (Increase Contrast) = 1 darkens the rim and keeps it opaque.
+fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[buffer(0)]]) {
+    float d = length(in.uv);
+    float core = 1.0 - smoothstep(0.1, 0.45, d);
+    float3 rim = mix(float3(0.56, 0.65, 0.80), float3(0.40, 0.50, 0.70), contrast);
+    float a = (1.0 - smoothstep(0.55, 1.0, d)) * in.alpha;
+    return float4(mix(rim, float3(1.0), core) * a, a);
 }
 """
 
@@ -73,6 +78,7 @@ final class Overlay: NSObject {
     private var run = false, fullscreen = false, hot = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
     private var occluded = false
     private var lowPower = false
+    private var contrast: Float = 0
     private var economy = UserDefaults.standard.bool(forKey: "economy")
     private var lastTimestamp: CFTimeInterval = 0
     private var lastPathTime: CFTimeInterval = 0
@@ -149,6 +155,13 @@ final class Overlay: NSObject {
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
 
+        window.setAccessibilityElement(false)   // decoration: VoiceOver must not announce it
+        window.setAccessibilityHidden(true)
+        view.setAccessibilityElement(false)
+        view.setAccessibilityHidden(true)
+        window.isExcludedFromWindowsMenu = true
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        accessibilityChanged()
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
         field.setIntensity(Intensity.saved, immediate: true)
     }
@@ -163,6 +176,16 @@ final class Overlay: NSObject {
         groundY = g
         visibleTop = t
         field.setBounds(groundY: g, visibleTop: t)
+    }
+
+    /// Reduce Motion: calmer snow. Increase Contrast: stronger flake rim and pile bottom edge. (Reduce Transparency: nothing to change, the overlay has no blur.)
+    @objc private func accessibilityChanged() {
+        let ws = NSWorkspace.shared
+        field.setCalm(ws.accessibilityDisplayShouldReduceMotion)
+        let hc = ws.accessibilityDisplayShouldIncreaseContrast
+        contrast = hc ? 1 : 0
+        pileLayer.shadowOpacity = hc ? 0.8 : 0.45
+        pileLayer.shadowColor = hc ? CGColor(red: 0.15, green: 0.28, blue: 0.5, alpha: 1) : CGColor(red: 0.25, green: 0.4, blue: 0.65, alpha: 1)
     }
 
     func update(windows: [WindowInfo]) { field.update(windows: windows) }
@@ -218,6 +241,7 @@ final class Overlay: NSObject {
 
     func teardown() {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         link?.invalidate()
         link = nil
         window.orderOut(nil)
@@ -259,6 +283,7 @@ final class Overlay: NSObject {
             enc.setRenderPipelineState(gpu.pipeline)
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
+            enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()
         }

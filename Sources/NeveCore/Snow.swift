@@ -244,6 +244,7 @@ public final class SnowField {
     private var bgEnd = 0           // may be live or spawning; everything beyond is dormant, so step/write skip it
     private var intensity = Intensity.media
     private var lowPower = false
+    private var calm = false
     private var time: Float = 0
     private var windGain: Float = 8
     private var wind: Float = 0
@@ -298,8 +299,9 @@ public final class SnowField {
     public func setIntensity(_ v: Intensity, immediate: Bool = false) {
         intensity = v
         let m = v.multiplier / Intensity.nevasca.multiplier
-        skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1))
-        bgLimit = Int(Float(flakes.count - skyCount) * m)
+        let k: Float = calm ? 0.3 : 1
+        skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1) * k)
+        bgLimit = Int(Float(flakes.count - skyCount) * m * k)
         skyEnd = max(skyEnd, skyLimit); bgEnd = max(bgEnd, bgLimit)
         if immediate {
             for i in flakes.indices where !isActive(i) { flakes[i].kind = .dormant }
@@ -309,6 +311,12 @@ public final class SnowField {
     /// Low Power Mode: halve the colliding sky flakes.
     public func setLowPower(_ on: Bool) {
         lowPower = on
+        setIntensity(intensity)
+    }
+
+    /// Reduce Motion: ~30% of the flakes, half the fall speed, no gusts.
+    public func setCalm(_ on: Bool) {
+        calm = on
         setIntensity(intensity)
     }
 
@@ -519,7 +527,7 @@ public final class SnowField {
         let w = size.x
         time += dt
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
-        wind = windGain * windShape()
+        wind = calm ? 0 : windGain * windShape()
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
         for n in 0..<(skyEnd + bgEnd) {
             let i = n < skyEnd ? n : skyCount + n - skyEnd
@@ -531,7 +539,7 @@ public final class SnowField {
             let prevY = f.pos.y
             f.phase += f.freq * dt
             f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * cos(f.phase)) * dt
-            f.pos.y -= f.fall * dt
+            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
             if f.pos.x < -10 { f.pos.x += w + 20 } else if f.pos.x > w + 10 { f.pos.x -= w + 20 }
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
                 f = spawn(.sky, anywhere: false)

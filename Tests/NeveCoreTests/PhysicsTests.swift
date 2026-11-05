@@ -86,3 +86,17 @@ import NeveCore
     #expect(f.debris.filter { $0.pos.x > 420 && $0.pos.x < 580 }.isEmpty)
     #expect(f.debris.filter { $0.pos.x < 380 || $0.pos.x > 620 }.count > 0)
 }
+
+@Test func calmModeCapsActiveFlakesAndRestoresThem() {
+    let f = makeField(flakes: 1000)
+    f.setIntensity(.media, immediate: true)
+    func live() -> Int { var n = 0; for _ in 0..<1200 { f.step(dt: 1 / 30) }   // 40s: surplus flakes retire as they fall out
+        let b = UnsafeMutablePointer<Instance>.allocate(capacity: f.capacity); defer { b.deallocate() }
+        n = f.writeInstances(to: b); return n }
+    let normal = live()
+    f.setCalm(true)
+    let calm = live()
+    #expect(Double(calm) < Double(normal) * 0.4 && calm > 0)   // ~30% of the normal count
+    f.setCalm(false)
+    #expect(live() > normal * 9 / 10)
+}
