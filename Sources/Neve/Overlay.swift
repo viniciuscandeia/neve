@@ -104,7 +104,8 @@ final class Overlay: NSObject {
         window.hasShadow = false
         window.ignoresMouseEvents = true
         window.isReleasedWhenClosed = false
-        window.level = .statusBar
+        // One above the Dock: over the Dock (piles) but under menu bar, status-bar popovers and menus (all .statusBar+).
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         window.setFrame(f, display: false)
 
