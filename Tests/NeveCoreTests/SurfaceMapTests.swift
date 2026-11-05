@@ -11,7 +11,13 @@ func win(_ n: Int, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> Wi
     WindowInfo(number: n, frame: CGRect(x: x, y: y, width: w, height: h))
 }
 
-/// Steps a snowing field until window `id` carries a pile at least `height` tall.
+/// Builds window `id`'s pile directly (no snowfall): `rounds` deposits in every bin; hidden / roofed columns take none.
+func pileUp(_ f: SnowField, id: Int, rounds: Int = 12, volume: Float = 4) {
+    let i = f.surfaces.firstIndex { $0.id == id }!
+    for _ in 0..<rounds { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: volume) } }
+}
+
+/// Integration helper: steps a snowing field until window `id` carries a pile at least `height` tall.
 @discardableResult
 func snowUntilPiled(_ f: SnowField, id: Int, height: Float = 8) -> Bool {
     for _ in 0..<6000 {
@@ -92,7 +98,7 @@ func pileOnLoneWindow(_ f: SnowField, width: CGFloat = 300) {
 func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduce(0, +) }
 
 @Test func slowMoveCarriesThePileAlongWithoutShedding() {
-    let f = makeField(seed: 3)
+    let f = makeField()
     pileOnLoneWindow(f)
     let old = f.pile(id: 1)!.heights, spilled = f.debris.count   // deposits at the rounded ends already spilled some
     #expect(old.max()! > 10)
@@ -108,7 +114,7 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
 }
 
 @Test func veryFastMoveShedsMostOfThePileAsDebris() {
-    let f = makeField(seed: 3)
+    let f = makeField()
     pileOnLoneWindow(f)
     let before = total(f), spilled = f.debris.count
     // +100 pt in 0.05 s = 2000 pt/s, but velocity is smoothed from rest over ~0.1 s (60% of raw here): ~1200 pt/s is not enough.
@@ -131,12 +137,12 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
     let down = SnowField.shedFraction(v: [0, -1500], prev: z)
     #expect(up < side && side < down)
     // 600 pt/s sheds nothing on its own, but reversing 600 -> -600 is a 1200 pt/s jolt.
-    #expect(SnowField.shedFraction(v: [-600, 0], prev: z) > 0 || SnowField.shedFraction(v: [-600, 0], prev: z) == 0)
+    #expect(SnowField.shedFraction(v: [-600, 0], prev: z) < 0.05)
     #expect(SnowField.shedFraction(v: [-600, 0], prev: [600, 0]) > SnowField.shedFraction(v: [-600, 0], prev: [-600, 0]))
 }
 
 @Test func resizingNarrowerKeepsThePileAndDropsOnlyTheOverhang() {
-    let f = makeField(seed: 3)
+    let f = makeField()
     pileOnLoneWindow(f)
     let old = f.pile(id: 1)!.heights, spilled = f.debris.count
     let n = f.update(windows: [win(1, 100, 200, 200, 200)], dt: 0.1)   // right edge 400 -> 300
@@ -151,9 +157,9 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
 }
 
 @Test func unchangedWindowKeepsItsPileAndSpawnsNothing() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     let before = f.debris.count
     let tall = f.pile(id: 1)!.heights.max()!
     #expect(f.update(windows: [front, back, win(3, 600, 200, 100, 100)]) == 0)   // another window appears
@@ -162,9 +168,9 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
 }
 
 @Test func changingBoundsInPlaceKeepsPilesAndMovesCutoffs() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     let tall = f.pile(id: 1)!.heights.max()!
     f.setBounds(groundY: 90, visibleTop: 780)   // no-op
     f.setBounds(groundY: 60, visibleTop: 750)   // menu bar grew, Dock shrank
@@ -181,9 +187,9 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
 }
 
 @Test func vanishedWindowDropsItsSnowAsDebrisAndLosesItsSurface() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     let before = f.debris.count
     let n = f.update(windows: [front])
     #expect(n > 0)
@@ -192,12 +198,12 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
 }
 
 @Test func spaceSwitchDropsPilesWithoutDebris() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     f.dropPiles()
     #expect(f.pile(id: 1)!.heights.max()! == 0)
-    for _ in 0..<90 { f.step(dt: 1 / 60) }   // snow keeps landing on the not-yet-removed windows
+    pileUp(f, id: 1, rounds: 2)   // snow keeps landing on the not-yet-removed windows
     #expect(f.pile(id: 1)!.heights.max()! > 0.5)
     let before = f.debris.count
     #expect(f.update(windows: []) == 0)   // windows vanish in the same switch: no avalanche
@@ -209,15 +215,11 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
 // Back window top edge y=400 (x 100...400); the front window starts at y=410, only 10 pt above it,
 // and covers x 200...500. Point y=401 is free, so the edge counts as visible under the front window.
 @Test func pileCannotGrowIntoAFrontWindowThatStartsJustAboveTheEdge() {
-    let f = makeField(flakes: 900)
+    let f = makeField()
     f.update(windows: [win(2, 200, 410, 300, 290), win(1, 100, 200, 300, 200)])
     // Bin b centre x = 101 + 2b: bins 0...49 are left of the front window, 50...149 under it.
-    var free: Float = 0
-    for _ in 0..<12000 {
-        f.step(dt: 1 / 60)
-        free = f.pile(id: 1)!.heights[0..<45].max()!
-        if free >= 14 { break }
-    }
+    pileUp(f, id: 1, rounds: 40)
+    let free = f.pile(id: 1)!.heights[0..<45].max()!
     #expect(free >= 14)   // the open part really grew tall, so the cap below is what limits the rest
     let under = f.pile(id: 1)!.heights[50..<150]
     #expect(under.max()! <= 10.001)
@@ -271,9 +273,9 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
 }
 
 @Test func knockedOffSnowAppearsAtFullAlphaImmediately() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     let n = f.update(windows: [front])
     #expect(n > 0)
     let b = UnsafeMutablePointer<Instance>.allocate(capacity: f.capacity); defer { b.deallocate() }
@@ -291,13 +293,14 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
 }
 
 @Test func noGroundDepositsUnderDockBarButItsOwnPileStays() {
-    let f = makeField(flakes: 900)
+    let f = makeField()
     f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 400, y: 10, width: 200, height: 70), radius: 18)])
-    #expect(snowUntilPiled(f, id: 0, height: 4))
-    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 4))
+    pileUp(f, id: 0)
+    pileUp(f, id: Tuning.groundID)
+    #expect(f.pile(id: 0)!.heights.max()! > 4)
     let g = f.pile(id: Tuning.groundID)!
     for b in 200..<300 { #expect(!g.visible[b]); #expect(g.heights[b] == 0) }
-    #expect(g.heights[10] >= 0)
+    #expect(g.heights[10] > 4)
 }
 
 @Test func coveredGroundColumnsKeepSnowHiddenAndShowItAgain() {
@@ -314,18 +317,19 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
 }
 
 @Test func groundSurvivesSpaceSwitchDropButWindowsDoNot() {
-    let f = makeField(flakes: 900)
+    let f = makeField()
     f.update(windows: [back])
-    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 4))
-    #expect(snowUntilPiled(f, id: 1, height: 4))
+    pileUp(f, id: Tuning.groundID)
+    pileUp(f, id: 1)
     f.dropPiles()
     #expect(f.pile(id: 1)!.heights.max()! == 0)
     #expect(f.pile(id: Tuning.groundID)!.heights.max()! >= 4)
 }
 
 @Test func clearEmptiesGround() {
-    let f = makeField(flakes: 900)
-    #expect(snowUntilPiled(f, id: Tuning.groundID, height: 4))
+    let f = makeField()
+    pileUp(f, id: Tuning.groundID)
+    #expect(f.pile(id: Tuning.groundID)!.heights.max()! > 4)
     f.clear()
     #expect(f.pile(id: Tuning.groundID)!.heights.max()! == 0)
 }

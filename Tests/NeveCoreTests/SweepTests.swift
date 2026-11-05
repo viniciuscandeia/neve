@@ -2,15 +2,11 @@ import CoreGraphics
 import Testing
 @testable import NeveCore
 
-/// Window top edge at y=500, x 200...500; snows until a 300pt pile is at least `h` tall across x 250...450.
-private func pileField(draggingFirst: Bool = false) -> SnowField {
-    let f = makeField(flakes: 900)
+/// Window top edge at y=500, x 200...500, with a pile built by direct deposits.
+private func pileField() -> SnowField {
+    let f = makeField()
     f.update(windows: [win(1, 200, 300, 300, 200)])
-    for _ in 0..<20000 {
-        f.step(dt: 1 / 60)
-        let p = f.pile(id: 1)!.heights
-        if p[60..<130].min()! >= 4 { break }
-    }
+    pileUp(f, id: 1)
     return f
 }
 

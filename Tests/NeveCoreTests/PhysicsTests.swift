@@ -9,7 +9,7 @@ import Testing
     #expect(snowUntilPiled(f, id: 1, height: 3))
 }
 
-@Test func pileOnlyGrowsWhereFlakesCanReachTheEdge() {
+@Test func pileOnlyGrowsWhereFlakesCanReachTheEdge() {   // integration: real falling flakes
     let f = makeField(flakes: 600)
     // The front window hides the left half of the back window's top edge.
     f.update(windows: [win(2, 100, 300, 200, 300), win(1, 100, 200, 400, 200)])
@@ -22,9 +22,9 @@ import Testing
     let f = makeField(flakes: 600)
     f.update(windows: [win(1, 0, 100, 1000, 600)])   // top edge at y=700 spans the whole screen
     var seen = 0
-    for _ in 0..<1200 {
+    for _ in 0..<600 {
         let before = f.flakes
-        f.step(dt: 1 / 60)
+        f.step(dt: 1 / 30)
         for (a, b) in zip(before, f.flakes) where a.kind == .background && b.pos.y > a.pos.y {
             // A background flake only jumps back up after falling off the bottom of the screen.
             #expect(a.pos.y < 2)
@@ -38,18 +38,18 @@ import Testing
     let f = makeField(flakes: 600)
     f.update(windows: [win(1, 0, 100, 1000, 600)])
     var landings = 0
-    for _ in 0..<1200 {
+    for _ in 0..<600 {
         let before = f.flakes
-        f.step(dt: 1 / 60)
+        f.step(dt: 1 / 30)
         for (a, b) in zip(before, f.flakes) where a.kind == .sky && b.pos.y > a.pos.y && a.pos.y > 100 { landings += 1 }
     }
     #expect(landings > 0)
 }
 
 @Test func knockedOffSnowAcceleratesDownward() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [front, back])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     f.update(windows: [front])
     let falling = f.debris.count
     #expect(falling > 0)
@@ -61,9 +61,9 @@ import Testing
 }
 
 @Test func debrisFallingPastTheScreenBottomIsRemoved() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [win(1, 300, 300, 400, 200)])   // nothing below it
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     f.update(windows: [])
     #expect(f.debris.count > 0)
     for _ in 0..<300 { f.step(dt: 1 / 60) }   // 5 s: far longer than a 500 pt fall
@@ -71,12 +71,12 @@ import Testing
 }
 
 @Test func debrisLandingOnALowerWindowIsRemovedThere() {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     // Upper window spans most of the screen; the lower one only sits under x 400...600.
     let upper = win(1, 100, 400, 800, 200)   // top edge at y=600
     let lower = win(2, 400, 100, 200, 200)   // top edge at y=300
     f.update(windows: [upper, lower])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1, rounds: 2)   // thin: a deep 800 pt pile would hit the 1200-debris pool before reaching the lower window
     f.update(windows: [lower])
     let overLower = f.debris.filter { $0.pos.x > 420 && $0.pos.x < 580 }.count
     let elsewhere = f.debris.filter { $0.pos.x < 380 || $0.pos.x > 620 }.count
@@ -90,7 +90,7 @@ import Testing
 @Test func calmModeCapsActiveFlakesAndRestoresThem() {
     let f = makeField(flakes: 1000)
     f.setIntensity(.media, immediate: true)
-    func live() -> Int { var n = 0; for _ in 0..<1200 { f.step(dt: 1 / 30) }   // 40s: surplus flakes retire as they fall out
+    func live() -> Int { var n = 0; for _ in 0..<400 { f.step(dt: 1 / 10) }   // 40s: surplus flakes retire as they fall out
         let b = UnsafeMutablePointer<Instance>.allocate(capacity: f.capacity); defer { b.deallocate() }
         n = f.writeInstances(to: b); return n }
     let normal = live()
@@ -103,9 +103,9 @@ import Testing
 
 /// Drags window 1 (pile built first) at `step` pt per update, reversing every `flip` updates; returns the debris spawned.
 private func dragDebris(step: CGFloat, updates: Int, flip: Int = .max) -> Int {
-    let f = makeField(flakes: 600)
+    let f = makeField()
     f.update(windows: [win(1, 300, 300, 400, 200)])
-    #expect(snowUntilPiled(f, id: 1))
+    pileUp(f, id: 1)
     let before = f.debris.count
     var x: CGFloat = 300, dir: CGFloat = 1
     for i in 1...updates {

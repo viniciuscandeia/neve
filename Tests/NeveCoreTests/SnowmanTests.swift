@@ -15,7 +15,7 @@ private func level(_ f: SnowField, _ h: Float, _ xs: ClosedRange<Int>) {
     for b in xs.lowerBound / 2...xs.upperBound / 2 { f.surfaces[i].pile.heights[b] = h }
 }
 
-private func run(_ f: SnowField, _ seconds: Float) { for _ in 0..<Int(seconds * 60) { f.step(dt: 1 / 60) } }
+private func run(_ f: SnowField, _ seconds: Float) { for _ in 0..<Int(seconds * 20) { f.step(dt: 1 / 20) } }   // coarse steps: no flakes, only timers
 
 @Test func noSnowmanUntilTheStretchIsDeepEnough() {
     let shallow = groundField(Tuning.snowmanDepth - 3)
@@ -44,8 +44,8 @@ private func run(_ f: SnowField, _ seconds: Float) { for _ in 0..<Int(seconds * 
     run(f, 1.5)
     let x = f.snowman!.x, before = f.pile(id: Tuning.groundID)!.heights[Int(x / 2)]
     var seen: [Int] = [], last = -1
-    for _ in 0..<(80 * 60) {
-        f.step(dt: 1 / 60)
+    for _ in 0..<(80 * 20) {
+        f.step(dt: 1 / 20)
         let s = f.snowman!.stage
         if s != last { seen.append(s); last = s }
     }
