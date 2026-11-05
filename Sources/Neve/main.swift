@@ -22,6 +22,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
     private let economyItem = NSMenuItem(title: "Modo econômico", action: #selector(toggleEconomy), keyEquivalent: "")
     private var economy = UserDefaults.standard.bool(forKey: "economy")
+    private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "Nevar", action: #selector(toggle), keyEquivalent: "n")
 
@@ -54,12 +55,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         economyItem.target = self
         economyItem.image = Self.symbol("leaf")
         economyItem.state = economy ? .on : .off
+        capturesItem.target = self
+        capturesItem.image = Self.symbol("camera")
+        capturesItem.state = UserDefaults.standard.bool(forKey: "showInCaptures") ? .on : .off
         axItem.target = self
         axItem.image = Self.symbol("exclamationmark.triangle")
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
         let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem, .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), economyItem, loginItem, axItem, .separator(), clear, quit]
+            + [.separator(), .sectionHeader(title: "OPÇÕES"), economyItem, capturesItem, loginItem, axItem, .separator(), clear, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
@@ -117,6 +121,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Economy mode: only the screen with the menu bar gets an overlay; the others are torn down.
     private var wantedScreens: [NSScreen] { economy ? Array(NSScreen.screens.prefix(1)) : NSScreen.screens }
+
+    @objc private func toggleCaptures() {
+        let on = capturesItem.state != .on
+        UserDefaults.standard.set(on, forKey: "showInCaptures")
+        capturesItem.state = on ? .on : .off
+        for o in overlays { o.setShowInCaptures(on) }
+    }
 
     @objc private func toggleEconomy() {
         economy.toggle()

@@ -116,7 +116,7 @@ final class Overlay: NSObject {
         window.isOpaque = false
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.sharingType = .none   // harmless; does not hide the overlay from captures on macOS 26
+        window.sharingType = UserDefaults.standard.bool(forKey: "showInCaptures") ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
         window.isReleasedWhenClosed = false
         // One above the Dock: over the Dock (piles) but under menu bar, status-bar popovers and menus (all .statusBar+).
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
@@ -222,6 +222,7 @@ final class Overlay: NSObject {
     func covers(_ r: CGRect) -> Bool { r.insetBy(dx: -1, dy: -1).contains(screen.frame) }
     var isFullscreen: Bool { fullscreen }
     func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; apply() } }
+    func setShowInCaptures(_ on: Bool) { window.sharingType = on ? .readOnly : .none }
     func setHot(_ on: Bool) { if on != hot { hot = on; apply() } }
     func setIntensity(_ v: Intensity) { field.setIntensity(v) }
 

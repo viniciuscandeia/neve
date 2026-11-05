@@ -19,7 +19,7 @@ App nativo de barra de menus para macOS, escrito em Swift 6 com AppKit e Metal, 
   - **Opções**: **Modo econômico** (30 fps e neve só no monitor principal, o da barra de menus; a escolha é lembrada), **Abrir no login** e, quando falta a permissão, **Permitir neve no Dock…**.
   - **Limpar neve** (⌘K): remove a neve acumulada.
   - **Sair** (⌘Q).
-- A neve aparece em capturas de tela e compartilhamentos; desligue "Nevar" antes de compartilhar a tela.
+- Por padrão a neve não aparece em capturas de tela, gravações de tela nem compartilhamento de tela; ative "Mostrar em capturas" (em OPÇÕES) para incluí-la, por exemplo ao gravar uma demo.
 - Não exige Gravação de Tela: apenas os limites (bounds) das janelas são lidos.
 - A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (apenas Dock na parte inferior da tela). Sem ela, tudo o mais funciona. Use "Permitir neve no Dock…" no menu.
 - A animação pausa sozinha sob apps em tela cheia e com o Mac em estado térmico alto; no Modo de Baixo Consumo roda a 30 fps.
