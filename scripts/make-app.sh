@@ -24,6 +24,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 # Stable identity keeps privacy permissions across rebuilds (create it with scripts/make-cert.sh).
 SIGN="-"
-security find-identity -p codesigning | grep -q "Neve Local Signing" && SIGN="Neve Local Signing"
+if security find-identity -p codesigning | grep -q "Neve Local Signing"; then
+  SIGN="Neve Local Signing"
+else
+  echo "WARNING: 'Neve Local Signing' identity not found; signing ad-hoc. Privacy permissions (Accessibility) will be lost on every rebuild. Run scripts/make-cert.sh first." >&2
+fi
 codesign --force --sign "$SIGN" --identifier io.github.viniciuscandeia.neve "$APP"
 echo "Built $APP"
