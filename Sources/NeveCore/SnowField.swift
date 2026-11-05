@@ -44,9 +44,10 @@ public final class SnowField {
     var pointer: SIMD2<Float>?
     var pointerVel: SIMD2<Float> = .zero
     var pollDt: Float = 0.1        // seconds between the last two window polls
-    var lastPoll: CFAbsoluteTime = 0
     var rng: SplitMix64
-    var silentUntil: CFAbsoluteTime = 0   // no knock-off debris until then (Space switches)
+    var silentUntil: Float = 0   // simulation time until which knock-off debris is muted (Space switches)
+    var silent: Bool { time < silentUntil }
+    let config: SimConfig
     var introT: Float = 0, introDur: Float = 0   // intro: flake slots wake in order over introDur seconds (0 = no intro running)
     public private(set) var outro = false                // outro: no new snow, flakes fade, nothing lands (see collapseAll)
     var outroT: Float = 0, outroSpread: Float = 0, outroRel: Float = 1   // piles released so far: 0...1 of the spread (1 = all)
@@ -54,7 +55,8 @@ public final class SnowField {
     public var capacity: Int { flakes.count + Tuning.maxDebris }
 
     public init(size: CGSize, origin: CGPoint, groundY: CGFloat, visibleTop: CGFloat, flakeCount: Int,
-                seed: UInt64 = .random(in: 0...UInt64.max)) {
+                config: SimConfig = .init(), seed: UInt64 = .random(in: 0...UInt64.max)) {
+        self.config = config
         rng = SplitMix64(seed: seed)
         self.size = SIMD2(Float(size.width), Float(size.height))
         self.origin = origin
@@ -100,7 +102,7 @@ public final class SnowField {
 
     /// Space switch: windows vanish all at once. Drop piles without debris (and mute knock-offs briefly).
     public func dropPiles() {
-        silentUntil = CFAbsoluteTimeGetCurrent() + 1.5
+        silentUntil = time + 1.5
         let n = balls.count
         balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
         if balls.count != n { ballsVersion &+= 1 }

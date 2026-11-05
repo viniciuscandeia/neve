@@ -23,16 +23,14 @@ extension SnowField {
 
     /// Rebuilds surfaces from the front-to-back window list. Returns debris spawned by knocked-off piles.
     @discardableResult
-    public func update(windows: [WindowInfo], dt: Float? = nil) -> Int {
-        let now = CFAbsoluteTimeGetCurrent()
-        // Time since the last *change*: identical lists (event bursts, polls) must not shrink dt, or velocity is overestimated.
-        pollDt = dt ?? Float(min(max(now - lastPoll, 1.0 / 240), 0.5))
+    public func update(windows: [WindowInfo], dt: Float = Tuning.shedRefDt) -> Int {
+        // `dt` = time since the last *change* (the caller measures it): identical lists must not shrink it, or velocity is overestimated.
+        pollDt = dt
         guard windows != lastWindows || boundsDirty else {
             if draggingID != nil { draggingID = nil; pilesDirty = true }
             for i in surfaces.indices { surfaces[i].vel = .zero }
             return 0
         }
-        lastPoll = now
         boundsDirty = false
         lastWindows = windows
         return updateSurfaces(windows: windows)
@@ -256,7 +254,7 @@ extension SnowField {
 
     /// Debris (~1 flake per 3pt of snow) for the slice [from, from+amount] of one bin's column of snow.
     func shedBin(col: Int, edgeY: Float, from: Float, amount h: Float, velocity v: SIMD2<Float>) -> Int {
-        guard h > 0.5, CFAbsoluteTimeGetCurrent() >= silentUntil else { return 0 }
+        guard h > 0.5, !silent else { return 0 }
         var n = 0
         for _ in 0..<max(1, Int(h / 3)) {
             guard debris.count < Tuning.maxDebris else { break }

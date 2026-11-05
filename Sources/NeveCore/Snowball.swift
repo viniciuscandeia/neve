@@ -270,7 +270,7 @@ extension SnowField {
 
     func pop(_ i: Int, _ v: SIMD2<Float>) {
         let b = balls[i]
-        if CFAbsoluteTimeGetCurrent() >= silentUntil {
+        if !silent {
             for _ in 0..<(Int(b.radius * 1.5) + 4) {
                 let a = Float.random(in: 0..<(2 * .pi), using: &rng), d = b.radius * Float.random(in: 0...1, using: &rng).squareRoot()
                 let ox = cos(a) * d, oy = sin(a) * d

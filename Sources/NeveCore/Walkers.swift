@@ -299,7 +299,7 @@ extension SnowField {
     }
 
     private func puff(_ p: SIMD2<Float>, big: Bool) {
-        guard CFAbsoluteTimeGetCurrent() >= silentUntil else { return }
+        guard !silent else { return }
         for _ in 0..<(big ? 9 : 5) {
             addDebris(x: p.x, y: p.y, vx: Float.random(in: -70...70, using: &rng), fall: Float.random(in: 0...25, using: &rng), size: Float.random(in: 2.5...4, using: &rng))
         }

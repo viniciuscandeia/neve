@@ -13,6 +13,13 @@ struct OverlayPrefs: Equatable {
     var intensity = Intensity.media
 }
 
+/// Everything the app reads from the OS / environment for the simulation; NeveCore does no I/O.
+let osWindowRadius = Tuning.windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
+
+/// NEVE_SNOWMAN_FAST=1 (demos): builds 20x faster and on a shallower pile.
+let simConfig: SimConfig = ProcessInfo.processInfo.environment["NEVE_SNOWMAN_FAST"] == "1"
+    ? SimConfig(snowmanSpeed: 20, snowmanDepth: 4) : SimConfig()
+
 extension Intensity {
     static func saved(_ ud: UserDefaults) -> Intensity { Intensity(rawValue: ud.object(forKey: key) as? Int ?? 1) ?? .media }
 }

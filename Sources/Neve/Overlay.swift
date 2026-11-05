@@ -123,7 +123,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         visibleTop = v.maxY - f.minY
         let areaScale = Float(f.width * f.height) / (1440 * 900)
         let field = SnowField(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop,
-                              flakeCount: max(120, Int(Float(Tuning.flakes) * areaScale)))
+                              flakeCount: max(120, Int(Float(Tuning.flakes) * areaScale)), config: simConfig)
         var buffers: [MTLBuffer] = []
         for _ in 0..<3 {
             guard let b = gpu.device.makeBuffer(length: field.capacity * MemoryLayout<Instance>.stride, options: .storageModeShared) else { return nil }
@@ -220,8 +220,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         dragPile.setContrast(hc)
     }
 
+    private var lastWindows: [WindowInfo] = [], lastChange: CFTimeInterval = 0
     func update(windows: [WindowInfo]) {
-        field.update(windows: windows)
+        // Time since the last *changed* list (identical polls must not shrink it), clamped like the old wall-clock path.
+        let now = CACurrentMediaTime()
+        field.update(windows: windows, dt: Float(min(max(now - lastChange, 1.0 / 240), 0.5)))
+        if windows != lastWindows { lastWindows = windows; lastChange = now }
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         forcePath = true                    // re-place the piles at once, dropping any drag offset
     }

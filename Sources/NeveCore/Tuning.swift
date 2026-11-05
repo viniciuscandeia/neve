@@ -16,17 +16,14 @@ public enum Tuning {
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
     /// Window corner radius: ~20pt from macOS 26 (Tahoe) on, ~10pt before.
-    static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }
-    public static let windowRadius = windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
+    public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }
+    public static let defaultWindowRadius: CGFloat = 20   // the app passes the OS-dependent value via WindowInfo.radius
     static let calmSway: Float = 0.25       // Reduce Motion: share of the lateral flake sway kept
     static let calmDebrisFall: Float = 30   // Reduce Motion: uniform initial fall speed of knocked-off snow
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
-    /// NEVE_SNOWMAN_FAST=1 (demos): builds 20x faster and on a shallower pile.
-    static let snowmanFast = ProcessInfo.processInfo.environment["NEVE_SNOWMAN_FAST"] == "1"
-    static let snowmanSpeed: Float = snowmanFast ? 20 : 1
-    static let snowmanDepth: Float = snowmanFast ? 4 : 14   // average pile height over the stretch that triggers a build
+    public static let snowmanDepth: Float = 14              // average pile height over the stretch that triggers a build (SimConfig default)
     static let snowmanStretch: Float = 70                   // pt of visible ground the snowman needs
     static let snowmanClearance: Float = 20                 // pt kept free to the Dock ends, covering windows and screen edges
     static let ballStart: Float = 5                         // scooped snowball radius (10pt across)
@@ -43,7 +40,7 @@ public enum Tuning {
     static let shedStart: Float = 400        // pt/s: below this nothing falls off
     static let shedFull: Float = 2500        // pt/s: at or above this everything falls off
     static let velSmoothing: Float = 0.1     // s: window velocity low-pass time constant
-    static let shedRefDt: Float = 0.1        // s: update interval the shed fractions are calibrated for
+    public static let shedRefDt: Float = 0.1        // s: update interval the shed fractions are calibrated for
     static let shedUp: Float = 0.8           // upward speed counts less (snow is pressed onto the roof) ...
     static let shedDown: Float = 1.3         // ... downward counts more (faster than gravity: snow floats off)
     static let shakeGain: Float = 0.7        // direction reversal: effective speed = this * |velocity change|
@@ -58,4 +55,13 @@ public enum Intensity: Int, CaseIterable {
     public var title: String { ["Leve", "Média", "Forte", "Nevasca"][rawValue] }
     var multiplier: Float { [0.4, 1.0, 1.8, 3.0][rawValue] }
     var windGain: Float { self == .nevasca ? 100 : 8 }   // peak sideways speed, points/s
+}
+
+/// Knobs injected by the app (it reads env / OS); the simulation itself never looks outside.
+public struct SimConfig: Sendable {
+    public var snowmanSpeed: Float = 1                    // build / cooldown time scale (demos: 20)
+    public var snowmanDepth: Float = Tuning.snowmanDepth  // average pile height over the stretch that triggers a build
+    public init(snowmanSpeed: Float = 1, snowmanDepth: Float = Tuning.snowmanDepth) {
+        self.snowmanSpeed = snowmanSpeed; self.snowmanDepth = snowmanDepth
+    }
 }

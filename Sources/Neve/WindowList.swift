@@ -24,5 +24,5 @@ public func readWindows(primaryHeight: CGFloat) -> [WindowInfo] {
         }
         raw.append(RawWindow(number: int(w, kCGWindowNumber), pid: int(w, kCGWindowOwnerPID), layer: int(w, kCGWindowLayer), alpha: alpha, bounds: bounds))
     }
-    return filterWindows(raw, ownPID: Int(getpid()), primaryHeight: primaryHeight)
+    return filterWindows(raw, ownPID: Int(getpid()), primaryHeight: primaryHeight, radius: osWindowRadius)
 }

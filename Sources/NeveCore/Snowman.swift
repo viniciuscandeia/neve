@@ -33,7 +33,7 @@ extension SnowField {
     /// Snowfall time advances building; a collapse starts the cooldown. Runs from `step`.
     func stepSnowman(dt: Float) {
         guard snowmanEnabled else { return }
-        let sdt = dt * Tuning.snowmanSpeed
+        let sdt = dt * config.snowmanSpeed
         guard var m = snowman else {
             if snowmanCooldown > 0 { snowmanCooldown -= sdt; return }
             snowmanScan += dt
@@ -95,7 +95,7 @@ extension SnowField {
     /// `snowmanStretch` points whose mean height reaches the depth; centre of its deepest window.
     private func findSite() -> (Int, Float, Float)? {
         let w = Int(Tuning.snowmanStretch * snowmanScale / Tuning.binWidth)
-        let need = Tuning.snowmanDepth * Float(w), room = (Snowman.height + 20) * snowmanScale
+        let need = config.snowmanDepth * Float(w), room = (Snowman.height + 20) * snowmanScale
         let clear = Int((Tuning.snowmanClearance / Tuning.binWidth).rounded(.up))
         for id in [Tuning.groundID, 0] {
             guard let si = index[id] else { continue }
@@ -147,7 +147,7 @@ extension SnowField {
     /// Balls become heavy debris (a few dozen chunks each, thrown outward), accessories fade out; cooldown starts.
     func collapse(velocity v: SIMD2<Float> = .zero) {
         guard var m = snowman, !m.collapsing else { return }
-        if CFAbsoluteTimeGetCurrent() >= silentUntil {
+        if !silent {
             for k in 0..<min(m.stage, 3) {
                 let (cy, r) = Snowman.balls[k]
                 for _ in 0..<(k == 0 ? 36 : k == 1 ? 28 : 20) {

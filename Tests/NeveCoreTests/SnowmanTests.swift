@@ -174,13 +174,13 @@ private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant
 // Nevasca (3x flakes, gusty wind up to 100pt/s): the real-screen ground pile builds, the auto snowman completes
 // and nothing collapses it over 5 simulated minutes (reported once as "the pile keeps clearing").
 @Test func nevascaBuildsGroundPileAndSnowmanWithoutCollapsing() {
-    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 0, visibleTop: 880, flakeCount: 400, seed: 3)
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 0, visibleTop: 880, flakeCount: 400, config: SimConfig(snowmanSpeed: 1), seed: 3)
     f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84))])
     f.setIntensity(.nevasca, immediate: true)
     var collapses = 0, was = false
-    for i in 0..<(5 * 60 * 60) {
-        f.step(dt: 1 / 60)
-        if i % 6 == 0 { f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84))]) }
+    for i in 0..<(5 * 60 * 30) {   // coarse 1/30 s steps: the same 5 simulated minutes in half the work
+        f.step(dt: 1 / 30)
+        if i % 3 == 0 { f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84))], dt: 0.1) }
         let c = f.snowman?.collapsing ?? false
         if c && !was { collapses += 1 }
         was = c

@@ -222,7 +222,7 @@ private func headOf(_ f: SnowField, _ bottom: Int) -> Snowball? {
         let id = build(f, x: 300)
         f.walk.gustOverride = g
         var lo = Float.infinity, hi = -Float.infinity
-        for _ in 0..<(120 * 60) { f.step(dt: 1 / 60); let x = ball(f, id).pos.x; lo = min(lo, x); hi = max(hi, x) }
+        for _ in 0..<(120 * 30) { f.step(dt: 1 / 30); let x = ball(f, id).pos.x; lo = min(lo, x); hi = max(hi, x) }
         #expect(lo >= 27.5 && hi <= 450 - 28 + 0.5 && ball(f, id).state == .resting)
     }
 }
@@ -232,13 +232,13 @@ private func headOf(_ f: SnowField, _ bottom: Int) -> Snowball? {
         let f = field()
         f.setIntensity(level, immediate: true)
         var peak: Float = 0
-        for _ in 0..<(40 * 60) { f.step(dt: 1 / 60); peak = max(peak, abs(f.gust)) }
+        for _ in 0..<(40 * 10) { f.step(dt: 1 / 10); peak = max(peak, abs(f.gust)) }
         #expect(peak == 0)
     }
     let f = field()
     f.setIntensity(.nevasca, immediate: true)
     var peak: Float = 0
-    for _ in 0..<(90 * 60) { f.step(dt: 1 / 60); peak = max(peak, abs(f.gust)) }
+    for _ in 0..<(90 * 10) { f.step(dt: 1 / 10); peak = max(peak, abs(f.gust)) }
     #expect(peak > 0.3)
 }
 
@@ -249,7 +249,7 @@ private func headOf(_ f: SnowField, _ bottom: Int) -> Snowball? {
     f.walk.fights.removeAll()
     for i in f.walk.walkers.indices { f.walk.walkers[i].foe = nil; f.walk.walkers[i].rest = 1e6; f.walk.walkers[i].nextIdle = 1e6 }
     var closest = Float.infinity
-    for _ in 0..<(60 * 60) { f.step(dt: 1 / 60); closest = min(closest, abs(ball(f, a).pos.x - ball(f, b).pos.x)) }
+    for _ in 0..<(60 * 30) { f.step(dt: 1 / 30); closest = min(closest, abs(ball(f, a).pos.x - ball(f, b).pos.x)) }
     #expect(closest >= 20 + 20 - 1)   // never closer than the two base balls touching
 }
 
