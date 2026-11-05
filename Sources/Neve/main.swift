@@ -13,7 +13,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var sessionInactive = false
     private let metalItem = NSMenuItem(title: "Metal indisponível", action: nil, keyEquivalent: "")
     private var loggedMetal = false
-    private var idleTicks = 0
+    private var mouseDown = false
+    private var userIdle = false   // no input for 5 min: rendering paused, polling kept to notice input
+    private var mouseMonitor: Any?
+    private let capturesItem = NSMenuItem(title: "Mostrar em capturas", action: #selector(toggleCaptures), keyEquivalent: "")
     private let dock = DockWatcher()
     private var slowTimer: Timer?
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
@@ -47,10 +50,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         amount.submenu = sub
         economyItem.target = self
         economyItem.state = economy ? .on : .off
+        capturesItem.target = self
+        capturesItem.state = UserDefaults.standard.bool(forKey: "showInCaptures") ? .on : .off
         axItem.target = self
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
-        for i in [metalItem, toggleItem, amount, economyItem, clear, axItem, loginItem, .separator(), quit] { menu.addItem(i) }
+        for i in [metalItem, toggleItem, amount, economyItem, capturesItem, clear, axItem, loginItem, .separator(), quit] { menu.addItem(i) }
         item.menu = menu
         statusItem = item
 
@@ -65,6 +70,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         nc.addObserver(self, selector: #selector(thermalChanged), name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
+        // Global mouse monitors need no Accessibility permission; 10Hz polling only while the button is down.
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] e in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.mouseDown = e.type == .leftMouseDown
+                self.scheduleTimers()
+                if !self.mouseDown && self.polling { self.pollWindows() }
+            }
+        }
         dock.onChange = { [weak self] in self?.refreshDock() }
         rebuildOverlays()
     }
@@ -119,7 +133,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var fullscreenIdle: Bool { !overlays.isEmpty && overlays.allSatisfy(\.isFullscreen) }
 
     private func refreshRunState() {
-        for o in overlays { if running { o.start() } else { o.pause() } }
+        for o in overlays { if running && !userIdle { o.start() } else { o.pause() } }
         scheduleTimers()
         if polling {
             refreshDock()
@@ -127,7 +141,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 10Hz window tick (drag/resize) + 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
+    /// 0.5s window poll (10Hz while the mouse is down) + 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
     private func scheduleTimers() {
         timer?.invalidate()
         timer = nil
@@ -135,8 +149,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         slowTimer = nil
         guard polling else { return }
         let idle = fullscreenIdle
-        let t = Timer(timeInterval: idle ? 1 : 0.1, target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
-        t.tolerance = idle ? 0.2 : 0.03
+        let t = Timer(timeInterval: idle ? 1 : (mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
+        t.tolerance = idle ? 0.2 : (mouseDown ? 0.03 : 0.1)
         RunLoop.main.add(t, forMode: .common)
         timer = t
         if !idle {
@@ -147,14 +161,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Windows move with the mouse (drag/resize), so poll at 10Hz while a button is down, else ~2Hz.
+    /// No input for 5 min pauses rendering; input resumes it (checked here, so no Accessibility needed for keys).
     @objc private func pollTick() {
-        idleTicks += 1
-        if fullscreenIdle || NSEvent.pressedMouseButtons != 0 || idleTicks >= 5 { pollWindows() }
+        let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
+        if !userIdle && since >= 300 { userIdle = true; refreshRunState() }
+        else if userIdle && since < 1 { userIdle = false; refreshRunState() }
+        if !userIdle { pollWindows() }
     }
 
     @objc private func pollWindows() {
-        idleTicks = 0
         if !settling { screensChanged() }
         guard let primary = NSScreen.screens.first else { return }
         var windows = readWindows(primaryHeight: primary.frame.height)
@@ -177,6 +192,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         toggleItem.state = enabled ? .on : .off
         UserDefaults.standard.set(enabled, forKey: "enabled")
         refreshRunState()
+    }
+
+    @objc private func toggleCaptures() {
+        let on = capturesItem.state != .on
+        UserDefaults.standard.set(on, forKey: "showInCaptures")
+        capturesItem.state = on ? .on : .off
+        for o in overlays { o.setShowInCaptures(on) }
     }
 
     @objc private func pickIntensity(_ sender: NSMenuItem) {
