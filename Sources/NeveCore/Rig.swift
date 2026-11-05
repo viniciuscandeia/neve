@@ -1,0 +1,170 @@
+import Foundation
+
+/// Body pose of a figure: lift (pt), head offset (pt), squash 0...1 (1 = 1.5 wide x 0.6 tall), head jitter (pt), scarf / arms.
+public struct Pose: Equatable {
+    public var hop: Float = 0, lean: Float = 0, squash: Float = 0, shake: Float = 0
+    public var flutter = Flutter()
+    public init(hop: Float = 0, lean: Float = 0, squash: Float = 0, shake: Float = 0, flutter: Flutter = Flutter()) {
+        self.hop = hop; self.lean = lean; self.squash = squash; self.shake = shake; self.flutter = flutter
+    }
+}
+
+/// Everything the rig needs to draw one snowman; plain values, no references.
+public struct SnowmanLook {
+    public var foot: SIMD2<Float>            // centre of the base's bottom (before hop)
+    public var radii: SIMD3<Float>           // bottom, middle, head
+    public var facing: Float = 1             // +-1
+    public var pose = Pose()
+    public var built = 7                     // stages present, 0...7: base, middle, head, coal, nose, arms, scarf
+    public var newest: Float = 1             // 0...1 eased progress of the newest stage
+    public var fade: Float = 1
+    public var collapsing = false            // the three balls are debris: only accessories (fading) remain
+    public var headless = false              // head ball, face and scarf absent
+    public var droop: Float = 0              // 0...1 arms hang down (the loser)
+    public init(foot: SIMD2<Float>, radii: SIMD3<Float>, facing: Float = 1, pose: Pose = Pose(), built: Int = 7, newest: Float = 1,
+                fade: Float = 1, collapsing: Bool = false, headless: Bool = false, droop: Float = 0) {
+        self.foot = foot; self.radii = radii; self.facing = facing; self.pose = pose; self.built = built; self.newest = newest
+        self.fade = fade; self.collapsing = collapsing; self.headless = headless; self.droop = droop
+    }
+}
+
+/// Pure geometry: turns looks into prims. Ball-radius units; draw order = z order.
+public enum Rig {
+    typealias V = SIMD2<Float>
+    typealias C = SIMD4<Float>
+    static let snow = C(0.84, 0.90, 0.98, 1), lift = C(0.88, 0.93, 0.99, 1), crest = C(1, 1, 1, 0.85)
+    static let shadow = C(0.25, 0.4, 0.65, 1), shadowHC = C(0.15, 0.28, 0.5, 1)
+    static let carrot = C(0.96, 0.52, 0.12, 1), scarfRed = C(0.82, 0.17, 0.20, 1), twig = C(0.38, 0.25, 0.14, 1), coal = C(0.13, 0.14, 0.16, 1)
+    static let stripe = C(0.98, 0.88, 0.86, 0.9), speckle = C(0.60, 0.70, 0.86, 0.85), shotSnow = C(0.93, 0.96, 1, 1)
+    /// Rolling speckles: (radius fraction, angle, size fraction).
+    static let specks: [SIMD3<Float>] = [SIMD3(0.55, 0.5, 0.095), SIMD3(0.72, 2.4, 0.12), SIMD3(0.3, 4.0, 0.08),
+                                         SIMD3(0.8, 5.3, 0.10), SIMD3(0.45, 3.0, 0.07), SIMD3(0.62, 1.5, 0.065)]
+
+    static func a(_ c: C, _ k: Float) -> C { C(c.x, c.y, c.z, c.w * k) }
+    static func rot(_ p: V, _ o: V, _ t: Float) -> V {
+        let s = sin(t), c = cos(t), d = p - o
+        return o + V(d.x * c - d.y * s, d.x * s + d.y * c)
+    }
+
+    /// Local (unit) -> world: mirror x, scale, rotate about the origin, then squash about the foot.
+    struct Fr {
+        var o: V, s: Float, m: Float = 1, c: Float = 1, sn: Float = 0, foot: V, sx: Float = 1, sy: Float = 1
+        func p(_ x: Float, _ y: Float) -> V {
+            let lx = m * x * s, ly = y * s
+            let w = o + V(lx * c - ly * sn, lx * sn + ly * c)
+            return foot + V((w.x - foot.x) * sx, (w.y - foot.y) * sy)
+        }
+        func r(_ k: Float) -> V { V(k * s * sx, k * s * sy) }
+        var width: Float { s * (sx + sy) / 2 }
+    }
+
+    /// Ball body: shadow, (contrast outline), body, lit disc, optional rolling speckles, crest. Radii may be squashed.
+    static func body(_ c: V, _ r: V, alpha: Float, contrast: Bool, rotation: Float, speckles: Bool, into w: inout PrimWriter) {
+        let u = (r.x + r.y) / 2
+        w.ellipse(center: c + V(0, -0.08 * u), radii: r, color: a(contrast ? shadowHC : shadow, (contrast ? 0.8 : 0.45) * alpha), soft: 0.16 * u)
+        var rr = r
+        if contrast {
+            w.ellipse(center: c, radii: r * 1.04, color: a(shadowHC, alpha))
+            rr = r * 0.96
+        }
+        w.ellipse(center: c, radii: rr, color: a(snow, alpha))
+        w.ellipse(center: c + V(-0.02 * r.x, 0.085 * r.y), radii: r * 0.945, color: a(lift, alpha))
+        if speckles {
+            for s in specks {
+                let t = s.y + rotation
+                w.ellipse(center: c + V(r.x * s.x * cos(t), r.y * s.x * sin(t)), radii: r * s.z, color: a(speckle, alpha))
+            }
+        }
+        w.ellipse(center: c + V(-0.275 * r.x, 0.4 * r.y), radii: V(0.425 * r.x, 0.35 * r.y), color: a(crest, alpha))
+    }
+
+    static func eyes(_ f: Fr, _ al: Float, _ w: inout PrimWriter) {
+        let c = a(coal, al)
+        w.ellipse(center: f.p(-0.38, 0.26), radii: f.r(0.146), color: c)
+        w.ellipse(center: f.p(0.38, 0.26), radii: f.r(0.146), color: c)
+        for k in 0..<5 {   // smile: a shallow arc of dots
+            let x = Float(k - 2) * 0.2
+            w.ellipse(center: f.p(x, -0.43 + 0.875 * x * x), radii: f.r(0.07), color: c)
+        }
+    }
+
+    static func nose(_ f: Fr, _ al: Float, _ w: inout PrimWriter) {
+        w.triangle(f.p(0.09, 0.11), f.p(1.23, -0.09), f.p(0.09, -0.23), color: a(carrot, al))
+    }
+
+    /// Scarf: pill + two tail segments (upper about the knot, lower about the joint, lagging) + 2 stripes.
+    static func scarf(_ f: Fr, flutter: Flutter, _ al: Float, _ w: inout PrimWriter) {
+        let c = a(scarfRed, al)
+        w.capsule(from: f.p(-0.86, -1.03), to: f.p(0.86, -1.03), width: 0.56 * f.width, color: c)
+        let p1 = f.p(0.8, -1.15), p2 = f.p(0.88, -1.765)
+        func t1(_ q: V) -> V { rot(q, p1, flutter.scarf) }
+        func t2(_ q: V) -> V { t1(rot(q, p2, flutter.wave)) }
+        w.quad(t1(f.p(0.49, -1.15)), t1(f.p(1.08, -1.15)), t1(f.p(1.17, -1.765)), t1(f.p(0.585, -1.765)), color: c)
+        w.quad(t2(f.p(0.58, -1.70)), t2(f.p(1.16, -1.70)), t2(f.p(1.26, -2.38)), t2(f.p(0.68, -2.38)), color: c)
+        let s = a(stripe, al)
+        w.quad(f.p(-0.54, -1.31), f.p(-0.34, -1.31), f.p(-0.34, -0.75), f.p(-0.54, -0.75), color: s)
+        w.quad(f.p(0.12, -1.31), f.p(0.32, -1.31), f.p(0.32, -0.75), f.p(0.12, -0.75), color: s)
+    }
+
+    /// Twig arm for world side `side` (-1 left, +1 right) rotated by `ang` about its shoulder.
+    static func arm(_ f: Fr, side: Float, ang: Float, _ al: Float, _ w: inout PrimWriter) {
+        let sh = f.p(side * 0.7, -0.12), c = a(twig, al), wd = 0.15 * f.width
+        func q(_ x: Float, _ y: Float) -> V { rot(f.p(side * x, y), sh, ang) }
+        w.capsule(from: sh, to: q(2.0, 0.7), width: wd, color: c)
+        w.capsule(from: q(1.47, 0.34), to: q(1.59, 0.88), width: wd, color: c)
+        w.capsule(from: q(1.76, 0.55), to: q(2.21, 0.93), width: wd, color: c)
+    }
+
+    public static func snowman(_ l: SnowmanLook, contrast: Bool, into w: inout PrimWriter) {
+        guard l.built > 0 else { return }
+        let sx = 1 + 0.5 * l.pose.squash, sy = 1 - 0.4 * l.pose.squash
+        let rb = l.radii.x, rm = l.radii.y, rh = l.radii.z
+        let foot = l.foot + V(0, l.pose.hop)
+        let cb = foot + V(0, rb), cm0 = cb + V(0, rb + rm - 1.5), ch0 = cm0 + V(0, rm + rh - 1.5)
+        let cm = cm0 + V(0.4 * l.pose.lean, 0), ch = ch0 + V(l.pose.lean + l.pose.shake, 0)
+        // Stage i: nil when absent, else (alpha, grow); the newest one eases in.
+        func st(_ i: Int) -> (Float, Float)? {
+            guard l.built > i, !(l.collapsing && i < 3), !(l.headless && (i == 2 || i == 4 || i == 6)) else { return nil }
+            let fade = l.collapsing ? l.fade : 1
+            guard i == l.built - 1, l.newest < 1 else { return (fade, 1) }
+            let e = l.newest
+            return (fade * e, (i < 3 ? 0.3 : 0.85) + (i < 3 ? 0.7 : 0.15) * e)
+        }
+        func fr(_ c: V, _ r: Float, _ m: Float, _ g: Float) -> Fr { Fr(o: c, s: r * g, m: m, foot: foot, sx: sx, sy: sy) }
+        if let (al, g) = st(5) {   // arms first: they come out from behind the middle ball
+            let f = fr(cm, rm, 1, g)
+            arm(f, side: -1, ang: l.pose.flutter.arm(side: -1) + l.droop * 1.5, al, &w)
+            arm(f, side: 1, ang: l.pose.flutter.arm(side: 1) - l.droop * 1.5, al, &w)
+        }
+        for i in 0..<3 {
+            guard let (al, g) = st(i) else { continue }
+            let c = i == 0 ? cb : i == 1 ? cm : ch, r = i == 0 ? rb : i == 1 ? rm : rh
+            let cc = foot + V((c.x - foot.x) * sx, (c.y - foot.y) * sy)
+            body(cc, V(r * g * sx, r * g * sy), alpha: al, contrast: contrast, rotation: 0, speckles: false, into: &w)
+        }
+        if let (al, g) = st(3) {
+            let m = fr(cm, rm, 1, g)
+            for k in 0..<3 { w.ellipse(center: m.p(0, 0.44 - 0.425 * Float(k)), radii: m.r(0.112), color: a(coal, al)) }
+            if !l.headless { eyes(fr(ch, rh, l.facing, g), al, &w) }
+        }
+        if let (al, g) = st(4) { nose(fr(ch, rh, l.facing, g), al, &w) }
+        if let (al, g) = st(6) { scarf(fr(ch, rh, l.facing, g), flutter: l.pose.flutter, al, &w) }
+    }
+
+    /// A loose ball. `face` draws eyes, smile, carrot and scarf rotated with it (a flying head); `facing` mirrors them.
+    public static func ball(center: SIMD2<Float>, radius: Float, rotation: Float, fade: Float, squash: Float, contrast: Bool,
+                            face: Bool, facing: Float = 1, into w: inout PrimWriter) {
+        let sx = 1 + 0.5 * squash, sy = 1 - 0.4 * squash
+        let c = center + V(0, radius * (sy - 1))   // squashes against the ground
+        body(c, V(radius * sx, radius * sy), alpha: fade, contrast: contrast, rotation: rotation, speckles: !face, into: &w)
+        guard face else { return }
+        let f = Fr(o: c, s: radius, m: facing, c: cos(rotation), sn: sin(rotation), foot: c, sx: sx, sy: sy)
+        eyes(f, fade, &w); nose(f, fade, &w); scarf(f, flutter: Flutter(), fade, &w)
+    }
+
+    /// A snowball in the air.
+    public static func shot(pos: SIMD2<Float>, radius: Float, alpha: Float, into w: inout PrimWriter) {
+        w.ellipse(center: pos + V(0, -0.28 * radius), radii: V(radius, radius), color: a(shadow, 0.5 * alpha), soft: 0.42 * radius)
+        w.ellipse(center: pos, radii: V(radius, radius), color: a(shotSnow, alpha))
+    }
+}

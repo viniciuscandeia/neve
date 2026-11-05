@@ -3,69 +3,6 @@ import AppKit
 import Metal
 import QuartzCore
 
-private let shaderSource = """
-#include <metal_stdlib>
-using namespace metal;
-struct Instance { float2 pos; float size; float alpha; float seed; };
-struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; };
-vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
-                        constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
-    float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
-    Instance i = inst[iid];
-    float2 p = i.pos + corner * i.size * 0.5;
-    VOut o;
-    o.position = float4(p / viewSize * 2.0 - 1.0, 0.0, 1.0);
-    o.uv = corner;
-    o.alpha = i.alpha;
-    o.size = i.size;
-    o.seed = i.seed;
-    return o;
-}
-// White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
-// `contrast` (Increase Contrast) = 1 darkens the rim and keeps it opaque.
-fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[buffer(0)]]) {
-    float d = length(in.uv);
-    // Flakes >= ~5pt: faint 6-fold crystal hint + a little per-flake irregularity. Small ones stay round dots.
-    float big = smoothstep(3.5, 5.5, in.size);
-    if (big > 0.0) {
-        float th = atan2(in.uv.y, in.uv.x) + in.seed * 6.2832;
-        float wob = cos(6.0 * th) * 0.13 + cos(3.0 * th + in.seed * 17.0) * 0.07 * fract(in.seed * 7.0);
-        d *= 1.0 - big * (wob + 0.04);
-    }
-    float core = 1.0 - smoothstep(0.1, 0.45, d);
-    float3 rim = mix(float3(0.56, 0.65, 0.80), float3(0.40, 0.50, 0.70), contrast);
-    float a = (1.0 - smoothstep(0.55, 1.0, d)) * in.alpha;
-    return float4(mix(rim, float3(1.0), core) * a, a);
-}
-"""
-
-/// Shared Metal objects, built once.
-private struct Gpu {
-    let device: MTLDevice
-    let queue: MTLCommandQueue
-    let pipeline: MTLRenderPipelineState
-
-    init?() {
-        guard let device = MTLCreateSystemDefaultDevice(),
-              let queue = device.makeCommandQueue(),
-              let library = try? device.makeLibrary(source: shaderSource, options: nil) else { return nil }
-        let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = library.makeFunction(name: "flakeVertex")
-        d.fragmentFunction = library.makeFunction(name: "flakeFragment")
-        let c = d.colorAttachments[0]!
-        c.pixelFormat = .bgra8Unorm
-        c.isBlendingEnabled = true
-        c.sourceRGBBlendFactor = .one
-        c.sourceAlphaBlendFactor = .one
-        c.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        guard let pipeline = try? device.makeRenderPipelineState(descriptor: d) else { return nil }
-        self.device = device
-        self.queue = queue
-        self.pipeline = pipeline
-    }
-}
-
 /// Content view that hands mouse events to the overlay (only delivered while the window is interactive: ⌥ over snow).
 final class InteractView: NSView {
     var onDown: ((NSEvent) -> Void)?, onDrag: ((NSEvent) -> Void)?, onUp: ((NSEvent) -> Void)?
@@ -96,6 +33,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
+    private static let primCapacity = 640   // ~600 prims / screen
+    private let primBuffers: [MTLBuffer]
+    private let primsOn = ProcessInfo.processInfo.environment["NEVE_PRIMS"] == "1"   // test: draw balls / snowmen / shots through Rig
     private var bufferIndex = 0
     private let inFlight = DispatchSemaphore(value: 3)
     private var link: CAMetalDisplayLink?
@@ -129,6 +69,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             guard let b = gpu.device.makeBuffer(length: field.capacity * MemoryLayout<Instance>.stride, options: .storageModeShared) else { return nil }
             buffers.append(b)
         }
+        var primBuffers: [MTLBuffer] = []
+        for _ in 0..<3 {
+            guard let b = gpu.device.makeBuffer(length: Overlay.primCapacity * MemoryLayout<Prim>.stride, options: .storageModeShared) else { return nil }
+            primBuffers.append(b)
+        }
+        self.primBuffers = primBuffers
         self.screen = screen
         self.prefs = prefs
         self.gpu = gpu
@@ -165,6 +111,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
         root.addSublayer(ballLayers.root)
         root.addSublayer(fightLayers.root)
+        if primsOn { snowmanLayers.root.isHidden = true; ballLayers.root.isHidden = true; fightLayers.root.isHidden = true }
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -390,9 +337,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             CATransaction.commit()
         }
         Perf.add(.pile, t0); t0 = Perf.now()
-        snowmanLayers.update(field, reduceMotion: reduceMotion)
-        ballLayers.update(field, reduceMotion: reduceMotion)
-        fightLayers.update(field)
+        if !primsOn {
+            snowmanLayers.update(field, reduceMotion: reduceMotion)
+            ballLayers.update(field, reduceMotion: reduceMotion)
+            fightLayers.update(field)
+        }
         Perf.add(.actors, t0)
         render(drawable)
         Perf.frame(field)   // after the drag transform: a skipped Metal frame never starves the pile
@@ -416,6 +365,42 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.drop(id, throwing: throwing)
     }
 
+    /// NEVE_PRIMS test path: the current sim state through `Rig` (read-only public APIs; P2-C replaces this with `writePrims`).
+    private func writePrims(_ w: inout PrimWriter) {
+        let hc = contrast > 0
+        let balls = field.balls
+        for b in balls where b.snowmanAge >= 0 {   // 3-stacks formed into a snowman
+            guard let (m, h) = field.snowmanChain(of: b) else { continue }
+            let t = reduceMotion ? 1 : min(b.snowmanAge / 0.3, 1), e = t * (2 - t)
+            let pose = Pose(flutter: reduceMotion ? Flutter() : field.pose(of: b.id))
+            let look = SnowmanLook(foot: SIMD2(b.pos.x, b.pos.y - b.radius), radii: SIMD3(b.radius, m.radius, h.radius),
+                                   facing: field.facing(of: b.id), pose: pose, built: 7, newest: e, fade: b.fade)
+            Rig.snowman(look, contrast: hc, into: &w)
+        }
+        for b in balls where !inFormedStack(b) {
+            Rig.ball(center: b.pos, radius: b.radius, rotation: b.rotation, fade: b.fade, squash: 0, contrast: hc, face: false, into: &w)
+        }
+        if let m = field.snowman, let pos = field.snowmanPlacement() {
+            let s = m.scale, easing = !reduceMotion && m.stageAge < 0.35
+            let t = min(m.stageAge / 0.3, 1)
+            let look = SnowmanLook(foot: pos, radii: SIMD3(11.5, 8.5, 6.5) * s, facing: m.facing,
+                                   pose: Pose(lean: m.lean, flutter: reduceMotion ? Flutter() : m.pose),
+                                   built: m.stage, newest: easing ? t * (2 - t) : 1, fade: m.collapsing ? m.fade : 1, collapsing: m.collapsing)
+            Rig.snowman(look, contrast: hc, into: &w)
+        }
+        for s in field.walk.shots { Rig.shot(pos: s.pos, radius: 3.6, alpha: 1, into: &w) }
+    }
+
+    private func inFormedStack(_ b: Snowball) -> Bool {
+        if b.snowmanAge >= 0, field.snowmanChain(of: b) != nil { return true }
+        guard let p = b.parent else { return false }
+        for r in field.balls where r.id == p {
+            if r.snowmanAge >= 0, field.snowmanChain(of: r) != nil { return true }
+            if let g = r.parent { for q in field.balls where q.id == g && q.snowmanAge >= 0 && field.snowmanChain(of: q) != nil { return true } }
+        }
+        return false
+    }
+
     private func render(_ drawable: CAMetalDrawable) {
         guard inFlight.wait(timeout: .now()) == .success else { return }   // never block the main thread
         guard let cmd = gpu.queue.makeCommandBuffer() else {
@@ -429,10 +414,20 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
         Perf.add(.write, t0); t0 = Perf.now()
         Perf.setInstances(count)
+        let pbuf = primBuffers[(bufferIndex + 2) % 3]   // bufferIndex already advanced: the same ring slot as `buffer`
+        var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: Overlay.primCapacity)
+        if primsOn { writePrims(&w) }
         pass.colorAttachments[0].texture = drawable.texture
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
-            enc.setRenderPipelineState(gpu.pipeline)
+            if w.n > 0 {   // actors under the flakes
+                enc.setRenderPipelineState(gpu.prims)
+                enc.setVertexBuffer(pbuf, offset: 0, index: 0)
+                enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
+                enc.setFragmentBuffer(pbuf, offset: 0, index: 0)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: w.n)
+            }
+            enc.setRenderPipelineState(gpu.flakes)
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
