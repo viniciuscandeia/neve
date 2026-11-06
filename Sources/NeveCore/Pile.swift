@@ -93,13 +93,21 @@ public struct Pile {
     mutating func deposit(bin: Int, volume: Float) -> Bool {
         guard bin >= 0, bin < heights.count, visible[bin], cap[bin] >= Tuning.minRoom else { return false }
         var changed = false
-        for o in -1...1 {
-            var i = bin + o
-            if i < 0 || i >= heights.count || !visible[i] { i = bin }
-            guard cap[i] >= Tuning.minRoom else { continue }
-            let before = heights[i]
-            heights[i] = max(before, min(before + volume * (o == 0 ? 0.5 : 0.25), limit(i)))
-            if heights[i] != before { changed = true }
+        // Fresh powder barely sticks to a clean surface and lands as a one-bin speck (no wide footprint); the grip grows as snow builds up under it.
+        let h0 = heights[bin]
+        if h0 < Tuning.speckFloor {
+            let v = volume * (Tuning.speckStick + (1 - Tuning.speckStick) * h0 / Tuning.speckFloor)
+            heights[bin] = max(h0, min(h0 + v, limit(bin)))
+            changed = heights[bin] != h0
+        } else {
+            for o in -1...1 {
+                var i = bin + o
+                if i < 0 || i >= heights.count || !visible[i] { i = bin }
+                guard cap[i] >= Tuning.minRoom else { continue }
+                let before = heights[i]
+                heights[i] = max(before, min(before + volume * (o == 0 ? 0.5 : 0.25), limit(i)))
+                if heights[i] != before { changed = true }
+            }
         }
         let lo = max(0, bin - 8), hi = min(heights.count - 1, bin + 8)
         for _ in 0..<6 {
@@ -159,7 +167,7 @@ public struct Pile {
         let tj = ok ? base[j] + heights[j] : base[i] - 4
         // Fresh snow on bare ground sticks where it lands (steeper step allowed onto an almost empty bin): a dusting of specks, not an instant wide film.
         let excess = base[i] + heights[i] - tj - Tuning.slope - (ok ? Tuning.dustSlope * max(0, 1 - heights[j] / Tuning.dustDepth) : 0)
-        guard excess > 0, heights[i] > 0 else { return false }
+        guard excess > 0, heights[i] > Tuning.speckFloor else { return false }
         var m = min(excess * 0.5, heights[i])
         if ok, cap[j].isFinite { m = min(m, max(cap[j] - heights[j], 0)) }   // a roofed / under-Dock column takes no more than its room: nothing is lost there
         guard m > 0 else { return false }

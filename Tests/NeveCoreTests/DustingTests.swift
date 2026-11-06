@@ -9,23 +9,23 @@ private func bare() -> Pile { Pile(columns: 200, inset: Tuning.cornerInset, c0: 
     var p = bare()
     for _ in 0..<5 { p.deposit(bin: 100, volume: 5) }
     #expect(p.heights.indices.filter { p.heights[$0] > 0 }.allSatisfy { abs($0 - 100) <= 10 })
-    #expect(abs(p.heights.reduce(0, +) - 25) < 1e-3)
+    #expect(p.heights.reduce(0, +) < 25 && p.heights.reduce(0, +) > 5)   // bare powder only partly sticks (speckStick), nothing lost after that
     var q = bare()
     q.deposit(bin: 100, volume: 5)
-    #expect(q.heights.filter { $0 > 0 }.count <= 5)   // 7 bins before the dust step
+    #expect(q.heights.filter { $0 > 0 }.count == 1)   // a one-bin speck
 }
 
 /// Once the snow is deep enough the profile is the usual repose pile.
 @Test func manyLandingsConvergeToTheSmoothPile() {
     var p = bare()
     var s: UInt64 = 7
-    for _ in 0..<400 {
+    for _ in 0..<800 {   // 800: bare powder only partly sticks (speckStick), so the pile needs more landings than before
         s = s &* 6364136223846793005 &+ 1442695040888963407
         p.deposit(bin: 20 + Int(Float(s >> 40) / Float(1 << 24) * 160), volume: 4)
     }
     #expect(p.heights.max()! <= 18 + 1e-4)
     for b in 21..<179 where p.heights[b] > Tuning.dustDepth && p.heights[b + 1] > Tuning.dustDepth {
-        #expect(abs(p.heights[b] - p.heights[b + 1]) <= Tuning.slope + 0.2)
+        #expect(abs(p.heights[b] - p.heights[b + 1]) <= Tuning.slope + 0.45)   // +0.45 (was 0.2): bins below speckFloor no longer relax, so the pile's foot is a little steeper
     }
     #expect(p.heights[20..<180].reduce(0, +) / 160 > 9)   // mean height as before (~11)
 }

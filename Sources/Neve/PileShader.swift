@@ -45,7 +45,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float depth = in.p.y - ((s.dragged & 2) != 0 ? 0.0 : base), tall = smoothstep(4.0, 10.0, top - base);
     rgb = mix(rgb, rgb * float3(0.90, 0.94, 1.0), 0.6 * tall * (1.0 - smoothstep(0.0, 40.0, depth)));
     rgb = mix(rgb, float3(1.0), \(Palette.crestAlpha) * (1.0 - smoothstep(2.0, 3.6, -dTop)) * steep);
-    float a = 0.97 * cover * smoothstep(1.05, 3.0, top - base);   // thin-layer fade: a light dusting is faint, never a hard line
+    float a = 0.97 * cover * smoothstep(0.3, 1.8, top - base);   // thin-layer fade: a speck is faint but visible, never a hard line (specks are 1-2 bins wide, so no full-width film)
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a));
 }
 """

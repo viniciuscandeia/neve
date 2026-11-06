@@ -38,6 +38,8 @@ public enum Tuning {
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
     static let dustSlope: Float = 1.0       // extra step allowed onto an empty bin (fades to 0 as it fills to dustDepth): fresh dusting stays put
     static let dustDepth: Float = 2.0
+    static let speckFloor: Float = 1.5      // below this a bin neither relaxes nor counts as built up: bare snow stays as isolated specks until later landings stack on it
+    static let speckStick: Float = 0.04     // share of a landing that sticks on a completely bare bin (rises to 1 as the bin reaches speckFloor)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
     /// Window corner radius: ~20pt from macOS 26 (Tahoe) on, ~10pt before.
     public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }

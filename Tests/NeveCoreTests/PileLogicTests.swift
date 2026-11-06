@@ -147,7 +147,7 @@ private func maxSway(calm: Bool) -> Float {
     let buf = UnsafeMutablePointer<PileSeg>.allocate(capacity: 4096)
     defer { buf.deallocate() }
     _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60)
-    for _ in 0..<4 { f.deposit(surface: i, bin: 100, volume: 4) }
+    for _ in 0..<8 { f.deposit(surface: i, bin: 100, volume: 4) }   // 8: the first landings on bare snow only partly stick (speckStick)
     let target = f.surfaces[i].pile.heights[100]
     #expect(target > 3)
     _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60)
