@@ -69,8 +69,10 @@ extension SnowField {
             let lowOk = id == 0 ? r.minY >= -1 : edge > groundY
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
+            spawned += flushRuns()   // runs never span two surfaces
         }
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
+        spawned += flushRuns()
         for s in old { spawned += knockOff(s) }   // gone surfaces
         draggingID = moved
         for i in built.indices { built[i].runs = built[i].pile.visibleRuns() }
@@ -247,7 +249,7 @@ extension SnowField {
             n += shedBin(col: c0 + b, edgeY: edgeY + pile.base[b], from: h - r, amount: r, velocity: v)
             pile.heights[b] = h - r
         }
-        return n
+        return n + flushRuns()
     }
 
     /// Cursor wipe: snow within `radius` of the segment a->b (local coords) above the cursor's lower edge is pushed off
@@ -261,7 +263,7 @@ extension SnowField {
         let first = debris.count
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
-        defer { for j in first..<debris.count { debris[j].phase = 0.5 } }
+        defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
             guard hi >= edgeY - Tuning.maxPileHeight, lo <= edgeY + Tuning.maxPileHeight else { continue }
@@ -286,46 +288,7 @@ extension SnowField {
     func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
         var n = 0
         for (b, h) in s.pile.heights.enumerated() where s.pile.visible[b] { n += shedBin(col: s.c0 + b, edgeY: s.edgeY + s.pile.base[b], from: 0, amount: h, velocity: v) }
-        return n
-    }
-
-    /// Debris (~1 flake per 3pt of snow) for the slice [from, from+amount] of one bin's column of snow.
-    func shedBin(col: Int, edgeY: Float, from: Float, amount h: Float, velocity v: SIMD2<Float>) -> Int {
-        guard h > 0.5, !silent else { return 0 }
-        var n = 0
-        for _ in 0..<max(1, Int(h / 3)) {
-            guard debris.count < Tuning.maxDebris else { break }
-            let x = (Float(col) + Float.random(in: 0...1, using: &rng)) * Tuning.binWidth
-            let y = edgeY + from + Float.random(in: 0...h, using: &rng)
-            let vx = (calm ? 0 : Float.random(in: -12...12, using: &rng)) + v.x * 0.5
-            let fall = (calm ? Tuning.calmDebrisFall : Float.random(in: 10...50, using: &rng)) - v.y * 0.5
-            if addDebris(x: x, y: y, vx: vx, fall: fall, size: Float.random(in: 3...5, using: &rng) + min(h, 18) / 9) { n += 1 }
-            // Taller piles break off in clumps: a few dots close together with nearly the same velocity.
-            if !calm, Float.random(in: 0..<1, using: &rng) < min(0.6, h / 25) {
-                for _ in 0..<Int.random(in: 2...(2 + Int(h / 6)), using: &rng) {
-                    if addDebris(x: x + Float.random(in: -3...3, using: &rng), y: y + Float.random(in: -3...3, using: &rng),
-                                 vx: vx + Float.random(in: -4...4, using: &rng), fall: fall + Float.random(in: -15...15, using: &rng), size: Float.random(in: 2.5...4.5, using: &rng)) { n += 1 }
-                }
-            }
-        }
-        if n > 0 { pilesDirty = true }
-        return n
-    }
-
-    func tryLand(x: Float, prevY: Float, newY: Float, volume: Float) -> Bool {
-        if outro { return false }   // nothing lands, so nothing rebuilds: snow falls through
-        let c = column(x)
-        var best = -1
-        var bestTop = -Float.infinity
-        for k in Int(offsets[c])..<Int(offsets[c + 1]) {
-            let e = entries[k]
-            let s = Int(e.surface)
-            let top = e.edgeY + surfaces[s].pile.heights[c - surfaces[s].c0]
-            if prevY >= e.edgeY, newY < top, top > bestTop { best = s; bestTop = top }
-        }
-        guard best >= 0 else { return false }
-        deposit(surface: best, bin: c - surfaces[best].c0, volume: volume)
-        return true
+        return n + flushRuns()
     }
 
     /// Releases the bins whose (x-ordered, jittered) rank lies in (from, to].
@@ -336,12 +299,13 @@ extension SnowField {
                 let h = surfaces[si].pile.heights[b], col = c0 + b
                 guard h > 0 else { continue }
                 if !surfaces[si].pile.visible[b] { surfaces[si].pile.heights[b] = 0; continue }   // hidden: gone without debris over the front window
-                let rank = 0.7 * binCenter(col) / size.x + 0.3 * Float(UInt32(truncatingIfNeeded: col &* 2654435761) % 1000) / 1000
+                let rank = 0.7 * binCenter(col) / size.x + 0.3 * Float(UInt32(truncatingIfNeeded: (col >> 3) &* 2654435761) % 1000) / 1000   // jitter per 8-column group, so the bins of a slab go together
                 guard rank > from, rank <= to else { continue }
                 surfaces[si].pile.heights[b] = 0
                 _ = shedBin(col: col, edgeY: edgeY + surfaces[si].pile.base[b], from: 0, amount: h, velocity: .zero)
             }
         }
+        flushRuns()
         pilesDirty = true
     }
 }

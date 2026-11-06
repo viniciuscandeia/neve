@@ -160,7 +160,7 @@ private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant
     var peak = 0
     for _ in 0..<8 { f.step(dt: 1 / 20); peak = max(peak, f.debris.count) }   // 0.4s
     #expect(f.surfaces.allSatisfy { $0.pile.heights.allSatisfy { $0 == 0 } })
-    #expect(peak > 200 && peak <= Tuning.maxDebris)
+    #expect(peak > 60 && peak <= Tuning.maxDebris)   // slabs: ~one per 16pt of pile
     run(f, 3)
     #expect(f.debris.isEmpty && f.pile(id: Tuning.groundID)!.heights.allSatisfy { $0 == 0 })   // nothing lands back
 }

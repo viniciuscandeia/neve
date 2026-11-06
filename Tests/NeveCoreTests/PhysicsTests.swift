@@ -83,7 +83,7 @@ import Testing
     #expect(overLower > 0 && elsewhere > 0)
     // Falling 300 pt at 1400 pt/s^2 takes ~0.6 s; falling the 600 pt to the screen bottom takes ~0.85 s.
     for _ in 0..<42 { f.step(dt: 1 / 60) }   // 0.7 s
-    #expect(f.debris.filter { $0.pos.x > 420 && $0.pos.x < 580 }.isEmpty)
+    #expect(f.debris.filter { $0.pos.x > 420 && $0.pos.x < 580 && $0.fall > 0 }.isEmpty)   // (clumps thrown up by a heavy landing are still rising)
     #expect(f.debris.filter { $0.pos.x < 380 || $0.pos.x > 620 }.count > 0)
 }
 
