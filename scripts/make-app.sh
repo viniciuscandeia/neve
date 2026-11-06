@@ -3,11 +3,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Dev bundle: NEVE_DEV=<name> (or --dev <name>) -> build/Neve-<name>.app, own bundle id, executable Neve-dev-<name>.
 [ "${1:-}" = "--dev" ] && NEVE_DEV=$2
-# NEVE_VERSION sets the bundle version; NEVE_UNIVERSAL=1 builds arm64+x86_64 (two builds + lipo; --arch needs Xcode); NEVE_SIGN overrides the identity.
+# NEVE_VERSION sets the bundle version; NEVE_UNIVERSAL=1 builds arm64+x86_64 (two builds + lipo; --arch needs Xcode); NEVE_SIGN overrides the identity. NEVE_APP_DIR puts Neve.app elsewhere (release builds go to dist/, never over the running build/Neve.app).
 VERSION=${NEVE_VERSION:-1.0}
 swift build -c release
 [ -z "${NEVE_UNIVERSAL:-}" ] || swift build -c release --triple x86_64-apple-macosx14.0
-BID=io.github.viniciuscandeia.neve; APP=build/Neve.app; EXE=Neve; EXTRA=""
+BID=io.github.viniciuscandeia.neve; APP=${NEVE_APP_DIR:-build}/Neve.app; EXE=Neve; EXTRA=""
 if [ -n "${NEVE_DEV:-}" ]; then
   BID=$BID.dev; APP="build/Neve-$NEVE_DEV.app"; EXE="Neve-dev-$NEVE_DEV"
   EXTRA="<key>NeveInstance</key><string>$NEVE_DEV</string>"
