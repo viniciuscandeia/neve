@@ -134,7 +134,9 @@ extension SnowField {
                 if lo <= hi {
                     lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
                     var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
-                    let first = prev
+                    let first = prev, seg0 = n
+                    // A run split at a Dock bar end reaches the bin edge, so the bank and the under-Dock strip meet with no gap.
+                    if lo == b, b > 0, s.pile.splits.contains(b) { put(Float(s.c0 + b) * bw, first.t, first.b, first.x, first.t, first.b, drag) }
                     if lo < hi {
                         for i in (lo + 1)...hi {
                             let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
@@ -142,7 +144,8 @@ extension SnowField {
                             prev = cur
                         }
                     }
-                    pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag))
+                    if hi == e - 1, e < cnt, s.pile.splits.contains(e) { put(prev.x, prev.t, prev.b, Float(s.c0 + e) * bw, prev.t, prev.b, drag) }
+                    pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
                 }
                 b = e
             }
@@ -161,11 +164,28 @@ extension SnowField {
         for l in seams {
             for a in pileEnds where a.id == l.left {
                 for c in pileEnds where c.id == l.right && c.first.x >= a.last.x && c.first.x - a.last.x < 8 {
+                    // The lower side rises to the other's top over a gentle ramp (the drift reaches the front pile's surface, no cliff).
+                    var a = a, c = c
+                    let d = c.first.t - a.last.t
+                    if abs(d) > 0.05 {
+                        if d > 0 { liftRun(p, a.segs, d, atEnd: true, edge: a.last.x); a.last.t += d } else { liftRun(p, c.segs, -d, atEnd: false, edge: c.first.x); c.first.t -= d }
+                    }
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag || c.drag)
                 }
             }
         }
         return n
+    }
+
+    /// Adds up to `d` to the tops of the segments within the ramp width of one end of a run (full at the end, 0 at the far
+    /// side of the ramp, slope <= ~0.3), so the bridge to the neighbouring window's pile has no step.
+    func liftRun(_ p: UnsafeMutablePointer<PileSeg>, _ r: Range<Int>, _ d: Float, atEnd: Bool, edge: Float) {
+        let w = max(16, d / 0.3)
+        func f(_ x: Float) -> Float { d * max(0, 1 - abs(edge - x) / w) }
+        for i in r {
+            p[i].top0 += f(p[i].x0); p[i].top1 += f(p[i].x1)
+            p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3)
+        }
     }
 }
 
@@ -179,6 +199,7 @@ public struct PileSeg {
 struct PileEnd {
     typealias P = (x: Float, t: Float, b: Float)
     let id: Int
-    let first: P, last: P
+    var first: P, last: P
     let drag: Bool
+    var segs: Range<Int> = 0..<0   // this run's slices in the PileSeg buffer
 }
