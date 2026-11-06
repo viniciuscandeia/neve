@@ -325,8 +325,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         prefs = p
         // Behind windows: just above the desktop icons (snow over the wallpaper only); else one above the Dock:
         // over the Dock (piles) but under menu bar, status-bar popovers and menus (all .statusBar+).
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(p.behind ? .desktopIconWindow : .dockWindow)) + 1)
-        window.sharingType = p.showInCaptures ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
+        // Only touch the window when these change: re-setting level/sharingType makes WindowServer recomposite (a visible hitch on every pref change).
+        let level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(p.behind ? .desktopIconWindow : .dockWindow)) + 1)
+        if window.level != level { window.level = level }
+        let sharing: NSWindow.SharingType = p.showInCaptures ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
+        if window.sharingType != sharing { window.sharingType = sharing }
         field.snowmanEnabled = p.snowman
         field.walkEnabled = p.walk
         field.visitorsEnabled = p.visitors
@@ -335,7 +338,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.groundOnlyActors = p.behind
         field.economy = p.economy
         field.setIntensity(p.intensity)
-        link?.preferredFrameRateRange = frameRange
+        if let link, link.preferredFrameRateRange != frameRange { link.preferredFrameRateRange = frameRange }
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {

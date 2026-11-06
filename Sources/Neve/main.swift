@@ -443,9 +443,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func pickIntensity(_ sender: NSSegmentedControl) {
         guard let v = Intensity(rawValue: sender.selectedSegment) else { return }
-        ud.set(v.rawValue, forKey: Intensity.key)
-        applyPrefs()
-        updateStatus()
+        ud.set(v.rawValue, forKey: Intensity.key)   // the defaults observer (syncPrefs) applies it once
         statusItem?.menu?.cancelTracking()
     }
 
