@@ -180,6 +180,15 @@ public final class SnowField {
     /// Pointer position (local coords, nil = not on this screen) and velocity (pt/s): falling snow swirls around it.
     public func setPointer(_ p: SIMD2<Float>?, velocity: SIMD2<Float>) { pointer = p; pointerVel = velocity }
 
+    /// Something moves fast enough to want the full frame rate (adaptive fps): drag, shots, fights, avalanche-sized debris,
+    /// a ball in hand or in the air, a gust, intro / outro. Steady gentle snowfall is not.
+    public var isBusy: Bool {
+        draggingID != nil || !shots.isEmpty || !fights.isEmpty || debris.count > 6 || (introDur > 0 && introT < introDur)
+            || (outro && outroRel < 1) || abs(gust) > 0.15 || balls.contains { $0.state != .resting }
+    }
+    /// The pile buffer written last is still the current picture (no version change, no easing left).
+    public var pilesSettled: Bool { pileVersion == pileWritten && !pileEasing }
+
     public func step(dt: Float) {
         time += dt
         stepBuilder(dt: dt)

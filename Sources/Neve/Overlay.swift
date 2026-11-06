@@ -16,6 +16,7 @@ final class InteractView: NSView {
 @MainActor
 final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private static let sharedGpu = Gpu()
+    private static let forceMotion = ProcessInfo.processInfo.environment["NEVE_REDUCE_MOTION"] == "1"   // perf / tests: behave as if Reduce Motion is on
 
     let screen: NSScreen
     private let field: SnowField
@@ -47,6 +48,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var prefs: OverlayPrefs
     private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
     private var lastTimestamp: CFTimeInterval = 0
+    // MARK: P3-C frame-rate policy
+    private var stillPaused = false, dirty = true       // still snow: the link sleeps once the picture is settled; `dirty` = something changed since the last frame
+    private var fastUntil: CFTimeInterval = 0, slow = false   // adaptive fps: 30 fps once nothing fast happened for 0.5 s
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
@@ -164,19 +168,32 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Reduce Motion: calmer snow. Increase Contrast: stronger flake rim and pile bottom edge. (Reduce Transparency: nothing to change, the overlay has no blur.)
     @objc private func accessibilityChanged() {
         let ws = NSWorkspace.shared
-        let motion = ws.accessibilityDisplayShouldReduceMotion, hc = ws.accessibilityDisplayShouldIncreaseContrast
+        let motion = ws.accessibilityDisplayShouldReduceMotion || Self.forceMotion, hc = ws.accessibilityDisplayShouldIncreaseContrast
         field.setCalm(motion)
         reduceMotion = motion
         still = prefs.still && motion
         contrast = hc ? 1 : 0
+        wake()
     }
 
+    /// Still mode renders only on change: anything that changes the picture calls this to restart the link for (at least) one frame.
+    private func wake() {
+        dirty = true
+        guard stillPaused else { return }
+        stillPaused = false
+        lastTimestamp = 0
+        link?.isPaused = occluded || !window.isVisible
+    }
+
+    private var pileSeen = -1
     private var lastWindows: [WindowInfo] = [], lastChange: CFTimeInterval = 0
     func update(windows: [WindowInfo]) {
         // Time since the last *changed* list (identical polls must not shrink it), clamped like the old wall-clock path.
         let now = CACurrentMediaTime()
         field.update(windows: windows, dt: Float(min(max(now - lastChange, 1.0 / 240), 0.5)))
-        if windows != lastWindows { lastWindows = windows; lastChange = now }
+        let changed = windows != lastWindows
+        if changed { lastWindows = windows; lastChange = now; fastUntil = now + 0.5; wake() }
+        if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
         measureCover(windows)               // MARK: P3-0
@@ -266,8 +283,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         return CGPoint(x: p.x + o.x, y: p.y + o.y)
     }
 
-    func clear() { field.clear() }
-    func stage(_ s: Scenario) { field.stage(s) }
+    func clear() { field.clear(); wake() }
+    func stage(_ s: Scenario) { field.stage(s); wake() }
 
     private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
     /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.
@@ -292,7 +309,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             }
         }
     }
-    func dropPiles() { field.dropPiles() }
+    func dropPiles() { field.dropPiles(); wake() }
     func setLowPower(_ on: Bool) {
         lowPower = on
         field.setLowPower(on)
@@ -313,7 +330,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        lowPower || prefs.economy || shrunk != nil ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        lowPower || prefs.economy || shrunk != nil || slow ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
@@ -380,6 +397,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
         guard window.isVisible else { return }
+        dirty = false
         var t0 = Perf.now()
         let now = time, resumed = lastTimestamp == 0
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
@@ -416,6 +434,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         Perf.add(.pile, t0)
         render(drawable)
         Perf.frame(field)
+        // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
+        if moved.x * moved.x + moved.y * moved.y > 60 * 60 || held != nil || field.isBusy { fastUntil = now + 0.5 }
+        let wantSlow = prefs.adaptive && now > fastUntil
+        if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
+        if still, !dirty, field.pilesSettled { stillPaused = true; link?.isPaused = true }
     }
 
     private func mouseDown(_ e: NSEvent) {
