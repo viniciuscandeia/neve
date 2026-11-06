@@ -78,11 +78,12 @@ extension SnowField {
         setIntensity(intensity)
     }
 
-    /// Leaving compact mode: `fraction` of the missing flakes appear anywhere, fading in.
+    /// Leaving compact mode: `fraction` of the missing flakes are woken above the top edge, staggered over up to ~2.5 s of fall
+    /// (snow never appears mid-screen). The rest follow through the normal dormant respawn.
     public func wake(fraction: Float) {
         for i in flakes.indices where flakes[i].kind == .dormant && isActive(i) && Float.random(in: 0..<1, using: &rng) < fraction {
-            var f = spawn(i < skyCount ? .sky : .background, anywhere: true)
-            f.fade = 0
+            var f = spawn(i < skyCount ? .sky : .background, anywhere: false)
+            f.pos.y += Float.random(in: 0...(f.fall * 2.5), using: &rng)
             flakes[i] = f
         }
         skyEnd = max(skyEnd, skyLimit); bgEnd = max(bgEnd, bgLimit)

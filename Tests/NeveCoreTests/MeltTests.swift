@@ -85,3 +85,51 @@ private func trace(_ f: SnowField, seconds: Float, dt: Float = 1.0 / 60) -> [Flo
     advance(f, 1.1)
     #expect(f.meltDone && f.pileVolume == 0 && f.figures.isEmpty)
 }
+
+private func dripCount(_ f: SnowField) -> Int { f.drops.count }
+
+@Test func dropsFormOnlyWhileMeltingAndRespectTheCap() {
+    let f = snowy()
+    advance(f, 3)
+    #expect(dripCount(f) == 0)
+    f.beginMelt(duration: 5)
+    var peak = 0, total = 0, last = 0
+    for _ in 0..<(60 * 6) {
+        f.step(dt: 1 / 60)
+        peak = max(peak, dripCount(f)); #expect(dripCount(f) <= Tuning.maxDrops)
+        if dripCount(f) > last { total += dripCount(f) - last }
+        last = dripCount(f)
+    }
+    #expect(peak > 0 && total >= 4)
+    #expect(dripCount(f) == 0)   // melt done
+    f.beginIntro(duration: 2); f.step(dt: 1 / 60)
+    #expect(dripCount(f) == 0)
+}
+
+@Test func noDropsInCalmEconomyOrLowPower() {
+    for mode in 0..<3 {
+        let f = snowy(calm: mode == 0)
+        f.economy = mode == 1
+        if mode == 2 { f.setLowPower(true) }
+        advance(f, 2)
+        f.beginMelt(duration: 5)
+        var n = 0
+        for _ in 0..<300 { f.step(dt: 1 / 60); n += dripCount(f) }
+        #expect(n == 0)
+    }
+}
+
+@Test func dropsAreDeterministicAndEmitInstances() {
+    func run() -> [Float] {
+        let f = snowy(seed: 3)
+        advance(f, 3); f.beginMelt(duration: 5); advance(f, 2.5)
+        return f.drops.flatMap { [$0.pos.x, $0.pos.y] }
+    }
+    #expect(run() == run())
+    let f = snowy(seed: 3)
+    advance(f, 3); f.beginMelt(duration: 5); advance(f, 2.5)
+    let p = UnsafeMutablePointer<Instance>.allocate(capacity: f.capacity); defer { p.deallocate() }
+    let n = f.writeInstances(to: p)
+    #expect(n <= f.capacity)
+    #expect((0..<n).filter { p[$0].kind == 5 }.count == f.drops.count)
+}

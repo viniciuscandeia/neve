@@ -13,6 +13,8 @@ public final class SnowField {
     var glints: [Flake] = []     // sparkles on pile crests (Effects.swift), kept out of `debris`
     var puffs: [Flake] = []      // dust clouds (Effects.swift)
     var glintT: Float = 0
+    var drops: [Drop] = []       // meltwater (Drips.swift)
+    var dripT: Float = 0
     var icicles: [Icicle] = []   // Icicles.swift: stalactites under frozen windows; iceT = seconds since the last spawn scan
     var iceT: Float = 0
     var iceWin: [WinIce] = []   // Frost.swift: per-window freeze progress
@@ -92,7 +94,7 @@ public final class SnowField {
     var quiet: Bool { outro || melting }
     var outroT: Float = 0, outroSpread: Float = 0, outroRel: Float = 1   // piles released so far: 0...1 of the spread (1 = all)
 
-    public var capacity: Int { flakes.count + Tuning.maxDebris + Tuning.maxGlints + Tuning.maxPuffs }
+    public var capacity: Int { flakes.count + Tuning.maxDebris + Tuning.maxGlints + Tuning.maxPuffs + Tuning.maxDrops }
 
     public init(size: CGSize, origin: CGPoint, groundY: CGFloat, visibleTop: CGFloat, flakeCount: Int,
                 config: SimConfig = .init(), seed: UInt64 = .random(in: 0...UInt64.max)) {
@@ -111,7 +113,7 @@ public final class SnowField {
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
         icicles.reserveCapacity(Tuning.maxStalactitesPerScreen); iceWin.reserveCapacity(16)
-        glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); runBins.reserveCapacity(8)
+        glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); drops.reserveCapacity(Tuning.maxDrops); runBins.reserveCapacity(8)
         figures.reserveCapacity(Tuning.maxFigures + EventDirector.maxAmbient); carrots.reserveCapacity(4); fights.reserveCapacity(4); shots.reserveCapacity(6); splats.reserveCapacity(Tuning.maxSplats + 1)
         flakes.reserveCapacity(pool)
         for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
@@ -240,5 +242,6 @@ public final class SnowField {
         stepDebris(dt: dt)
         stepPuffs(dt: dt)
         stepGlints(dt: dt)
+        stepDrips(dt: dt)
     }
 }

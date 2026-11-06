@@ -49,6 +49,8 @@ public enum Tuning {
     static let maxDebris = 1200
     static let maxPuffs = 24
     static let maxGlints = 6
+    static let maxDrops = 12                // meltwater droplets alive at once (Drips.swift)
+    static let dripRate: Float = 3          // new droplets per second while melting
     static let heavyFall: Float = 350       // impact speed and carried volume that dig a crater (Effects.swift)
     static let heavyVol: Float = 6
     static let puffLife: Float = 0.6

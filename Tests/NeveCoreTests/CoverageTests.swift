@@ -75,3 +75,25 @@ private let visible = CGRect(x: 0, y: 80, width: 1000, height: 700)   // Dock 80
     #expect(a.pile(id: Tuning.groundID)!.heights == b.pile(id: Tuning.groundID)!.heights)
     #expect(a.pile(id: Tuning.groundID)!.heights.contains { $0 > 1 })
 }
+
+@Test func compactExitWakesOnlyFromAboveTheTopEdge() {
+    let f = makeField(flakes: 400, seed: 9)
+    f.setLive(CGRect(x: 0, y: 0, width: 1000, height: 100))
+    advance(f, 5, fps: 30)
+    let was = f.flakes.map { $0.kind == .dormant }
+    f.setLive(nil)
+    f.wake(fraction: 0.5)
+    var woken = 0
+    for (i, fl) in f.flakes.enumerated() where was[i] && fl.kind != .dormant { woken += 1; #expect(fl.pos.y >= 800) }
+    #expect(woken > 50)
+}
+
+@Test func raisingIntensityEntersFromAbove() {
+    let f = makeField(flakes: 400, seed: 5)
+    f.setIntensity(.leve, immediate: true)
+    advance(f, 5, fps: 30)
+    let was = f.flakes.map { $0.kind == .dormant }
+    f.setIntensity(.nevasca)
+    f.step(dt: 1 / 30)
+    for (i, fl) in f.flakes.enumerated() where was[i] && fl.kind != .dormant { #expect(fl.pos.y >= 800) }
+}

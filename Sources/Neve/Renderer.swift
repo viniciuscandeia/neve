@@ -42,7 +42,7 @@ struct Gpu {
 let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
-struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint
+struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop
 struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
@@ -77,6 +77,17 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     for (int k = 0; k < 4; k++) hide = max(hide, max(occMask(in.wpos, occ.r[k]) * occ.s.x, in.seed >= 2.0 ? occMask(in.wpos, occ.r[4 + k]) : 0.0));
     if (hide >= 1.0) discard_fragment();
     int kind = int(in.kind + 0.5);
+    if (kind == 5) {   // meltwater drop: teardrop (point up), bluish translucent, white specular dot
+        float2 u = in.uv;
+        float t = (u.y + 1.0) * 0.5;
+        float w = t < 0.4 ? 0.7 * sqrt(max(1.0 - pow((0.4 - t) / 0.4, 2.0), 0.0)) : 0.7 * (1.0 - t) / 0.6;
+        float e = max(0.12, 1.5 * fwidth(u.x));
+        float a = (1.0 - smoothstep(w - e, w + e * 0.5, abs(u.x))) * step(-1.0, u.y) * (1.0 - smoothstep(0.96, 1.0, t));
+        float spec = 1.0 - smoothstep(0.08, 0.2, length(u - float2(-0.2, -0.15)));
+        float3 c = mix(float3(0.70, 0.82, 0.95), float3(1.0), spec);
+        a *= in.alpha * (1.0 - hide);
+        return float4(c * a, a);
+    }
     if (kind > 0) {
         float3 body = \(Palette.msl(Palette.snow)), shadow = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
         float2 u = in.uv;
