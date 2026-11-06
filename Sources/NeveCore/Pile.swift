@@ -11,7 +11,6 @@ public struct Pile {
     let inset: Float
     var maxHeight = Tuning.maxPileHeight
     var maxes: [Float] = []      // optional per-column maximum (ground snowbank beside the Dock); empty = maxHeight
-    var splits: Set<Int> = []    // columns where drawing starts a new run (ground at the Dock bar ends, so the bank can merge with the Dock pile)
     let c0: Int                  // first global column, and the REAL (unclipped) window ends in x:
     let x0: Float, x1: Float     // taper and spill-off are measured against these, not the screen-clipped pile
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField

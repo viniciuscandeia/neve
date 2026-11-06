@@ -117,9 +117,8 @@ extension SnowField {
                 return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5)   // the Dock bank is bigger: a little more texture
             }
             func top(_ i: Int, _ b: Int, _ e: Int) -> Float {
-                // Runs split at the Dock bar ends keep their full height there (no taper): that edge is a wall, not a pile end.
-                // Walls (a hidden neighbour), supported ends and Dock splits hold their full height: no taper there.
-                let l = i > b ? h[i - 1] : (b > 0 || s.pile.supportL || s.pile.splits.contains(b) ? h[i] : 0), r = i < e - 1 ? h[i + 1] : (e < cnt || s.pile.supportR || s.pile.splits.contains(e) ? h[i] : 0)
+                // Walls (a hidden neighbour) and supported ends hold their full height: no taper there.
+                let l = i > b ? h[i - 1] : (b > 0 || s.pile.supportL ? h[i] : 0), r = i < e - 1 ? h[i + 1] : (e < cnt || s.pile.supportR ? h[i] : 0)
                 let sm = (l + 2 * h[i] + r) / 4
                 return min(edge + base[i] + sm + jitter(i, sm), ceiling(i))
             }
@@ -127,7 +126,7 @@ extension SnowField {
             while b < cnt {
                 guard vis[b] else { b += 1; continue }
                 var e = b
-                while e < cnt && vis[e] && (e == b || !s.pile.splits.contains(e)) { e += 1 }
+                while e < cnt && vis[e] { e += 1 }
                 var lo = b, hi = e - 1
                 while lo <= hi && h[lo] <= 0.15 { lo += 1 }
                 while hi >= lo && h[hi] <= 0.15 { hi -= 1 }
@@ -135,8 +134,6 @@ extension SnowField {
                     lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
                     var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
                     let first = prev, seg0 = n
-                    // A run split at a Dock bar end reaches the bin edge, so the bank and the under-Dock strip meet with no gap.
-                    if lo == b, b > 0, s.pile.splits.contains(b) { put(Float(s.c0 + b) * bw, first.t, first.b, first.x, first.t, first.b, drag) }
                     if lo < hi {
                         for i in (lo + 1)...hi {
                             let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
@@ -144,7 +141,6 @@ extension SnowField {
                             prev = cur
                         }
                     }
-                    if hi == e - 1, e < cnt, s.pile.splits.contains(e) { put(prev.x, prev.t, prev.b, Float(s.c0 + e) * bw, prev.t, prev.b, drag) }
                     pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
                 }
                 b = e

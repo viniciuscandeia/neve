@@ -300,7 +300,7 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     pileUp(f, id: Tuning.groundID)
     #expect(f.pile(id: 0)!.heights.max()! > 4)
     let g = f.pile(id: Tuning.groundID)!
-    for b in 200..<300 { #expect(g.visible[b]); #expect(g.heights[b] > 0 && g.heights[b] <= 10 + 1e-4) }
+    for b in 210..<290 { #expect(g.visible[b]); #expect(g.heights[b] > 0 && g.heights[b] <= 10 + 1e-4) }
     #expect(g.heights[10] > 4)
 }
 
@@ -339,9 +339,10 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
 
 private func bankField() -> SnowField {
     let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
-    f.update(windows: [win(0, 171, 10, 1098, 84)])
+    f.update(windows: [dockBar])
     return f
 }
+private let dockBar = WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: 25.2)   // the app's 0.3 * height
 
 private func heavy(_ f: SnowField, id: Int) {
     let i = f.surfaces.firstIndex { $0.id == id }!
@@ -352,10 +353,10 @@ private func heavy(_ f: SnowField, id: Int) {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
     let g = f.pile(id: Tuning.groundID)!
-    #expect(g.heights[84] >= 48 && g.heights[84] <= 58.6)    // x 169, left of the bar: a drift at ~65% of the bar top, not a slab up to it
-    #expect(g.heights[634] >= 48 && g.heights[634] <= 58.6)  // x 1269, right of the bar
+    #expect(g.heights[84] >= 28 && g.heights[84] <= 35.3)    // x 169, left of the bar: peaks where the corner arc is vertical (10 + 25.2), not a slab up to the bar top
+    #expect(g.heights[635] >= 28 && g.heights[635] <= 35.3)  // x 1269, right of the bar
     #expect(g.heights[5] <= 38.5)                             // screen edge, 171pt from the bar
-    for b in 85..<634 { #expect(g.visible[b] && g.heights[b] <= 10 + 1e-4) }   // never inside the bar rect
+    for b in 85..<634 { #expect(g.visible[b] && g.heights[b] <= barBottom(x: Float(b) * 2 + 1) + 1e-3) }   // never inside the bar's rounded silhouette
     #expect(g.heights[300] > 5)                              // snow fills the gap under the bar
 }
 
@@ -369,20 +370,19 @@ private func heavy(_ f: SnowField, id: Int) {
 @Test func snowBesideTheDockSpreadsUnderTheBarWithoutLoss() {
     let f = bankField()
     let i = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
-    for b in 70..<85 { f.surfaces[i].pile.heights[b] = 40 }
+    for b in 70..<85 { f.surfaces[i].pile.heights[b] = 20 }
     let before = f.pile(id: Tuning.groundID)!.heights.reduce(0, +)
     for _ in 0..<300 { f.deposit(surface: i, bin: 80, volume: 0.001) }
     let g = f.pile(id: Tuning.groundID)!
     #expect(abs(g.heights.reduce(0, +) - before) < 1)
-    #expect(g.heights[86...88].allSatisfy { $0 > 0 && $0 <= 10 + 1e-4 })
+    #expect(g.heights[86...88].allSatisfy { $0 > 0 && $0 <= 35.3 })
 }
 
 @Test func groundBankLimitSlopesDownFromTheDock() {
     let p = bankField().pile(id: Tuning.groundID)!
-    #expect(abs(p.limit(84) - 0.65 * 90) < 4)        // 65% of min(dockTop, groundY)
+    #expect(abs(p.limit(84) - 35.2) < 1)             // the corner arc's centre height
     #expect(p.limit(0) == Tuning.groundMaxHeight)      // the tail has run out before the screen edge
-    for b in 1..<80 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }   // monotone up to the rounded shoulder (last 8pt)
-    #expect(p.limit(84) > p.limit(80) - 8 && p.limit(84) < p.limit(80) + 6)
+    for b in 1..<80 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }   // monotone up to the bar end
     // curved, not a straight diagonal; never steeper than the repose slope
     let mid = p.limit(84 - 30), end = p.limit(84 - 60)
     #expect(p.limit(84) - mid > mid - end, "convex tail")
@@ -414,7 +414,7 @@ private func heavy(_ f: SnowField, id: Int) {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
     let h = f.pile(id: Tuning.groundID)!.heights
-    for _ in 0..<5 { f.update(windows: [win(0, 171, 10, 1098, 84)]); f.boundsDirty = true }
+    for _ in 0..<5 { f.update(windows: [dockBar]); f.boundsDirty = true }
     #expect(f.pile(id: Tuning.groundID)!.heights == h)
 }
 
@@ -434,5 +434,28 @@ private func heavy(_ f: SnowField, id: Int) {
 @Test func noGroundContourInsideTheDockBarRect() {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
-    for g in pileSegs(f) where g.base0 < 1 && g.x0 >= 172 && g.x1 <= 1268 { #expect(max(g.top0, g.top1) <= 10 + 1e-3) }
+    for g in pileSegs(f) where g.base0 < 1 && g.x0 >= 172 && g.x1 <= 1268 { #expect(max(g.top0, g.top1) <= 10 + 25.2 + 1e-3) }
+}
+
+/// Bottom of the bar's rounded silhouette at x (inf outside it).
+private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171, maxX: 1269, minY: 10, radius: 25.2) ?? .infinity }
+
+@Test func bankHugsTheRoundedBarEndWithoutAWall() {
+    let f = bankField()
+    heavy(f, id: Tuning.groundID)
+    // Dense sample of the drawn ground contour (interpolated along the segments) around both corners.
+    var pts: [(x: Float, y: Float)] = []
+    for g in pileSegs(f) where g.base0 < 1 && g.x1 > 120 && g.x0 < 1320 {
+        for k in 0...8 { let t = Float(k) / 8; pts.append((g.x0 + (g.x1 - g.x0) * t, g.top0 + (g.top1 - g.top0) * t)) }
+    }
+    #expect(!pts.isEmpty)
+    for p in pts { #expect(p.y <= barBottom(x: p.x) + 0.3, "contour (\(p.x), \(p.y)) inside the bar") }   // jitter-free bound + chord tolerance
+    // The bank is full at the end: it rises to the arc's vertical tangent (10 + 25.2) and follows the arc from there.
+    #expect(pts.filter { $0.x < 171 }.map { $0.y }.max()! > 35.2 - 3.5)
+    // Continuity through the corner: neighbouring segments join (no vertical jump beyond the arc's own drop over a bin).
+    let segs = pileSegs(f).filter { $0.base0 < 1 }.sorted { $0.x0 < $1.x0 }
+    for (a, b) in zip(segs, segs.dropFirst()) where a.x1 > 100 && b.x0 < 1340 && b.x0 - a.x1 < 0.5 {
+        let arc = abs(barBottom(x: b.x0).isFinite && barBottom(x: a.x1).isFinite ? barBottom(x: b.x0) - barBottom(x: a.x1) : 0)
+        #expect(abs(b.top0 - a.top1) <= 2 + arc, "jump at x \(a.x1)")
+    }
 }

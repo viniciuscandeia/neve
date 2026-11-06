@@ -94,14 +94,13 @@ extension SnowField {
         var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: Float(frame.minX), x1: Float(frame.maxX))
         pile.maxHeight = Tuning.groundMaxHeight
         // A floating bottom Dock bar (top inside the Dock strip): the bank beside it rises to its top, sloping down with distance.
-        let docks = rects.indices.filter { windows[$0].number == 0 && rects[$0].minY >= -1 && rects[$0].maxY > 1 && rects[$0].minY < CGFloat(groundY) && rects[$0].width > rects[$0].height }.map { rects[$0] }
+        let docks = rects.indices.filter { windows[$0].number == 0 && rects[$0].minY >= -1 && rects[$0].maxY > 1 && rects[$0].minY < CGFloat(groundY) && rects[$0].width > rects[$0].height }.map { (r: rects[$0], rad: Float(min(windows[$0].radius, rects[$0].height / 2))) }
         if !docks.isEmpty {
-            for r in docks { pile.splits.insert(Int(Float(r.minX) / bw)); pile.splits.insert(Int(Float(r.maxX) / bw)) }
             pile.maxes = (0..<numCols).map { b in
                 let x = Float(b) + 0.5, cx = x * bw
                 var m = Tuning.groundMaxHeight
-                for r in docks {
-                    m = max(m, Tuning.bankLimit(dockTop: min(Float(r.maxY), groundY), distance: max(Float(r.minX) - cx, cx - Float(r.maxX), 0)))
+                for (r, rad) in docks {   // the bank peaks where the bar's end is vertical (corner centre height), so it meets the arc without a wall
+                    m = max(m, Tuning.bankLimit(dockTop: min(Float(r.maxY), groundY), peakCap: max(Float(r.minY), 0) + rad, distance: max(Float(r.minX) - cx, cx - Float(r.maxX), 0)))
                 }
                 return m
             }
@@ -111,8 +110,11 @@ extension SnowField {
             var ceiling = Float.infinity
             for (i, r) in rects.enumerated() {
                 // The floating Dock bar hovers a few points above the screen bottom: it still hides the ground under it.
-                if windows[i].number == 0 {   // Dock bar: snow may flow under it, up to its bottom edge (the overlay sits above the Dock)
-                    if r.maxY > 1, x >= r.minX, x < r.maxX { ceiling = min(ceiling, max(Float(r.minY), 0)) }
+                if windows[i].number == 0 {   // Dock bar: snow may flow under it, up to its rounded underside (the overlay sits above the Dock)
+                    if r.maxY > 1 {
+                        // Lowest underside within a bin either side: the straight contour between bin centres then stays below the arc (it is convex).
+                        for dx in [-bw, 0, bw] { if let u = Tuning.barUnderside(x: Float(x) + dx, minX: Float(r.minX), maxX: Float(r.maxX), minY: Float(r.minY), radius: Float(min(windows[i].radius, r.height / 2))) { ceiling = min(ceiling, u) } }
+                    }
                     continue
                 }
                 if r.contains(CGPoint(x: x, y: 1)) { pile.visible[b] = false; break }
