@@ -91,7 +91,7 @@ public enum Intensity: Int, CaseIterable {
 public struct SimConfig: Sendable {
     public var snowmanSpeed: Float = 1                    // build / cooldown time scale (demos: 20)
     public var snowmanDepth: Float = Tuning.snowmanDepth  // average pile height over the stretch that triggers a build
-    public var iceSpeed: Float = 1                        // icicle growth time scale (demos: 120)
+    public var iceSpeed: Float = 1                        // ice time scale (freeze + stalactite growth) (demos: 120)
     public var avalancheDemo: Float = 0                   // > 0: fills the piles and starts an avalanche every this many seconds (demos)
     public var penguinDemo = false                        // NEVE_DEMO_PENGUIN: a penguin visit every ~12 s (cap and cooldown aside)
     public var sleighDemo = false                         // NEVE_DEMO_SLEIGH: a crossing starts as soon as there is a pile to drop on, then every ~45 s (the director gap)

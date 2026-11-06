@@ -2,7 +2,7 @@ import CoreGraphics
 import Testing
 @testable import NeveCore
 
-/// Three windows with piles (so there are enough icicle slots), each >= 8pt tall at the ends.
+/// Three windows with piles (frozen after ~3 min of snowfall).
 private func iceField(seed: UInt64 = 1) -> SnowField {
     let f = makeField(seed: seed)
     f.update(windows: [win(1, 100, 500, 200, 150), win(2, 400, 500, 200, 150), win(3, 700, 500, 200, 150)])
@@ -10,30 +10,9 @@ private func iceField(seed: UInt64 = 1) -> SnowField {
     return f
 }
 
-@Test func icicleGrowsPast10ptInTenMinutesWhereThePileIsTall() {
-    let f = iceField()
-    advance(f, 600, fps: 4)
-    #expect(!f.icicles.isEmpty)
-    for c in f.icicles { #expect(c.len >= min(c.maxLen, 10) - 0.5) }
-    #expect(f.icicles.contains { $0.len >= 10 })
-    for c in f.icicles where !c.bottom { #expect(c.len <= c.maxLen && c.maxLen >= 6 && c.maxLen <= 18) }
-}
-
-@Test func noIciclesWhereThePileIsLowAndCapsHold() {
-    let f = makeField()
-    f.update(windows: [win(1, 100, 500, 200, 150)])
-    pileUp(f, id: 1, rounds: 1, volume: 1)   // < 8pt
-    advance(f, 600, fps: 4)
-    #expect(f.icicles.isEmpty)
-    let g = iceField()
-    advance(g, 120, fps: 4)
-    #expect(g.icicles.count <= 24)
-    for id in 1...3 { #expect(g.icicles.filter { $0.win == id }.count <= 6) }
-}
-
 @Test func fastDragShattersIciclesIntoSlabDebris() {
     let f = iceField()
-    advance(f, 5, fps: 4)
+    advance(f, 200, fps: 4)   // frozen
     let n = f.icicles.filter { $0.win == 2 }.count
     #expect(n > 0)
     let d0 = f.debris.count
@@ -45,7 +24,7 @@ private func iceField(seed: UInt64 = 1) -> SnowField {
 
 @Test func slowMoveCarriesIciclesAlong() {
     let f = iceField()
-    advance(f, 5, fps: 4)
+    advance(f, 200, fps: 4)   // frozen
     let before = f.icicles.filter { $0.win == 2 }
     #expect(!before.isEmpty)
     f.update(windows: [win(1, 100, 500, 200, 150), win(2, 410, 500, 200, 150), win(3, 700, 500, 200, 150)], dt: 1)   // 10 pt/s
@@ -57,7 +36,7 @@ private func iceField(seed: UInt64 = 1) -> SnowField {
 
 @Test func resizeBreaksIcicles() {
     let f = iceField()
-    advance(f, 5, fps: 4)
+    advance(f, 200, fps: 4)   // frozen
     f.update(windows: [win(1, 100, 500, 200, 150), win(2, 400, 500, 260, 150), win(3, 700, 500, 200, 150)], dt: 1)
     f.step(dt: 1.0 / 60)
     #expect(f.icicles.filter { $0.win == 2 }.isEmpty)
@@ -65,10 +44,11 @@ private func iceField(seed: UInt64 = 1) -> SnowField {
 
 @Test func reduceMotionFadesIciclesAndSpawnsNoDebris() {
     let f = iceField()
-    advance(f, 5, fps: 4)
+    advance(f, 200, fps: 4)   // frozen
     f.setCalm(true)
     let d0 = f.debris.count
-    f.surfaces[f.index[3]!].pile.empty()   // the snow under window 3's icicles is gone
+    for j in f.iceWin.indices where f.iceWin[j].id == 3 { f.iceWin[j].frozen = false; f.iceWin[j].acc = 0 }   // window 3 thawed
+    f.surfaces[f.index[3]!].pile.empty()
     f.step(dt: 1.0 / 60)
     #expect(f.icicles.contains { $0.dying && $0.win == 3 })
     #expect(f.debris.count == d0)

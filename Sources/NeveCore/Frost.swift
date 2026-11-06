@@ -68,16 +68,16 @@ extension SnowField {
     func spawnStalactites(si: Int) {
         let fr = surfaces[si].frame, id = surfaces[si].id, w = Float(fr.width)
         let n = max(2, min(Tuning.maxStalactitesPerWindow, Int(w / 70) + 4) / (economy ? 2 : 1))
-        guard w > 40, icicles.reduce(0, { $0 + ($1.bottom ? 1 : 0) }) + n <= Tuning.maxStalactitesPerScreen else { return }
+        guard w > 40, icicles.count + n <= Tuning.maxStalactitesPerScreen else { return }
         for i in 0..<n {
             let key = id * 64 + i + 1_000_000
             let t = (Float(i) + 0.5 + (SnowField.hash01(key) - 0.5) * 0.7) / Float(n)
             let dx = 4 + t * (w - 8)
             let corner = max(0, 1 - min(dx, w - dx) / (0.15 * w + 1))
             let maxLen = 4 + 16 * SnowField.hash01(key &+ 1)
-            icicles.append(Icicle(win: id, right: false, slot: UInt8(i), dx: dx, len: calm ? maxLen : 1, maxLen: maxLen,
+            icicles.append(Icicle(win: id, slot: UInt8(i), dx: dx, len: calm ? maxLen : 1, maxLen: maxLen,
                                   width: 2.2 + 1.4 * SnowField.hash01(key &+ 2) + 1.6 * corner, tilt: (SnowField.hash01(key &+ 3) - 0.5) * 0.8,
-                                  w0: w, fade: calm ? 0 : 1, bottom: true, grow: maxLen / (60 + 60 * SnowField.hash01(key &+ 4))))
+                                  w0: w, fade: calm ? 0 : 1, grow: maxLen / (60 + 60 * SnowField.hash01(key &+ 4))))
         }
     }
 
