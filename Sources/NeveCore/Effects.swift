@@ -139,6 +139,7 @@ extension SnowField {
                           seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1))
         }
         if !calm { addPuff(x: x, y: top + 3) }
+        avalancheImpact(surface: s, x: x)
     }
 
     /// Sparkles on crests of piles >= 6pt: at most 6 alive, one new every 2s, 0 -> 1 -> 0 over 0.6s. Off for Reduce Motion, economy, low power.

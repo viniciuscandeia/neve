@@ -74,7 +74,9 @@ public enum Intensity: Int, CaseIterable {
 public struct SimConfig: Sendable {
     public var snowmanSpeed: Float = 1                    // build / cooldown time scale (demos: 20)
     public var snowmanDepth: Float = Tuning.snowmanDepth  // average pile height over the stretch that triggers a build
-    public init(snowmanSpeed: Float = 1, snowmanDepth: Float = Tuning.snowmanDepth) {
-        self.snowmanSpeed = snowmanSpeed; self.snowmanDepth = snowmanDepth
+    public var iceSpeed: Float = 1                        // icicle growth time scale (demos: 120)
+    public var avalancheDemo: Float = 0                   // > 0: fills the piles and starts an avalanche every this many seconds (demos)
+    public init(snowmanSpeed: Float = 1, snowmanDepth: Float = Tuning.snowmanDepth, iceSpeed: Float = 1, avalancheDemo: Float = 0) {
+        self.snowmanSpeed = snowmanSpeed; self.snowmanDepth = snowmanDepth; self.iceSpeed = iceSpeed; self.avalancheDemo = avalancheDemo
     }
 }
