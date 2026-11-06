@@ -388,9 +388,11 @@ private func heavy(_ f: SnowField, id: Int) {
     f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: 0)])
     heavy(f, id: Tuning.groundID)
     heavy(f, id: 0)
-    var subpaths = 0
-    f.pilePath().applyWithBlock { if $0.pointee.type == .moveToPoint { subpaths += 1 } }
-    #expect(subpaths <= 2)   // left bank + Dock + right bank = 1, plus the under-bar run
+    // Contiguous chains of segments (end of one = start of the next, within 1pt): bank + Dock + bank are one, plus the under-bar run.
+    let segs = pileSegs(f).sorted { $0.x0 < $1.x0 }
+    var chains = 0, end = -Float.infinity
+    for g in segs { if g.x0 - end > 1 { chains += 1 }; end = max(end, g.x1) }
+    #expect(chains <= 2)
 }
 
 @Test func dockShrinkingShedsGroundSnowAsDebrisNotSilently() {
