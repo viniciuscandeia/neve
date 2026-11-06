@@ -188,7 +188,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let vis = screen.visibleFrame, o = frame.origin
         let rects = windows.filter { $0.number != 0 && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
         let c = coverage(of: rects, in: vis)
-        coverFraction = c.fraction
+        coverFraction = c.fraction; 
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
         for i in 0..<8 { occ[i] = .zero }
@@ -255,6 +255,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         metalLayer.drawableSize = CGSize(width: g.width * scale, height: g.height * scale)
         CATransaction.commit()
         field.setLive(r)
+        // The display link keeps vending drawables of the size it was made with: make a new one.
+        if let l = link { l.invalidate(); link = nil; _ = l; present() }
         if reduceMotion { crossfade() }
     }
 
