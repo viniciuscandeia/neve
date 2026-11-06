@@ -83,3 +83,24 @@ private func wall(_ p: Pile) -> Int { p.visible.firstIndex { !$0 }! - 1 }   // l
     pileUp(f, id: 1, rounds: 40)
     #expect(f.pile(id: 1)!.heights.last! < 3)
 }
+
+// The bank beside the Dock and the strip under it meet at the Dock bar ends: no gap in the ground contour there.
+@Test func groundContourHasNoGapAtDockBarEnds() {
+    let f = makeField()
+    f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 400, y: 10, width: 200, height: 70), radius: 18)])
+    pileUp(f, id: Tuning.groundID)
+    let s = chain(f).filter { $0.base0 < 1 }
+    for edge: Float in [400, 600] {
+        let left = s.filter { $0.x1 <= edge + 2 }.map { $0.x1 }.max()!, right = s.filter { $0.x0 >= edge - 2 }.map { $0.x0 }.min()!
+        #expect(right - left < 0.01, "gap \(left)...\(right) at \(edge)")
+    }
+}
+
+// A drift meeting a front window whose own pile is taller bridges to its top with a gentle ramp, not a cliff.
+@Test func driftRisesToTheFrontPileWithoutACliff() {
+    let f = scene(front: win(2, 200, 300, 300, 110))
+    f.surfaces[f.surfaces.firstIndex { $0.id == 2 }!].pile.heights.indices.forEach { f.surfaces[f.surfaces.firstIndex { $0.id == 2 }!].pile.heights[$0] = 14 }
+    f.pileVersion += 1
+    let s = chain(f).filter { $0.x0 > 150 && $0.x1 < 260 }   // around the seam at x = 200
+    #expect(!s.isEmpty && s.allSatisfy { abs($0.slope) < 1.0 }, "steepest \(s.map { abs($0.slope) }.max()!)")
+}

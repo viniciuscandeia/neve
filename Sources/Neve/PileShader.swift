@@ -7,7 +7,7 @@ struct SVOut { float4 position [[position]]; float2 p; uint id [[flat]]; };
 vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant PileSeg *segs [[buffer(0)]],
                         constant float2 &viewSize [[buffer(1)]], constant float2 &dragOffset [[buffer(2)]]) {
     PileSeg s = segs[iid];
-    float2 lo = float2(s.x0, min(s.base0, s.base1) - 6.0), hi = float2(s.x1, max(s.top0, s.top1) + 4.0);
+    float2 lo = float2(s.x0 - 1.0, min(s.base0, s.base1) - 6.0), hi = float2(s.x1 + 1.0, max(s.top0, s.top1) + 4.0);
     float2 corner = float2((vid & 1) ? 1.0 : 0.0, (vid & 2) ? 1.0 : 0.0);
     float2 p = mix(lo, hi, corner);
     SVOut o;
@@ -19,7 +19,7 @@ vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], consta
 fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buffer(0)]], constant float &contrast [[buffer(1)]]) {
     PileSeg s = segs[in.id];
     float dx = max(s.x1 - s.x0, 1e-3);
-    float t = clamp((in.p.x - s.x0) / dx, 0.0, 1.0);
+    float t = (in.p.x - s.x0) / dx;   // not clamped: the quad overlaps its neighbours by 1pt and extends its own edge lines there (no x stair-steps on steep slopes)
     float top = mix(s.top0, s.top1, t), base = mix(s.base0, s.base1, t);
     float bs = (s.base1 - s.base0) / dx;
     float dTop = (in.p.y - top) * rsqrt(1.0 + s.slope * s.slope);   // > 0 above the top edge (slope-corrected)
@@ -31,7 +31,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float hf = smoothstep(0.0, 2.0, top - base);
     float skirt = mix(0.45, 0.8, contrast) * smoothstep(-1.5, -0.5, dBase) * (1.0 - smoothstep(-0.5, 3.0, dBase));
     float halo = 0.11 * (1.0 - smoothstep(0.0, 2.5, dTop));
-    float sa = max(skirt, halo) * hf;
+    float sa = max(skirt, halo) * hf * step(s.x0, in.p.x) * step(in.p.x, s.x1);   // overlap strips draw coverage only (no doubled shadow)
     float3 rgb = mix(float3(0.84, 0.90, 0.98), float3(0.88, 0.93, 0.99), smoothstep(1.0, 2.0, -dBase));
     rgb = mix(rgb, float3(1.0), 0.95 * (1.0 - smoothstep(2.4, 3.2, -dTop)));
     float a = 0.97 * cover;
