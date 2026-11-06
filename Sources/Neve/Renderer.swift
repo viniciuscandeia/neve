@@ -84,7 +84,9 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         float e = max(0.12, 1.5 * fwidth(u.x));
         float a = (1.0 - smoothstep(w - e, w + e * 0.5, abs(u.x))) * step(-1.0, u.y) * (1.0 - smoothstep(0.96, 1.0, t));
         float spec = 1.0 - smoothstep(0.08, 0.2, length(u - float2(-0.2, -0.15)));
-        float3 c = mix(float3(0.70, 0.82, 0.95), float3(1.0), spec);
+        float rim = 1.0 - smoothstep(0.06, 0.24, w - abs(u.x));   // thin darker-blue outline so it reads on any wallpaper
+        float3 c = mix(float3(0.62, 0.80, 0.97), float3(0.25, 0.40, 0.65), rim);
+        c = mix(c, float3(1.0), spec);
         a *= in.alpha * (1.0 - hide);
         return float4(c * a, a);
     }

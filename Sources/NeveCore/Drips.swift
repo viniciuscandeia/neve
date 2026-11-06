@@ -40,7 +40,7 @@ extension SnowField {
                     let at = SIMD2(p.x, top)
                     drops.swapAt(i, drops.count - 1); drops.removeLast()
                     for _ in 0..<Int.random(in: 2...3, using: &fxRng) where drops.count < Tuning.maxDrops {
-                        drops.append(Drop(pos: at, vel: [Float.random(in: -50...50, using: &fxRng), Float.random(in: 40...100, using: &fxRng)], size: Float.random(in: 1.5...2.5, using: &fxRng), src: -2, state: .splash))
+                        drops.append(Drop(pos: at, vel: [Float.random(in: -50...50, using: &fxRng), Float.random(in: 40...100, using: &fxRng)], size: Float.random(in: 2...3.5, using: &fxRng), src: -2, state: .splash))
                     }
                 }
             case .splash:
@@ -53,7 +53,7 @@ extension SnowField {
 
     /// A drop hangs from a random pile end (window / Dock bar) or a sagging snowman.
     private func startDrop() {
-        let size = Float.random(in: 4...6, using: &fxRng)
+        let size = Float.random(in: 6...8, using: &fxRng)
         let snowmen = figures.indices.filter { figures[$0].kind == .snowman && figures[$0].phase != .collapsing }   // ponytail: tiny alloc per drop (<= 4/s), not per frame
         if !snowmen.isEmpty, Float.random(in: 0..<1, using: &fxRng) < 0.35 {
             let f = figures[snowmen[Int.random(in: 0..<snowmen.count, using: &fxRng)]]
@@ -95,7 +95,7 @@ extension SnowField {
             case .falling:
                 p[n] = Instance(pos: d.pos, size: d.size, alpha: 0.7, seed: 0, rot: 0, kind: 5)
             case .splash:
-                p[n] = Instance(pos: d.pos, size: d.size, alpha: 0.7 * (1 - d.age / Drop.splashLife), seed: 0, rot: 0, kind: 5)
+                p[n] = Instance(pos: d.pos, size: d.size, alpha: 0.85 * (1 - d.age / Drop.splashLife), seed: 0, rot: 0, kind: 5)
             }
             n += 1
         }

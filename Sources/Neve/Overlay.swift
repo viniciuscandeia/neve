@@ -304,12 +304,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.beginIntro(duration: 2.5)
     }
     private var meltDone: (@MainActor () -> Void)?
-    /// Idle melt: snow thaws away over ~5 s (0.6 s with Reduce Motion), then `done` (the controller pauses rendering). Not on screen / still snow: cleared at once.
+    /// Idle melt: snow thaws away over ~12 s (0.6 s with Reduce Motion), then `done` (the controller pauses rendering). Not on screen / still snow: cleared at once.
     func melt(_ done: @escaping @MainActor () -> Void) {
         guard showing, !still else { field.clear(); return done() }
         outroGen += 1
         meltDone = done
-        field.beginMelt(duration: 5)
+        field.beginMelt(duration: 12)
         wake()
     }
     /// Being shown right now (the only state an outro makes sense in).
