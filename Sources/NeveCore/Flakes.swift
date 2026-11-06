@@ -16,6 +16,12 @@ public struct Flake {
     public var kind: FlakeKind
     var seed: Float = 0     // per-flake shape variant / rotation (0..1)
     var fade: Float = 1     // 0..1 fade-in after a spawn; multiplied into alpha
+    // Effects (Effects.swift): shape 0 dot, 1 clump, 2 slab, 3 puff, 4 glint (= Instance.kind)
+    var rot: Float = 0      // radians
+    var spin: Float = 0     // rad/s
+    var vol: Float = 0      // carried snow (area, pt^2): deposited where it lands; 0 = legacy size-based deposit
+    var delay: Float = 0    // slab: seconds aloft; puff / glint: seconds of life left
+    var shape: UInt8 = 0
 }
 
 extension SnowField {
@@ -90,5 +96,22 @@ extension SnowField {
         }
         skyEnd = max(skyLimit, liveSky); bgEnd = max(bgLimit, liveBg)
         if introT >= introDur { introDur = 0 }
+    }
+
+    func tryLand(x: Float, prevY: Float, newY: Float, volume: Float, fall: Float = 0, vol: Float = 0) -> Bool {
+        if outro { return false }   // nothing lands, so nothing rebuilds: snow falls through
+        let c = column(x)
+        var best = -1
+        var bestTop = -Float.infinity
+        for k in Int(offsets[c])..<Int(offsets[c + 1]) {
+            let e = entries[k]
+            let s = Int(e.surface)
+            let top = e.edgeY + surfaces[s].pile.heights[c - surfaces[s].c0]
+            if prevY >= e.edgeY, newY < top, top > bestTop { best = s; bestTop = top }
+        }
+        guard best >= 0 else { return false }
+        if fall > Tuning.heavyFall, vol > Tuning.heavyVol { impact(surface: best, bin: c - surfaces[best].c0, x: x, top: bestTop, fall: fall, vol: vol) }
+        else { deposit(surface: best, bin: c - surfaces[best].c0, volume: vol > 0 ? vol / Tuning.binWidth : volume) }
+        return true
     }
 }

@@ -239,6 +239,7 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     let f = makeField(seed: seed)
     f.update(windows: [win(1, 0, 200, 1000, 200)])
     for b in 30..<470 { for _ in 0..<10 { f.deposit(surface: 0, bin: b, volume: 4) } }
+    for _ in 0..<(Tuning.maxDebris - 40) { f.addDebris(x: 5, y: 700, vx: 0, fall: 0) }   // slabs are few: nearly fill the pool first
     let before = f.debris.count
     let n = f.update(windows: [win(1, 400, 200, 1000, 200)], dt: 0.1)   // 4000 pt/s (velocity is smoothed over ~0.1 s)
     #expect(f.debris.count == Tuning.maxDebris)

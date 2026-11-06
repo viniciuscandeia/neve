@@ -24,6 +24,12 @@ public enum Tuning {
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
+    static let maxPuffs = 24
+    static let maxGlints = 6
+    static let heavyFall: Float = 350       // impact speed and carried volume that dig a crater (Effects.swift)
+    static let heavyVol: Float = 6
+    static let puffLife: Float = 0.6
+    static let glintLife: Float = 0.6
     public static let snowmanDepth: Float = 14              // average pile height over the stretch that triggers a build (SimConfig default)
     static let snowmanStretch: Float = 70                   // pt of visible ground the snowman needs
     static let snowmanClearance: Float = 20                 // pt kept free to the Dock ends, covering windows and screen edges

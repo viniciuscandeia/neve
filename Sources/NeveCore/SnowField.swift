@@ -10,6 +10,12 @@ public final class SnowField {
     var boundsDirty = false
     public internal(set) var flakes: [Flake] = []
     public internal(set) var debris: [Flake] = []
+    var glints: [Flake] = []     // sparkles on pile crests (Effects.swift), kept out of `debris`
+    var puffs: [Flake] = []      // dust clouds (Effects.swift)
+    var glintT: Float = 0
+    var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
+    var runV: SIMD2<Float> = .zero
+    public var economy = false   // Economy mode: no glints
     var surfaces: [Surface] = []
     var index: [Int: Int] = [:]   // surface id -> index into `surfaces`, rebuilt with them in updateSurfaces
     var offsets: [Int32]       // CSR: per column range into entries
@@ -65,7 +71,7 @@ public final class SnowField {
     public private(set) var outro = false                // outro: no new snow, flakes fade, nothing lands (see collapseAll)
     var outroT: Float = 0, outroSpread: Float = 0, outroRel: Float = 1   // piles released so far: 0...1 of the spread (1 = all)
 
-    public var capacity: Int { flakes.count + Tuning.maxDebris }
+    public var capacity: Int { flakes.count + Tuning.maxDebris + Tuning.maxGlints + Tuning.maxPuffs }
 
     public init(size: CGSize, origin: CGPoint, groundY: CGFloat, visibleTop: CGFloat, flakeCount: Int,
                 config: SimConfig = .init(), seed: UInt64 = .random(in: 0...UInt64.max)) {
@@ -81,6 +87,7 @@ public final class SnowField {
         let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
+        glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); runBins.reserveCapacity(8)
         figures.reserveCapacity(Tuning.maxFigures); fights.reserveCapacity(4); shots.reserveCapacity(6)
         flakes.reserveCapacity(pool)
         for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
@@ -155,7 +162,7 @@ public final class SnowField {
         figuresVersion &+= 1
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
         for i in surfaces.indices { surfaces[i].pile.empty() }
-        debris.removeAll(keepingCapacity: true)
+        debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         pilesDirty = true
     }
 
@@ -186,5 +193,7 @@ public final class SnowField {
         wind = calm ? 0 : windGain * windShape()
         stepFlakes(dt: dt)
         stepDebris(dt: dt)
+        stepPuffs(dt: dt)
+        stepGlints(dt: dt)
     }
 }

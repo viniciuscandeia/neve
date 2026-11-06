@@ -22,12 +22,14 @@ extension SnowField {
             f.fall = min(f.fall + Tuning.debrisGravity * dt, Tuning.debrisTerminal)
             f.pos.x += f.vx * dt
             f.pos.y -= f.fall * dt
+            f.rot += f.spin * dt
             if f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w
-                || (f.phase <= 0 && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale)) {
+                || (f.phase <= 0 && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale, fall: f.fall, vol: f.vol)) {
                 debris[i] = debris[debris.count - 1]
                 debris.removeLast()
             } else {
                 debris[i] = f
+                if f.shape == 2, !calm { splitSlab(i, dt: dt) }
             }
             i -= 1
         }

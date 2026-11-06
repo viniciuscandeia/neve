@@ -1,12 +1,14 @@
 import CoreGraphics
 import Foundation
 
-/// GPU instance, 24 bytes (8-aligned); layout mirrors the Metal struct.
+/// GPU instance, 32 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint.
 public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
     var alpha: Float
     var seed: Float
+    var rot: Float = 0
+    var kind: UInt32 = 0
 }
 
 /// One SDF primitive for the Metal pass, 64 bytes; layout mirrors the Metal struct.
@@ -60,7 +62,15 @@ extension SnowField {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
             if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0)); n += 1 }   // seed >= 2: background flake (shader occlusion by large windows)
         }
-        for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
+        for f in puffs {   // grow 1 -> 1.8x while fading
+            let t = max(f.delay, 0) / Tuning.puffLife
+            p[n] = Instance(pos: f.pos, size: f.size * (1 + 0.8 * (1 - t)), alpha: f.alpha * t, seed: f.seed, rot: 0, kind: 3); n += 1
+        }
+        for f in glints {
+            let t = 1 - f.delay / Tuning.glintLife
+            p[n] = Instance(pos: f.pos, size: f.size, alpha: 1 - abs(2 * t - 1), seed: f.seed, rot: 0, kind: 4); n += 1   // 0 -> 1 -> 0
+        }
+        for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed, rot: f.rot, kind: UInt32(f.shape)); n += 1 }
         return n
     }
 
