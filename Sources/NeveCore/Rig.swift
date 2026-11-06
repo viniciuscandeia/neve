@@ -22,10 +22,11 @@ public struct SnowmanLook {
     public var headless = false              // head ball, face and scarf absent
     public var droop: Float = 0              // 0...1 arms hang down (the loser)
     public var headTilt: Float = 0           // radians the head (face, nose, scarf) is turned
+    public var carrot = true                 // false: a rabbit took the nose
     public init(foot: SIMD2<Float>, radii: SIMD3<Float>, facing: Float = 1, pose: Pose = Pose(), built: Int = 7, newest: Float = 1,
-                fade: Float = 1, collapsing: Bool = false, headless: Bool = false, droop: Float = 0, headTilt: Float = 0) {
+                fade: Float = 1, collapsing: Bool = false, headless: Bool = false, droop: Float = 0, headTilt: Float = 0, carrot: Bool = true) {
         self.foot = foot; self.radii = radii; self.facing = facing; self.pose = pose; self.built = built; self.newest = newest
-        self.fade = fade; self.collapsing = collapsing; self.headless = headless; self.droop = droop; self.headTilt = headTilt
+        self.fade = fade; self.collapsing = collapsing; self.headless = headless; self.droop = droop; self.headTilt = headTilt; self.carrot = carrot
     }
 }
 
@@ -149,7 +150,7 @@ public enum Rig {
             for k in 0..<3 { w.ellipse(center: m.p(0, 0.44 - 0.425 * Float(k)), radii: m.r(0.112), color: a(coal, al)) }
             if !l.headless { eyes(fr(ch, rh, l.facing, g, tilt: l.headTilt), al, &w) }
         }
-        if let (al, g) = st(4) { nose(fr(ch, rh, l.facing, g, tilt: l.headTilt), al, &w) }
+        if l.carrot, let (al, g) = st(4) { nose(fr(ch, rh, l.facing, g, tilt: l.headTilt), al, &w) }
         if let (al, g) = st(6) { scarf(fr(ch, rh, l.facing, g, tilt: l.headTilt), flutter: l.pose.flutter, al, &w) }
     }
 

@@ -74,7 +74,8 @@ public enum Intensity: Int, CaseIterable {
 public struct SimConfig: Sendable {
     public var snowmanSpeed: Float = 1                    // build / cooldown time scale (demos: 20)
     public var snowmanDepth: Float = Tuning.snowmanDepth  // average pile height over the stretch that triggers a build
-    public init(snowmanSpeed: Float = 1, snowmanDepth: Float = Tuning.snowmanDepth) {
-        self.snowmanSpeed = snowmanSpeed; self.snowmanDepth = snowmanDepth
+    public var directorSpeed: Float = 1                   // EventDirector intervals / gaps / cooldowns are divided by this (demos: 30)
+    public init(snowmanSpeed: Float = 1, snowmanDepth: Float = Tuning.snowmanDepth, directorSpeed: Float = 1) {
+        self.snowmanSpeed = snowmanSpeed; self.snowmanDepth = snowmanDepth; self.directorSpeed = directorSpeed
     }
 }

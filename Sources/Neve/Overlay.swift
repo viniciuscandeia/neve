@@ -324,6 +324,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.sharingType = p.showInCaptures ? .readOnly : .none   // hidden from screenshots / recordings / sharing by default
         field.snowmanEnabled = p.snowman
         field.walkEnabled = p.walk
+        field.visitorsEnabled = p.visitors
+        field.groundOnlyActors = p.behind
         field.economy = p.economy
         field.setIntensity(p.intensity)
         link?.preferredFrameRateRange = frameRange
@@ -469,11 +471,20 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                      face: b.face != 0, facing: b.face == 0 ? 1 : b.face, into: &w)
         }
         for f in field.figures where f.phase != .hidden {
+            if f.kind == .rabbit {
+                var l = field.rabbitLook(of: f)
+                let o = d(f.surfaceID)
+                l.foot += o
+                if let fl = l.flight { l.flight = fl + SIMD3(o.x, o.y, 0) }
+                Rig.rabbit(l, contrast: hc, into: &w)
+                continue
+            }
             var look = field.look(of: f)
             look.foot += d(f.surfaceID)
             if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }
             Rig.snowman(look, contrast: hc, into: &w)
         }
+        field.writeCarrotPrims(&w, shift: d)
         field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
     }
 

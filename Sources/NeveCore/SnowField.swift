@@ -52,6 +52,11 @@ public final class SnowField {
     public internal(set) var fights: [Fight] = []     // snowball fights; see Fights.swift
     public internal(set) var shots: [Shot] = []
     public internal(set) var splats: [Splat] = []    // <= Tuning.maxSplats, pool
+    public var visitorsEnabled = false   // the EventDirector may start visitors (the app sets it from Pref.visitors; tests opt in)
+    public var groundOnlyActors = false  // behind-windows mode: visitors only on the ground / Dock (compact mode, areaScale < 1, implies it)
+    public internal(set) var director: EventDirector
+    var carrots: [Carrot] = []           // stolen noses lying on a pile or falling (Figures+Rabbit.swift)
+    var rabbitHitScale = Tuning.rabbitHitScale   // tests force hits (large) or misses (0)
     public var walkEnabled = true      // figures walk and fight (Walk.swift)
     var gustOverride: Float?           // tests
     public var snowmanEnabled = true { didSet { if !snowmanEnabled { dropAutoFigure() } } }
@@ -78,6 +83,7 @@ public final class SnowField {
                 config: SimConfig = .init(), seed: UInt64 = .random(in: 0...UInt64.max)) {
         self.config = config
         rng = SplitMix64(seed: seed)
+        director = EventDirector(seed: seed ^ 0xD1EC_7042, speed: config.directorSpeed)
         self.size = SIMD2(Float(size.width), Float(size.height))
         self.origin = origin
         self.groundY = Float(groundY)
@@ -89,7 +95,7 @@ public final class SnowField {
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
         glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); runBins.reserveCapacity(8)
-        figures.reserveCapacity(Tuning.maxFigures); fights.reserveCapacity(4); shots.reserveCapacity(6); splats.reserveCapacity(Tuning.maxSplats + 1)
+        figures.reserveCapacity(Tuning.maxFigures + EventDirector.maxAmbient); carrots.reserveCapacity(4); fights.reserveCapacity(4); shots.reserveCapacity(6); splats.reserveCapacity(Tuning.maxSplats + 1)
         flakes.reserveCapacity(pool)
         for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
         skyEnd = skyCount; bgEnd = pool - skyCount
@@ -161,6 +167,7 @@ public final class SnowField {
     }
 
     public func clear() {
+        carrots.removeAll(keepingCapacity: true)
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         figuresVersion &+= 1
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
@@ -184,7 +191,7 @@ public final class SnowField {
     /// a ball in hand or in the air, a gust, intro / outro. Steady gentle snowfall is not.
     public var isBusy: Bool {
         draggingID != nil || !shots.isEmpty || !fights.isEmpty || debris.count > 6 || (introDur > 0 && introT < introDur)
-            || (outro && outroRel < 1) || abs(gust) > 0.15 || balls.contains { $0.state != .resting }
+            || (outro && outroRel < 1) || figures.contains { $0.kind != .snowman } || abs(gust) > 0.15 || balls.contains { $0.state != .resting }
     }
     /// The pile buffer written last is still the current picture (no version change, no easing left).
     public var pilesSettled: Bool { pileVersion == pileWritten && !pileEasing }
@@ -192,6 +199,7 @@ public final class SnowField {
     public func step(dt: Float) {
         time += dt
         stepBuilder(dt: dt)
+        stepDirector(dt: dt)
         if outro, outroRel < 1 {
             outroT += dt
             let to = min(1, outroT / outroSpread)
