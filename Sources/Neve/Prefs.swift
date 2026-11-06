@@ -20,7 +20,7 @@ struct OverlayPrefs: Equatable {
 let osWindowRadius = Tuning.windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
 
 /// NEVE_SNOWMAN_FAST=1 (demos): builds 20x faster and on a shallower pile. NEVE_DIRECTOR_FAST=1: visitors come 30x as often.
-/// NEVE_DEMO_SLEIGH=1 (demos): the sleigh crosses soon after launch and every ~45 s. NEVE_DEMO_ICE=1 (demos): icicles grow 120x faster. NEVE_DEMO_AVALANCHE=<secs>: fills the piles and starts an avalanche that often.
+/// NEVE_DEMO_SLEIGH=1 (demos): the sleigh crosses soon after launch and every ~45 s. NEVE_DEMO_ICE=1 (demos): windows freeze fast and stalactites grow 120x faster. NEVE_DEMO_AVALANCHE=<secs>: fills the piles and starts an avalanche that often.
 let simConfig: SimConfig = {
     let env = ProcessInfo.processInfo.environment
     var c = SimConfig()
