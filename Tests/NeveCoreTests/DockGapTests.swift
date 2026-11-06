@@ -115,3 +115,25 @@ private func bankedField() -> SnowField {
     }
     #expect(env(171)! >= 92 && env(700)! >= 92)   // up at the Dock top at the end and over the bar
 }
+
+@Test func bankMeetsTheDockPileAtEachBarEndWithoutStepOrSpike() {
+    let f = bankedField()
+    let segs = pileSegs(f)
+    func env(_ x: Float) -> Float? {
+        var m: Float?
+        for g in segs where x >= g.x0 && x <= g.x1 { let y = g.top0 + (g.top1 - g.top0) * (x - g.x0) / max(g.x1 - g.x0, 1e-3); m = max(m ?? y, y) }
+        return m
+    }
+    var prev: Float?
+    for x in stride(from: Float(120), through: 1320, by: 0.5) {   // the cliff down to the gap hides under the envelope; no step above 1.5pt, hence no spike either
+        guard let y = env(x) else { prev = nil; continue }
+        if let p = prev { #expect(abs(y - p) <= 1.5, "jump \(p) -> \(y) at x \(x)") }
+        prev = y
+    }
+    // The bank column beside each bar end and the Dock pile's filled corner share the same contour point, and the bridge between them is always emitted.
+    for (bankX, dockX) in [(Float(169), Float(171)), (1271, 1269)] {
+        let bank = segs.filter { $0.x0 == bankX || $0.x1 == bankX }.map { $0.x0 == bankX ? $0.top0 : $0.top1 }
+        #expect(bank.count >= 2 && (bank.max()! - bank.min()!) < 0.01 && bank[0] >= 92, "bank/Dock top mismatch at \(bankX): \(bank)")
+        #expect(segs.contains { min($0.x0, $0.x1) == min(bankX, dockX) && max($0.x0, $0.x1) == max(bankX, dockX) && $0.base0 + $0.base1 < 200 && $0.top0 >= 92 })
+    }
+}
