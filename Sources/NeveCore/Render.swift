@@ -109,10 +109,10 @@ extension SnowField {
             n += 1
         }
         // Ground bank height beside each end of the Dock bar: the Dock pile's rounded corners are filled up to it, so bank and Dock top are one contour.
-        var fillL: Float = 0, fillR: Float = 0
+        var fillL: Float = 0, fillR: Float = 0, bankL = -1, bankR = -1   // bankL/R: the ground columns holding that height
         if let gi = index[Tuning.groundID], let di = index[0] {
             let g = surfaces[gi].pile.shown, d = surfaces[di].pile
-            if g.count == numCols { fillL = g[column(d.x0 - bw)]; fillR = g[column(d.x1 + bw)] }
+            if g.count == numCols { bankL = column(d.x0 - bw); bankR = column(d.x1 + bw); fillL = g[bankL]; fillR = g[bankR] }
         }
         for s in surfaces {
             let h = s.pile.shown, vis = s.pile.visible, base = s.pile.base
@@ -140,6 +140,8 @@ extension SnowField {
                 func nb(_ j: Int) -> Float { s.id == Tuning.groundID && s.pile.cap[j] < h[i] ? h[i] : h[j] }
                 let l = i > b ? nb(i - 1) : (b > 0 || s.pile.supportL ? h[i] : 0), r = i < e - 1 ? nb(i + 1) : (e < cnt || s.pile.supportR ? h[i] : 0)
                 let sm = (l + 2 * h[i] + r) / 4
+                // The bank column beside a Dock bar end sits exactly at the filled corner's height (no smoothing / noise): bank and Dock pile share one contour point.
+                if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
                 return min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
             }
             var b = 0
@@ -178,8 +180,8 @@ extension SnowField {
         }
         // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock.
         for d in pileEnds where d.id == 0 {
-            if fillL > 0, abs(d.first.t - fillL) <= 0.5 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, d.first.b, d.drag) }
-            if fillR > 0, abs(d.last.t - fillR) <= 0.5 { put(d.last.x, d.last.t, d.last.b, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag) }
+            if fillL > 0 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, d.first.b, d.drag) }
+            if fillR > 0 { put(d.last.x, d.last.t, d.last.b, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag) }
         }
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {
