@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public enum FigureKind: UInt8, Sendable { case snowman, rabbit }   // future: penguin, robin, sleigh (one `Figures+<Kind>.swift` + a Rig entry + an EventDirector spec)
+public enum FigureKind: UInt8, Sendable { case snowman, rabbit, robin }   // future: penguin, robin, sleigh (one `Figures+<Kind>.swift` + a Rig entry + an EventDirector spec)
 public enum Phase: UInt8 { case building, idle, walking, fighting, cheering, collapsing, hidden }
 /// Where a figure stands: on a surface at x (a window top, the Dock bar, the ground), or in the air.
 public enum Attachment: Equatable { case surface(id: Int, x: Float), air }
@@ -36,6 +36,7 @@ public struct Figure {
     public internal(set) var headTilt: Float = 0                // radians the head is turned (a re-stacked flying head straightens out)
     public internal(set) var droop: Float = 0                   // 0...1 arms hanging (eases to 1 once headless)
     public internal(set) var carrot = true                      // the snowman still has its nose (a rabbit may steal it)
+    var robin = RobinState()                                    // (Figures+Robin.swift)
     var critter = Critter()                                     // visitor / theft bookkeeping (Figures+Rabbit.swift)
     var motion = Motion()
     var scale: Float { radii.x / 11.5 }
@@ -73,7 +74,7 @@ extension SnowField {
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
     func anchors(of f: Figure) -> Anchors {
         switch f.kind {
-        case .rabbit:
+        case .rabbit, .robin:
             let p = SIMD2(f.foot.x, f.foot.y + f.pose.hop)
             return Anchors(base: p, body: p, head: p, arm: p, ground: f.foot.y)
         case .snowman:
@@ -241,7 +242,7 @@ extension SnowField {
             guard stepFigure(i, dt, animate: animate) else { continue }
             let f = figures[i]
             if f.foot != before.foot || f.pose != before.pose || f.facing != before.facing || f.phase != before.phase || f.built != before.built
-                || f.kind == .rabbit || f.carrot != before.carrot || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
+                || f.kind != .snowman || f.carrot != before.carrot || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
             i += 1
         }
         if animate {
@@ -255,6 +256,7 @@ extension SnowField {
     /// False when the figure was removed (the next one now has its index).
     private func stepFigure(_ i: Int, _ dt: Float, animate: Bool) -> Bool {
         if figures[i].kind == .rabbit { return stepRabbit(i, dt) }
+        if figures[i].kind == .robin { return stepRobin(i, dt) }
         var f = figures[i]
         f.phaseT += dt
         if f.phase == .collapsing {
@@ -315,7 +317,7 @@ extension SnowField {
     }
 
     private func knockOff(_ i: Int, _ v: SIMD2<Float>) {
-        if figures[i].kind == .rabbit { removeFigure(i) } else if figures[i].fromBalls { demote(figures[i].id, falling: v) } else { shatter(figures[i].id, velocity: v) }
+        if figures[i].kind != .snowman { removeFigure(i) } else if figures[i].fromBalls { demote(figures[i].id, falling: v) } else { shatter(figures[i].id, velocity: v) }
     }
 
     /// The snowman switch went off: the auto snowman vanishes (no debris).

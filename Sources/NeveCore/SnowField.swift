@@ -60,6 +60,7 @@ public final class SnowField {
     public var groundOnlyActors = false  // behind-windows mode: visitors only on the ground / Dock (compact mode, areaScale < 1, implies it)
     public internal(set) var director: EventDirector
     var carrots: [Carrot] = []           // stolen noses lying on a pile or falling (Figures+Rabbit.swift)
+    var shotLand: (p: SIMD2<Float>, t: Float)?, impactAt: (x: Float, y: Float, t: Float)?   // last landings (robin startle)
     var rabbitHitScale = Tuning.rabbitHitScale   // tests force hits (large) or misses (0)
     public var walkEnabled = true      // figures walk and fight (Walk.swift)
     var gustOverride: Float?           // tests

@@ -479,6 +479,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                 Rig.rabbit(l, contrast: hc, into: &w)
                 continue
             }
+            if f.kind == .robin {
+                var l = field.robinLook(of: f)
+                l.foot += d(f.surfaceID)
+                Rig.robin(l, contrast: hc, into: &w)
+                continue
+            }
             var look = field.look(of: f)
             look.foot += d(f.surfaceID)
             if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }

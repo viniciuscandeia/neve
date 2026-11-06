@@ -24,9 +24,10 @@ public struct EventDirector {
         switch k {
         case .snowman: return nil
         case .rabbit: return Spec(mean: 360, cooldown: 240)
+        case .robin: return Spec(mean: 300, cooldown: 180, windowOnly: true)
         }
     }
-    static let kinds: [FigureKind] = [.rabbit]   // the kinds the Poisson roll considers
+    static let kinds: [FigureKind] = [.rabbit, .robin]   // the kinds the Poisson roll considers
 
     struct Request { var kind: FigureKind, at: Float }
 
@@ -40,7 +41,8 @@ public struct EventDirector {
 
     /// Story extension point: called (outside the director's mutation) right after an ambient visit of `kind` starts. A later slice sets
     /// it to stage the chained story, e.g. `request(.robin, after: 0)` before a rabbit steals, or to bias where shots go.
-    public var storyBias: ((_ started: FigureKind, _ field: SnowField) -> Void)?
+    public var storyBias: ((_ started: FigureKind, _ field: SnowField) -> Void)? = { k, f in f.storyStarted(k) }
+    var story = StoryState()
 
     init(seed: UInt64, speed: Float) {
         rng = SplitMix64(seed: seed); self.speed = max(speed, 1)
@@ -55,6 +57,7 @@ public struct EventDirector {
 
     mutating func ended(_ kind: FigureKind, at t: Float) {
         guard let s = Self.spec(kind) else { return }
+        if kind == .rabbit { story.active = false; story.pending = false }
         cooldownUntil[Int(kind.rawValue)] = t + s.cooldown / speed
     }
 }
@@ -106,6 +109,7 @@ extension SnowField {
     private func startVisitor(_ kind: FigureKind) -> Bool {
         switch kind {
         case .rabbit: return startRabbit()
+        case .robin: return startRobin()
         case .snowman: return false
         }
     }

@@ -134,6 +134,7 @@ extension SnowField {
         let onBody = s.hit && j != nil
         s.normal = onBody ? SIMD2(v.x >= 0 ? -1 : 1, 0) : SIMD2(0, 1)
         s.pos = s.to
+        shotLand = (s.to, time)
         let refl = v - 2 * (v.x * s.normal.x + v.y * s.normal.y) * s.normal
         var rel = s.to + SIMD2(0, 1), scale: Float = 1
         if onBody, let j { rel = s.to - figures[j].foot; scale = figures[j].scale }

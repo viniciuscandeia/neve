@@ -93,7 +93,7 @@ extension SnowField {
     func clearCritters() {
         var i = figures.count - 1
         while i >= 0 {
-            if figures[i].kind == .rabbit { removeFigure(i) } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter(); figuresVersion &+= 1 }
+            if figures[i].kind != .snowman { removeFigure(i) } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter(); figuresVersion &+= 1 }
             i -= 1
         }
         carrots.removeAll(keepingCapacity: true)
@@ -154,7 +154,7 @@ extension SnowField {
         case .sniff:
             c.ear = max(0, sin(c.stageT * 13)) * 0.5
             f.pose.shake = sin(c.stageT * 22) * 0.6   // nose bob
-            if c.stageT >= Tuning.rabbitSniff, let k = t {
+            if c.stageT >= Tuning.rabbitSniff, !storyWaiting(c.stageT), let k = t {
                 c.stage = .snatch; c.stageT = 0
                 figures[k].carrot = false
                 figures[k].critter.regrow = Tuning.carrotRegrow
@@ -191,7 +191,7 @@ extension SnowField {
         let dur = 0.35 + 0.4 * min(d / Tuning.fightRange, 1)
         let hit = Float.random(in: 0..<1, using: &director.rng) < min(1, Tuning.hitChance(distance: d) * rabbitHitScale)
         var to = SIMD2(f.foot.x + vx * dur, f.foot.y + 5 * f.scale)
-        if !hit { to = SIMD2(to.x + (Bool.random(using: &director.rng) ? 1 : -1) * Float.random(in: 22...45, using: &director.rng), f.foot.y) }
+        if !hit { to = SIMD2(to.x + (Bool.random(using: &director.rng) ? 1 : -1) * Float.random(in: 22...45, using: &director.rng), f.foot.y); to.x = storyMiss(to.x, rabbitX: f.foot.x) }
         shots.append(Shot(pos: from, from: from, to: to, peak: 12 + 0.12 * d, dur: dur, hit: hit, head: false, target: f.id, surface: f.surfaceID ?? Tuning.groundID))
         figuresVersion &+= 1
     }
