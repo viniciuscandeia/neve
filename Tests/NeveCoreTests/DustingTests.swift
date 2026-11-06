@@ -7,11 +7,11 @@ private func bare() -> Pile { Pile(columns: 200, inset: Tuning.cornerInset, c0: 
 /// First landings on a bare window stay local: a speck, not an instant wide film.
 @Test func firstLandingsOnBareWindowStayLocalAndConserveVolume() {
     var p = bare()
-    for _ in 0..<5 { p.deposit(bin: 100, volume: 5) }
+    for _ in 0..<5 { p.deposit(bin: 100, volume: 5, powder: true) }
     #expect(p.heights.indices.filter { p.heights[$0] > 0 }.allSatisfy { abs($0 - 100) <= 10 })
     #expect(p.heights.reduce(0, +) < 25 && p.heights.reduce(0, +) > 5)   // bare powder only partly sticks (speckStick), nothing lost after that
     var q = bare()
-    q.deposit(bin: 100, volume: 5)
+    q.deposit(bin: 100, volume: 5, powder: true)
     #expect(q.heights.filter { $0 > 0 }.count == 1)   // a one-bin speck
 }
 
@@ -39,4 +39,11 @@ private func bare() -> Pile { Pile(columns: 200, inset: Tuning.cornerInset, c0: 
     var buf = [PileSeg](repeating: PileSeg(x0: 0, x1: 0, top0: 0, top1: 0, base0: 0, base1: 0, slope: 0, dragged: 0), count: 4096)
     let n = buf.withUnsafeMutableBufferPointer { f.writePiles(to: $0.baseAddress!, capacity: 4096, dt: 10, force: true) } ?? 0
     #expect(n > 0 && n < 12)
+}
+
+/// Slabs / clumps (debris with real volume) keep all their snow on a bare surface: only powder flakes partly melt on contact.
+@Test func debrisOnBareSurfaceKeepsItsVolume() {
+    var p = bare()
+    p.deposit(bin: 100, volume: 5)
+    #expect(abs(p.heights.reduce(0, +) - 5) < 1e-3)
 }

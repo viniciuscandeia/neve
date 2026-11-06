@@ -3,8 +3,8 @@ import Foundation
 
 extension SnowField {
     /// One flake lands on a surface (also the test entry point for building piles without simulating snowfall).
-    func deposit(surface: Int, bin: Int, volume: Float) {
-        if surfaces[surface].pile.deposit(bin: bin, volume: volume) { pilesDirty = true }
+    func deposit(surface: Int, bin: Int, volume: Float, powder: Bool = false) {
+        if surfaces[surface].pile.deposit(bin: bin, volume: volume, powder: powder) { pilesDirty = true }
         if surfaces[surface].pile.spillL > 2 || surfaces[surface].pile.spillR > 2 { spill(surface) }
     }
 

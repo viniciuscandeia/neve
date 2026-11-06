@@ -114,7 +114,7 @@ extension SnowField {
         }
         guard best >= 0 else { return false }
         if fall > Tuning.heavyFall, vol > Tuning.heavyVol { impact(surface: best, bin: c - surfaces[best].c0, x: x, top: bestTop, fall: fall, vol: vol) }
-        else { deposit(surface: best, bin: c - surfaces[best].c0, volume: vol > 0 ? vol / Tuning.binWidth : volume) }
+        else { deposit(surface: best, bin: c - surfaces[best].c0, volume: vol > 0 ? vol / Tuning.binWidth : volume, powder: vol == 0) }
         return true
     }
 }

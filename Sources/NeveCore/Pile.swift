@@ -90,12 +90,12 @@ public struct Pile {
     /// Adds snow around `bin` (spread 1/4-1/2-1/4 so no single-bin spikes), then relaxes locally.
     /// Returns whether anything changed.
     @discardableResult
-    mutating func deposit(bin: Int, volume: Float) -> Bool {
+    mutating func deposit(bin: Int, volume: Float, powder: Bool = false) -> Bool {
         guard bin >= 0, bin < heights.count, visible[bin], cap[bin] >= Tuning.minRoom else { return false }
         var changed = false
         // Fresh powder barely sticks to a clean surface and lands as a one-bin speck (no wide footprint); the grip grows as snow builds up under it.
         let h0 = heights[bin]
-        if h0 < Tuning.speckFloor {
+        if powder, h0 < Tuning.speckFloor {
             let v = volume * (Tuning.speckStick + (1 - Tuning.speckStick) * h0 / Tuning.speckFloor)
             heights[bin] = max(h0, min(h0 + v, limit(bin)))
             changed = heights[bin] != h0
