@@ -101,8 +101,7 @@ extension SnowField {
                 let x = Float(b) + 0.5, cx = x * bw
                 var m = Tuning.groundMaxHeight
                 for r in docks {
-                    let d = max(Float(r.minX) - cx, cx - Float(r.maxX), 0)
-                    m = max(m, min(Float(r.maxY) - Tuning.bankSlope * d, groundY))
+                    m = max(m, Tuning.bankLimit(dockTop: min(Float(r.maxY), groundY), distance: max(Float(r.minX) - cx, cx - Float(r.maxX), 0)))
                 }
                 return m
             }

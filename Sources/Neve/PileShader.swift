@@ -33,6 +33,9 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float halo = 0.11 * (1.0 - smoothstep(0.0, 2.5, dTop));
     float sa = max(skirt, halo) * hf * step(s.x0, in.p.x) * step(in.p.x, s.x1);   // overlap strips draw coverage only (no doubled shadow)
     float3 rgb = mix(float3(0.84, 0.90, 0.98), float3(0.88, 0.93, 0.99), smoothstep(1.0, 2.0, -dBase));
+    // Deep snow (banks): a cool ambient-occlusion tint toward the base, fading out over the lower ~40pt; thin piles are untouched.
+    float depth = in.p.y - base, tall = smoothstep(8.0, 40.0, top - base);
+    rgb = mix(rgb, rgb * float3(0.90, 0.94, 1.0), 0.8 * tall * (1.0 - smoothstep(0.0, min(top - base, 40.0), depth)));
     rgb = mix(rgb, float3(1.0), 0.95 * (1.0 - smoothstep(2.4, 3.2, -dTop)));
     float a = 0.97 * cover;
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a));

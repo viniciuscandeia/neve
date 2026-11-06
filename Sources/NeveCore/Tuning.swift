@@ -11,6 +11,17 @@ public enum Tuning {
     static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
     static let groundID = -1
     static let bankSlope: Float = 0.35      // repose slope (pt per pt) of the ground snowbank rising toward a bottom Dock bar
+    static let bankPeak: Float = 0.65       // share of the Dock top the bank reaches at the bar end (drifted, not a slab up to the bar top)
+    static let bankShoulder: Float = 8      // pt: radius of the rounded top corner of the bank at the Dock bar end
+    static let bankCurve: Float = 1.6       // exponent of the profile: steep at the bar, long soft tail (ease-out)
+    /// Height limit of the ground bank at `distance` pt from a Dock bar end: curved, monotone, never steeper than the repose slope.
+    static func bankLimit(dockTop: Float, distance d: Float) -> Float {
+        let peak = max(dockTop * bankPeak, groundMaxHeight), rise = peak - groundMaxHeight
+        let width = bankCurve * rise / bankSlope, u = min(d / max(width, 1), 1)
+        let h = groundMaxHeight + rise * pow(1 - u, bankCurve)
+        // Rounded shoulder: the bank's top rolls over a quarter circle toward the bar end instead of ending in a wall.
+        return d < bankShoulder ? h - (bankShoulder - (bankShoulder * bankShoulder - (bankShoulder - d) * (bankShoulder - d)).squareRoot()) : h
+    }
     static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
     static let maxDrift: Float = 24         // snow banked against a front window reaches its top up to this step (and no higher)
     static let driftFar: Float = 120        // step beyond which the drift is only a small ramp

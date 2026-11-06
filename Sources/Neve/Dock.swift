@@ -6,7 +6,8 @@ import ApplicationServices
 @MainActor
 final class DockWatcher {
     /// Bar frame in global AppKit coordinates, nil when untrusted / hidden / on the side.
-    private(set) var frame: CGRect?
+    var frame: CGRect? { steady.frame }
+    private var steady = DockDebounce()   // jitter and transient failed reads must not reshape the snow bank
     private var busy = false, dirty = false
     private var generation = 0     // bumped when trust is lost: in-flight results are discarded
     var onChange: (@MainActor () -> Void)?
@@ -47,7 +48,7 @@ final class DockWatcher {
         guard AXIsProcessTrusted() else {
             generation += 1
             stop()
-            if frame != nil { frame = nil; done() }
+            if steady.frame != nil { steady.reset(); done() }
             return
         }
         guard !busy else { dirty = true; return }
@@ -62,7 +63,9 @@ final class DockWatcher {
                         if let list = q.list, observer == nil || pid != observedPid { attach(pid: pid, list: list) }
                     } else { stop() }
                     let new = q.rect.flatMap { r in NSScreen.screens.first.map { appKitFrame(fromCG: r, primaryHeight: $0.frame.height) } }
-                    if new != frame { frame = new; done() }
+                    let r = steady.feed(new)
+                    if r.changed { done() }
+                    if r.retry { Task { try? await Task.sleep(for: .seconds(1)); refresh(done: done) } }
                 }
                 if dirty || gen != generation { dirty = false; refresh(done: done) }
             }

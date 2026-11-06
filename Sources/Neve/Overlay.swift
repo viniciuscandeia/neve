@@ -428,7 +428,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             field.sweep(from: CGPoint(x: prev.x - o.x, y: prev.y - o.y), to: CGPoint(x: cursor.x - o.x, y: cursor.y - o.y), dt: Float(dt))
         }
         let local = SIMD2(Float(cursor.x - frame.origin.x), Float(cursor.y - frame.origin.y))
-        let moved = lastCursor.map { SIMD2(Float(cursor.x - $0.x), Float(cursor.y - $0.y)) / Float(dt) } ?? .zero
+        let moved = lastCursor.map { SIMD2(Float(cursor.x - $0.x), Float(cursor.y - $0.y)) / Float(max(dt, 1.0 / 240)) } ?? .zero   // dt can be 0 (same timestamp twice): 0/0 would put NaN in every flake near the pointer
         field.optionHeld = option
         refreshDay(now: now)
         field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
