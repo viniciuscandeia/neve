@@ -4,3 +4,10 @@
 .DS_Store
 build/
 .claude/
+
+# local artifacts (screenshots, recordings, perf dumps) never belong in the repo
+/*.png
+/*.mov
+/*.mp4
+/before
+/after
