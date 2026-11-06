@@ -41,6 +41,7 @@ public struct Figure {
     var penguin = PenguinState()                                // Figures+Penguin.swift
     var sleigh = SleighState()                                  // sleigh crossing bookkeeping (Figures+Sleigh.swift)
     var motion = Motion()
+    var melt: Float = 1                                         // visitors: 1 -> 0 while the snow melts away (multiplied into the look's fade)
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
     var active: Bool { kind == .snowman && phase != .hidden && phase != .collapsing && phase != .building && !headless && stageAge >= 0.3 }
@@ -249,7 +250,7 @@ extension SnowField {
                 || f.kind != .snowman || f.carrot != before.carrot || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
             i += 1
         }
-        if animate {
+        if animate, !melting {
             startFights()
             stepFights(dt)
             stepShots(dt)
@@ -278,7 +279,7 @@ extension SnowField {
         let s = surfaces[si], c = column(f.foot.x) - s.c0
         let visible = s.pile.visible[c]
         if visible {
-            if !f.fromBalls, avg < 1 { collapse(); return true }   // pile cleared / knocked off under the auto snowman
+            if !f.fromBalls, avg < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
             f.foot.y = s.edgeY + s.pile.base[c] + avg
         }
         f.stageAge += dt

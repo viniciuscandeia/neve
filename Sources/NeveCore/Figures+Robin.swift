@@ -227,6 +227,6 @@ extension SnowField {
     }
 
     public func robinLook(of f: Figure) -> RobinLook {
-        RobinLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, flying: f.robin.flying, wing: f.robin.wing, wiggle: f.robin.wiggle, fade: f.fade)
+        RobinLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, flying: f.robin.flying, wing: f.robin.wing, wiggle: f.robin.wiggle, fade: f.fade * f.melt)
     }
 }

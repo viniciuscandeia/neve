@@ -36,7 +36,7 @@ extension SnowField {
         for si in surfaces.indices where surfaces[si].id > 0 {
             let id = surfaces[si].id, f = fillRatio(si: si)
             if let j = iceWin.firstIndex(where: { $0.id == id }) { iceWin[j].fill = f }
-            else if f >= minFill, !silent, !outro {
+            else if f >= minFill, !silent, !quiet {
                 iceWin.append(WinIce(id: id, fill: f, w0: Float(surfaces[si].frame.width), h0: Float(surfaces[si].frame.height)))
             }
         }
@@ -52,7 +52,7 @@ extension SnowField {
             guard let si = index[s.id] else { iceWin.swapAt(j, iceWin.count - 1); iceWin.removeLast(); j -= 1; continue }
             let fr = surfaces[si].frame, v = surfaces[si].vel
             if abs(Float(fr.width) - s.w0) > 0.5 || abs(Float(fr.height) - s.h0) > 0.5 || (v.x * v.x + v.y * v.y) > Tuning.icicleBreakSpeed * Tuning.icicleBreakSpeed
-                || s.fill < Tuning.thawFill || outro {
+                || s.fill < Tuning.thawFill || quiet {
                 s.acc = 0; s.frozen = false; s.w0 = Float(fr.width); s.h0 = Float(fr.height)   // knocked off / moved fast / resized / snow off
             } else if !s.frozen {
                 if s.fill >= minFill { s.acc += dt * min(config.iceSpeed, Tuning.freezeDemoSpeed) }

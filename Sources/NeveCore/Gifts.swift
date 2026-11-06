@@ -52,7 +52,7 @@ extension SnowField {
     private func giftRest(_ g: Gift) -> Float { g.size * (0.5 - Tuning.giftSink) }
 
     func stepGifts(dt: Float) {
-        if outro { giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true); return }
+        if outro || (melting && meltT >= meltDur * 0.5) { giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true); return }
         var i = giftState.confetti.count - 1
         while i >= 0 {
             var c = giftState.confetti[i]

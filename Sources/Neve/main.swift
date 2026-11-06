@@ -18,7 +18,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let panel = PanelState()
     private var loggedMetal = false
     private var mouseDown = false
-    private var userIdle = false   // no input for 5 min: rendering paused, polling kept to notice input
+    private var userIdle = false   // no input for 5 min (after the melt): rendering paused, polling kept to notice input
+    private var idleMelting = false   // the 5 min fired: snow is melting away, then userIdle
+    private var meltGen = 0
+    /// Idle timeout in seconds; NEVE_IDLE_SECS shortens it for dev / recordings.
+    private let idleSecs = Double(ProcessInfo.processInfo.environment["NEVE_IDLE_SECS"] ?? "") ?? 300
     private var mouseMonitor: Any?
     private let dock = DockWatcher()
     private let watcher = WindowWatcher()
@@ -160,11 +164,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         let on = flag(pref)
         switch pref {
         case .enabled:
-            outroGen += 1
+            outroGen += 1; meltGen += 1; idleMelting = false
             if on { outroing = false; overlays.forEach { $0.intro() }; refreshRunState() }
             else { updateStatus(); runOutro { [weak self] in self?.refreshRunState() } }
         case .economy: syncOverlays()
-        case .ambient: if on && userIdle { userIdle = false; refreshRunState() } else { updateStatus() }
+        case .ambient: if on && (userIdle || idleMelting) { wakeFromIdle() } else { updateStatus() }
         case .behindWindows:
             applyPrefs()
             if polling { pollWindows() }   // empties / refills the surface list
@@ -332,10 +336,37 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// No input for 5 min pauses rendering; input resumes it (checked here, so no Accessibility needed for keys).
     @objc private func pollTick() {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
-        if !userIdle && !ambient && sceneKind == nil && since >= 300 { userIdle = true; refreshRunState() }
-        else if userIdle && since < 2 { userIdle = false; refreshRunState() }
+        if !userIdle && !idleMelting && !ambient && sceneKind == nil && since >= idleSecs { startIdleMelt() }
+        else if (userIdle || idleMelting) && since < 2 { wakeFromIdle() }
         if Date().timeIntervalSince(lastScreensCheck) >= 0.5 { screensChanged() }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         if !userIdle { pollWindows() }
+    }
+
+    /// The idle timeout: the snow melts away on every overlay, then rendering pauses (userIdle).
+    private func startIdleMelt() {
+        idleMelting = true
+        meltGen += 1
+        let gen = meltGen
+        var left = overlays.count
+        guard left > 0 else { idleMelting = false; userIdle = true; return refreshRunState() }
+        for o in overlays {
+            o.melt { [weak self] in
+                left -= 1
+                guard left == 0, let self, self.meltGen == gen, self.idleMelting else { return }
+                self.idleMelting = false
+                self.userIdle = true
+                self.refreshRunState()
+            }
+        }
+    }
+
+    /// Input is back (or Modo ambiente turned on): cancels a running melt and restarts the snow from the top edge, like the intro.
+    private func wakeFromIdle() {
+        meltGen += 1
+        idleMelting = false
+        userIdle = false
+        overlays.forEach { $0.resume() }
+        refreshRunState()
     }
 
     private let scenarioHeavy = ProcessInfo.processInfo.environment["NEVE_SCENARIO"] == "heavy"

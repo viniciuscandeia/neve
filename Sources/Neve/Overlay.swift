@@ -294,8 +294,22 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
     /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.
     func intro() {
+        if !reduceMotion { resume() } else { outroGen += 1 }
+    }
+    /// Back from the idle pause (or a melt): no flake on screen, new ones fall in from above the top edge (Reduce Motion too).
+    func resume() {
         outroGen += 1
-        if !reduceMotion { field.beginIntro(duration: 2.5) }
+        meltDone = nil
+        field.beginIntro(duration: 2.5)
+    }
+    private var meltDone: (@MainActor () -> Void)?
+    /// Idle melt: snow thaws away over ~5 s (0.6 s with Reduce Motion), then `done` (the controller pauses rendering). Not on screen / still snow: cleared at once.
+    func melt(_ done: @escaping @MainActor () -> Void) {
+        guard showing, !still else { field.clear(); return done() }
+        outroGen += 1
+        meltDone = done
+        field.beginMelt(duration: 5)
+        wake()
     }
     /// Being shown right now (the only state an outro makes sense in).
     var showing: Bool { run && !fullscreen && window.isVisible }
@@ -452,6 +466,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if moved.x * moved.x + moved.y * moved.y > 60 * 60 || held != nil || field.isBusy { fastUntil = now + 0.5 }
         let wantSlow = prefs.adaptive && now > fastUntil
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
+        if let d = meltDone, field.meltDone { meltDone = nil; d() }
         if still, !dirty, field.pilesSettled { stillPaused = true; link?.isPaused = true }
     }
 

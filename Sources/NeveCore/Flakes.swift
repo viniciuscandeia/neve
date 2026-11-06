@@ -66,12 +66,12 @@ extension SnowField {
             let i = n < skyEnd ? n : skyCount + n - skyEnd
             var f = flakes[i]
             if f.kind == .dormant {
-                if isActive(i), !outro, introDur > 0 ? introRank(i) < introT / introDur : Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
+                if isActive(i), !quiet, introDur > 0 ? introRank(i) < introT / introDur : Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
                 continue
             }
             let prevY = f.pos.y
-            f.fade = outro ? max(0, f.fade - dt * 1.5) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
-            if outro, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
+            f.fade = quiet ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
+            if quiet, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             f.phase += f.freq * dt
             f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(2 * f.phase))   // vertical flutter, a bit more for big flakes
@@ -102,7 +102,7 @@ extension SnowField {
     }
 
     func tryLand(x: Float, prevY: Float, newY: Float, volume: Float, fall: Float = 0, vol: Float = 0) -> Bool {
-        if outro { return false }   // nothing lands, so nothing rebuilds: snow falls through
+        if quiet { return false }   // nothing lands, so nothing rebuilds: snow falls through
         let c = column(x)
         var best = -1
         var bestTop = -Float.infinity

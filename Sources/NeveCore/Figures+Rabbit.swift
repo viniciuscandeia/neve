@@ -272,7 +272,7 @@ extension SnowField {
 
     public func rabbitLook(of f: Figure) -> RabbitLook {
         let c = f.critter
-        var l = RabbitLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, squash: f.pose.squash, ear: c.ear, bob: f.pose.shake, fade: f.fade)
+        var l = RabbitLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, squash: f.pose.squash, ear: c.ear, bob: f.pose.shake, fade: f.fade * f.melt)
         l.carry = c.carrying
         if c.stage == .snatch { l.flight = c.carrot }
         return l

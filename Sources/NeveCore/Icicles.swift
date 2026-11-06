@@ -64,7 +64,7 @@ extension SnowField {
     /// Shatters icicle `i` into 2-3 thin slabs (Reduce Motion: fades; muted: just gone).
     func breakIcicle(_ i: Int, _ v: SIMD2<Float>) {
         let c = icicles[i]
-        if calm, !silent { icicles[i].dying = true; return }
+        if calm || melting, !silent { icicles[i].dying = true; return }
         icicles.swapAt(i, icicles.count - 1); icicles.removeLast()
         guard !silent else { return }
         let n = Int.random(in: 2...3, using: &fxRng)

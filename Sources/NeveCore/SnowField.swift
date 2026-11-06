@@ -87,6 +87,9 @@ public final class SnowField {
     let config: SimConfig
     var introT: Float = 0, introDur: Float = 0   // intro: flake slots wake in order over introDur seconds (0 = no intro running)
     public private(set) var outro = false                // outro: no new snow, flakes fade, nothing lands (see collapseAll)
+    var melting = false                                  // idle melt (Melt.swift): no new snow, everything thaws away over meltDur
+    var meltT: Float = 0, meltDur: Float = 1, meltRate: Float = 0
+    var quiet: Bool { outro || melting }
     var outroT: Float = 0, outroSpread: Float = 0, outroRel: Float = 1   // piles released so far: 0...1 of the spread (1 = all)
 
     public var capacity: Int { flakes.count + Tuning.maxDebris + Tuning.maxGlints + Tuning.maxPuffs }
@@ -159,7 +162,8 @@ public final class SnowField {
     /// Intro: every flake goes dormant, then wakes from above the top edge, one slot after another,
     /// so the active count ramps linearly from 0 to the intensity's target over `duration` seconds of stepping. Piles are kept.
     public func beginIntro(duration: Float) {
-        outro = false; outroRel = 1
+        outro = false; outroRel = 1; melting = false
+        for i in figures.indices { figures[i].melt = 1 }
         snowmanCooldown = 0
         for i in flakes.indices { flakes[i].kind = .dormant }
         introT = 0; introDur = max(duration, 0.01)
@@ -169,7 +173,7 @@ public final class SnowField {
     /// (capped by maxDebris), released left to right with jitter over `spread` seconds of stepping (0 = at once).
     /// Debris vanishes where it would land, so nothing rebuilds. `beginIntro` ends it.
     public func collapseAll(spread: Float) {
-        outro = true
+        outro = true; melting = false
         introDur = 0
         for i in figures.indices.reversed() where i < figures.count { shatter(figures[i].id) }   // stacks go at once, the auto one fades
         snowmanCooldown = .infinity
@@ -222,6 +226,7 @@ public final class SnowField {
             outroRel = to
         }
         if introDur > 0 { introT += dt }
+        stepMelt(dt: dt)
         stepBalls(dt: dt)
         stepGifts(dt: dt)
         stepFigures(dt: dt)

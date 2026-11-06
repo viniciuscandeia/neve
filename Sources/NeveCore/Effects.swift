@@ -147,7 +147,7 @@ extension SnowField {
 
     /// Sparkles on crests of piles >= 6pt: at most 6 alive, one new every 2s, 0 -> 1 -> 0 over 0.6s. Off for Reduce Motion, economy, low power.
     func stepGlints(dt: Float) {
-        guard !calm, !economy, !lowPower, !outro else { glints.removeAll(keepingCapacity: true); return }
+        guard !calm, !economy, !lowPower, !quiet else { glints.removeAll(keepingCapacity: true); return }
         var i = glints.count - 1
         while i >= 0 {
             glints[i].delay -= dt

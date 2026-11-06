@@ -158,6 +158,8 @@ Tests/run.sh             # testes (Swift Testing)
 
 `NEVE_SCENARIO=heavy` (variável de ambiente) monta um cenário pesado e determinístico (Nevasca, pilhas cheias, bonecos brigando) a cada 20 s, para comparar desempenho.
 
+`NEVE_IDLE_SECS=<segundos>` encurta os 5 min de inatividade (padrão 300): passado o tempo, a neve derrete (~5 s; 0,6 s com Reduzir movimento) e só então a renderização pausa; voltar a usar o Mac durante ou depois do derretimento recomeça a neve caindo do topo da tela.
+
 ### Cenas determinísticas (`NEVE_SCENE`)
 
 Roteiros dirigidos pelo tempo de simulação (mesma semente e mesmos quadros de janela, mesma história). Na cena, as opções são fixas (**Mostrar em capturas** ligado, tudo ativo) sem tocar nas preferências salvas, o cursor real é ignorado e só as janelas da cena entram na simulação.

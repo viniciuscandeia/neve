@@ -228,6 +228,6 @@ extension SnowField {
         let p = f.penguin
         let rock = p.stage == .waddle ? Tuning.penguinRock * sin(2 * .pi * Tuning.penguinRockHz * p.rockT) : 0
         let flap: Float = p.stage == .waddle ? sin(2 * .pi * Tuning.penguinRockHz * p.rockT) : p.stage == .slide || p.stage == .flop ? -1 : p.stage == .air ? 1 : 0
-        return PenguinLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, angle: p.angle + rock, flap: flap, fade: f.fade)
+        return PenguinLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, angle: p.angle + rock, flap: flap, fade: f.fade * f.melt)
     }
 }

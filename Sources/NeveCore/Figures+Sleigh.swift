@@ -95,7 +95,7 @@ extension SnowField {
 
     /// Flies across, bobbing; drops its gifts as it passes their release points; throws 3 glints a second from the tail. False when removed.
     func stepSleigh(_ i: Int, _ dt: Float) -> Bool {
-        guard sleighEnabled, walkEnabled, !calm, !outro else { removeFigure(i); return false }
+        guard sleighEnabled, walkEnabled, !calm, !quiet else { removeFigure(i); return false }
         var f = figures[i]
         var s = f.sleigh
         f.phaseT += dt
