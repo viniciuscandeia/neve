@@ -185,10 +185,10 @@ extension SnowField {
                 }
             }
         }
-        // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock.
+        // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock. Only when the bank reaches the Dock snow's end (within 4pt): a lower bank would make a tall thin sliver up the bar's side, so the Dock pile just ends on the arc and the ground chain runs on alone.
         for d in pileEnds where d.id == 0 {
-            if fillL > 0 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridged[0] = true }
-            if fillR > 0 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridged[1] = true }
+            if fillL > 0, fillL >= d.first.t - 4 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridged[0] = true }
+            if fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridged[1] = true }
         }
         for h in held where !bridged[h.side] { guard n < capacity else { break }; p[n] = h.seg; n += 1 }   // no bridge came: keep the plain ground slice
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
