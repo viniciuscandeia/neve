@@ -71,7 +71,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let f = screen.frame, v = screen.visibleFrame
         frame = f
         scale = screen.backingScaleFactor
-        groundY = v.minY - f.minY
+        groundY = sceneKind == nil ? v.minY - f.minY : 0   // scenes have no Dock: the ground is the screen bottom
         visibleTop = v.maxY - f.minY
         let areaScale = Float(f.width * f.height) / (1440 * 900)
         let field = SnowField(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop,
@@ -160,7 +160,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     /// Dock / menu bar moved (visibleFrame changed, frame unchanged): updated in place, piles kept.
     func refreshBounds() {
-        let g = screen.visibleFrame.minY - frame.minY, t = screen.visibleFrame.maxY - frame.minY
+        let g: CGFloat = sceneKind == nil ? screen.visibleFrame.minY - frame.minY : 0, t = screen.visibleFrame.maxY - frame.minY
         guard g != groundY || t != visibleTop else { return }
         groundY = g
         visibleTop = t
