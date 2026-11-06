@@ -24,15 +24,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let view = InteractView()
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0
-    private var piles: PileLayers!
-    private var dragPile: PileLayers!   // the pile of a window being dragged: slid with the mouse between polls
     private var pollMouse = NSEvent.mouseLocation
-    private var forcePath = false
     private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
     private static let primCapacity = 640   // ~600 prims / screen
     private let primBuffers: [MTLBuffer]
+    // MARK: pile pass
+    private static let pileCapacity = 8192
+    private let pileBuffers: [MTLBuffer]
+    private var pileSlot = 0, pileCount = 0, frameDt: Float = 1.0 / 60   // 3-slot ring, rewritten only when the pile changed
     private var shiftID: Int?, shift = SIMD2<Float>.zero   // dragged window: its figures / balls ride with the drag pile layer
     private var bufferIndex = 0
     private let inFlight = DispatchSemaphore(value: 3)
@@ -46,7 +47,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var prefs: OverlayPrefs
     private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
     private var lastTimestamp: CFTimeInterval = 0
-    private var lastPathTime: CFTimeInterval = 0
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
@@ -82,6 +82,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             primBuffers.append(b)
         }
         self.primBuffers = primBuffers
+        var pileBuffers: [MTLBuffer] = []
+        for _ in 0..<3 {
+            guard let b = gpu.device.makeBuffer(length: Overlay.pileCapacity * MemoryLayout<PileSeg>.stride, options: .storageModeShared) else { return nil }
+            pileBuffers.append(b)
+        }
+        self.pileBuffers = pileBuffers
         self.screen = screen
         self.prefs = prefs
         self.gpu = gpu
@@ -113,9 +119,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         view.layer = host
         view.wantsLayer = true
         window.contentView = view
-
-        piles = PileLayers(in: root, bounds: bounds)
-        dragPile = PileLayers(in: root, bounds: bounds)
 
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
@@ -166,8 +169,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         reduceMotion = motion
         still = prefs.still && motion
         contrast = hc ? 1 : 0
-        piles.setContrast(hc)
-        dragPile.setContrast(hc)
     }
 
     private var lastWindows: [WindowInfo] = [], lastChange: CFTimeInterval = 0
@@ -178,7 +179,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if windows != lastWindows { lastWindows = windows; lastChange = now }
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
-        forcePath = true                    // re-place the piles at once, dropping any drag offset
         measureCover(windows)               // MARK: P3-0
     }
     // MARK: P3-0 maximized window: snow only in the visible strip
@@ -312,7 +312,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        lowPower || prefs.economy ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        lowPower || prefs.economy || shrunk != nil ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
@@ -384,6 +384,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
         advanceCover(now)   // MARK: P3-0
+        frameDt = Float(dt)
         if !still { field.step(dt: Float(dt)) }
         Perf.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
@@ -404,34 +405,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         lastCursor = cursor
         Perf.add(.input, t0); t0 = Perf.now()
         let drag = field.draggingID
-        if field.pilesDirty, forcePath || now - lastPathTime >= 1.0 / 15 {
-            lastPathTime = now
-            field.pilesDirty = false
-            forcePath = false
-            let path = field.pilePath(dragging: drag ?? .min)
-            let dpath = drag == nil ? nil : field.pilePath(dragging: drag!, forDrag: true)
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            piles.set(path: path)
-            dragPile.set(path: dpath)
-            dragPile.setTransform(.identity)
-            CATransaction.commit()
-        }
-        // A dragged window follows the mouse 1:1: slide its pile layer by the mouse delta since the last poll.
+        // A dragged window follows the mouse 1:1: its pile segments, figures and balls shift by the mouse delta since the last poll (a shader uniform).
         // After release the last offset is held until the next poll reconciles with the real bounds.
         if drag != nil, NSEvent.pressedMouseButtons != 0 {
             let m = NSEvent.mouseLocation
-            let t = CGAffineTransform(translationX: m.x - pollMouse.x, y: m.y - pollMouse.y)
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            dragPile.setTransform(t)
-            CATransaction.commit()
             shiftID = drag
-            shift = SIMD2(Float(t.tx), Float(t.ty))
+            shift = SIMD2(Float(m.x - pollMouse.x), Float(m.y - pollMouse.y))
         }
         Perf.add(.pile, t0)
         render(drawable)
-        Perf.frame(field)   // after the drag transform: a skipped Metal frame never starves the pile
+        Perf.frame(field)
     }
 
     private func mouseDown(_ e: NSEvent) {
@@ -492,11 +475,28 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         writePrims(&w)
         Perf.add(.actors, t0); t0 = Perf.now()
         pass.colorAttachments[0].texture = drawable.texture
+        let slot = (pileSlot + 1) % pileBuffers.count
+        t0 = Perf.now()
+        if let n = field.writePiles(to: pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), capacity: Overlay.pileCapacity, dt: frameDt) {
+            pileSlot = slot
+            pileCount = n
+        }
+        Perf.add(.pile, t0); t0 = Perf.now()
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
             // Shaders always work in whole-screen coordinates; the viewport slides the screen under the (smaller) drawable.
             enc.setViewport(MTLViewport(originX: Double(-g.minX * scale), originY: Double(-(CGFloat(field.size.y) - g.maxY) * scale),
                                         width: Double(CGFloat(field.size.x) * scale), height: Double(CGFloat(field.size.y) * scale), znear: 0, zfar: 1))
+            if pileCount > 0 {   // piles under the actors
+                var dragOffset = shiftID == nil ? SIMD2<Float>.zero : shift
+                enc.setRenderPipelineState(gpu.piles)
+                enc.setVertexBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
+                enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
+                enc.setVertexBytes(&dragOffset, length: MemoryLayout<SIMD2<Float>>.size, index: 2)
+                enc.setFragmentBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
+                enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 1)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pileCount)
+            }
             if w.n > 0 {   // actors under the flakes
                 enc.setRenderPipelineState(gpu.prims)
                 enc.setVertexBuffer(pbuf, offset: 0, index: 0)

@@ -4,6 +4,7 @@ import Foundation
 /// Snow height per bin along one surface.
 public struct Pile {
     var heights: [Float]
+    var shown: [Float] = []      // heights as drawn: eased up toward `heights`, snapped down (see writePiles); empty until first drawn
     var visible: [Bool]
     var base: [Float]            // baseline offset per bin (<= 0): drops along rounded corners
     var cap: [Float]             // per-bin height ceiling imposed by windows in front (inf = none)

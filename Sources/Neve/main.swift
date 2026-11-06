@@ -2,6 +2,7 @@ import NeveCore
 import AppKit
 import os
 import ServiceManagement
+import SwiftUI
 
 /// Dev instance name (Info.plist `NeveInstance` or env `NEVE_INSTANCE`); nil for the user's app.
 let neveInstance: String? = Bundle.main.object(forInfoDictionaryKey: "NeveInstance") as? String ?? ProcessInfo.processInfo.environment["NEVE_INSTANCE"]
@@ -28,10 +29,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let ud = neveInstance.flatMap { UserDefaults(suiteName: "io.github.viniciuscandeia.neve.dev.\($0)") } ?? .standard
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
     private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
-    private var prefItems: [Pref: NSMenuItem] = [:]
-    private let whereItem = NSMenuItem(title: "Nevar em", action: nil, keyEquivalent: "")
-    private let snowballHint = NSMenuItem(title: "Segure ⌥ e arraste a neve para fazer bolas", action: nil, keyEquivalent: "")
-    private let loginItem = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
+    private let nevarItem = NSMenuItem(title: "Nevar", action: #selector(toggleEnabled), keyEquivalent: "n")
+    private let intensityControl = NSSegmentedControl()
+    private var popover: NSPopover?
+    private var settingsWindow: NSWindow?
+    private var intensitySnapshot = Intensity.media
+    private var prefSnapshot: [Pref: Bool] = [:]
+    private var loginOn: Bool { SMAppService.mainApp.status == .enabled }
 
     private func flag(_ p: Pref) -> Bool { ud.object(forKey: p.rawValue) as? Bool ?? p.defaultValue }
     private var enabled: Bool { flag(.enabled) }
@@ -40,20 +44,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var behind: Bool { flag(.behindWindows) }
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
-        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), showInCaptures: flag(.showInCaptures), behindLarge: flag(.behindLarge), intensity: Intensity.saved(ud))
+        OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), intensity: Intensity.saved(ud))
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
-
-    /// A check-mark menu item bound to a Pref, handled by `togglePref(_:)`.
-    private func toggleItem(_ pref: Pref, _ title: String, symbol: String, key: String = "") -> NSMenuItem {
-        let m = NSMenuItem(title: title, action: #selector(togglePref(_:)), keyEquivalent: key)
-        m.target = self
-        m.representedObject = pref.rawValue
-        m.image = Self.symbol(symbol)
-        m.state = flag(pref) ? .on : .off
-        prefItems[pref] = m
-        return m
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.25)   // global default: a hung app or the Dock must not stall AX reads
@@ -63,47 +56,50 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         let clear = NSMenuItem(title: "Limpar neve", action: #selector(clearSnow), keyEquivalent: "k")
+        let settings = NSMenuItem(title: "Ajustes…", action: #selector(showSettings), keyEquivalent: ",")
         let quit = NSMenuItem(title: "Sair", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = Self.symbol("power")
         clear.image = Self.symbol("sparkles")
+        settings.image = Self.symbol("gearshape")
         clear.target = self
-        loginItem.target = self
-        loginItem.image = Self.symbol("arrow.right.circle")
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        settings.target = self
+        nevarItem.target = self
+        nevarItem.image = Self.symbol("snowflake")
         let symbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
-        var levels: [NSMenuItem] = []
+        intensityControl.segmentCount = symbols.count
+        intensityControl.trackingMode = .selectOne
+        intensityControl.segmentStyle = .automatic
         for v in Intensity.allCases {
-            let m = NSMenuItem(title: v.title, action: #selector(pickIntensity(_:)), keyEquivalent: "")
-            m.target = self
-            m.tag = v.rawValue
-            m.image = Self.symbol(symbols[v.rawValue])
-            m.state = v == Intensity.saved(ud) ? .on : .off
-            levels.append(m)
+            intensityControl.setImage(Self.symbol(symbols[v.rawValue], v.title), forSegment: v.rawValue)
+            intensityControl.setToolTip(v.title, forSegment: v.rawValue)
+            intensityControl.setWidth(44, forSegment: v.rawValue)
         }
-        snowballHint.isEnabled = false
-        snowballHint.attributedTitle = NSAttributedString(string: snowballHint.title, attributes: [.font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
-        snowballHint.indentationLevel = 1
-        whereItem.image = Self.symbol("display")
-        whereItem.submenu = NSMenu()
+        intensityControl.target = self
+        intensityControl.action = #selector(pickIntensity(_:))
+        intensityControl.frame = NSRect(x: 0, y: 0, width: 4 * 44, height: 24)
+        let intensityItem = NSMenuItem()
+        let holder = NSView(frame: NSRect(x: 0, y: 0, width: 4 * 44 + 28, height: 30))
+        intensityControl.frame.origin = NSPoint(x: 14, y: 3)
+        holder.addSubview(intensityControl)
+        intensityItem.view = holder
         axItem.target = self
         axItem.image = Self.symbol("exclamationmark.triangle")
         axItem.isHidden = AXIsProcessTrusted()
         metalItem.isHidden = true
-        let options = [toggleItem(.economy, "Modo econômico", symbol: "leaf"), toggleItem(.ambient, "Modo ambiente", symbol: "sun.max"),
-                       toggleItem(.behindWindows, "Atrás das janelas", symbol: "square.stack.3d.down.right"),
-                       toggleItem(.stillSnow, "Neve parada (movimento reduzido)", symbol: "pause.circle"),
-                       toggleItem(.snowman, "Boneco de neve", symbol: "figure.stand"),
-                       toggleItem(.walk, "Bonecos andam e brigam", symbol: "figure.walk")]
-        let items: [NSMenuItem] = [statusLine, metalItem, .separator(), toggleItem(.enabled, "Nevar", symbol: "snowflake", key: "n"), .sectionHeader(title: "QUANTIDADE")] + levels
-            + [.separator(), .sectionHeader(title: "OPÇÕES"), whereItem] + options + [snowballHint, toggleItem(.showInCaptures, "Mostrar em capturas", symbol: "camera")] + (neveInstance == nil ? [loginItem] : []) + [axItem, .separator(), clear, quit]
+        let items: [NSMenuItem] = [statusLine, axItem, metalItem, .separator(), nevarItem, intensityItem, .separator(), clear, settings, quit]
         for i in items { menu.addItem(i) }
         updateStatus()
         item.menu = menu
         statusItem = item
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
+        prefSnapshot = prefValues()
+        intensitySnapshot = Intensity.saved(ud)
+        // These can be posted from any thread (thermal / power state from a system queue, defaults from anywhere): the
+        // selector API would call the @MainActor methods off the main thread and trap, so deliver them on the main queue.
+        nc.addObserver(forName: UserDefaults.didChangeNotification, object: ud, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.syncPrefs() } }
         nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        nc.addObserver(self, selector: #selector(powerChanged), name: .NSProcessInfoPowerStateDidChange, object: nil)
+        nc.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.powerChanged() } }
         ws.addObserver(self, selector: #selector(powerOff), name: NSWorkspace.willPowerOffNotification, object: nil)
         ws.addObserver(self, selector: #selector(screensSlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionResigned), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
@@ -112,7 +108,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ws.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-        nc.addObserver(self, selector: #selector(refreshRunStateNotification), name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
+        nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.refreshRunState() } }
         ws.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         // Global mouse monitors need no Accessibility permission; without it, window polling speeds up to 10Hz while the button is down (drags).
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] e in
@@ -177,33 +173,26 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return all   // "all", or the chosen screen is unplugged
     }
 
-    @objc private func pickTarget(_ sender: NSMenuItem) {
-        ud.set(sender.representedObject as? String ?? "all", forKey: "snowOn")
+    private func setTarget(_ t: String) {
+        ud.set(t, forKey: "snowOn")
         syncOverlays()
     }
 
-    private func rebuildWhereMenu() {
-        guard let m = whereItem.submenu else { return }
-        m.removeAllItems()
-        var rows: [(String, String)] = [("Todas as telas", "all"), ("Só na tela principal", "main")]
-        if NSScreen.screens.count > 1 { rows += NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
-        let cur = rows.contains { $0.1 == target } ? target : "all"
-        for (title, key) in rows {
-            let i = NSMenuItem(title: title, action: #selector(pickTarget(_:)), keyEquivalent: "")
-            i.target = self
-            i.representedObject = key
-            i.state = key == cur ? .on : .off
-            i.isEnabled = !economy
-            m.addItem(i)
-        }
+    private func prefValues() -> [Pref: Bool] { Dictionary(uniqueKeysWithValues: Pref.allCases.map { ($0, flag($0)) }) }
+
+    /// Diffs the Bool prefs against the last snapshot and reacts to each change; called by the menu and by the defaults observer (the popover writes straight to defaults).
+    @objc private func syncPrefs() {
+        let new = prefValues()
+        let changed = changedPrefs(old: prefSnapshot, new: new)
+        prefSnapshot = new
+        changed.forEach(prefChanged)
+        let level = Intensity.saved(ud)   // not a Pref: set by the menu row, the popover tiles
+        if level != intensitySnapshot { intensitySnapshot = level; applyPrefs(); updateStatus() }
     }
 
-    /// Flips the Pref a menu item is bound to (see `toggleItem`), then reacts to it.
-    @objc private func togglePref(_ sender: NSMenuItem) {
-        guard let pref = (sender.representedObject as? String).flatMap(Pref.init(rawValue:)) else { return }
-        let on = !flag(pref)
-        ud.set(on, forKey: pref.rawValue)
-        sender.state = on ? .on : .off
+    /// The single reaction path for a pref that just changed.
+    private func prefChanged(_ pref: Pref) {
+        let on = flag(pref)
         switch pref {
         case .enabled:
             outroGen += 1
@@ -215,7 +204,58 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             applyPrefs()
             if polling { pollWindows() }   // empties / refills the surface list
             updateStatus()
-        case .stillSnow, .snowman, .walk, .showInCaptures, .behindLarge: applyPrefs()
+        case .behindLarge, .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures: applyPrefs()
+        }
+    }
+
+    @objc private func toggleEnabled() {
+        ud.set(!enabled, forKey: Pref.enabled.rawValue)
+        syncPrefs()
+    }
+
+    private func settingsEnv() -> SettingsEnv {
+        var rows: [(title: String, id: String)] = []
+        if NSScreen.screens.count > 1 { rows = NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
+        let cur = (["all", "main"] + rows.map(\.id)).contains(target) ? target : "all"
+        return SettingsEnv(store: ud, screens: rows, reduceMotion: reduceMotion, isDev: neveInstance != nil,
+                           target: Binding(get: { cur }, set: { [weak self] in self?.setTarget($0) }),
+                           login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
+                           openWindow: { [weak self] in self?.showSettingsWindow() })
+    }
+
+    /// ⌘, : the quick popover; ⌥-click on the item opens the full window.
+    @objc private func showSettings() {
+        if NSEvent.modifierFlags.contains(.option) { return showSettingsWindow() }
+        guard let button = statusItem?.button else { return }
+        statusItem?.menu?.cancelTracking()
+        let host = NSHostingController(rootView: QuickSettingsView(env: settingsEnv()))
+        host.sizingOptions = .preferredContentSize
+        let pop = popover ?? NSPopover()
+        pop.behavior = .transient
+        pop.contentViewController = host
+        popover = pop
+        // after the menu has closed
+        DispatchQueue.main.async {
+            pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            NSApp.activate()
+        }
+    }
+
+    /// The single "Ajustes do Neve" window (rebuilt on each open so the screen list is fresh).
+    private func showSettingsWindow() {
+        popover?.performClose(nil)
+        if settingsWindow == nil {
+            let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            w.title = "Ajustes do Neve"
+            w.isReleasedWhenClosed = false
+            w.center()
+            settingsWindow = w
+        }
+        settingsWindow?.contentViewController = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
+        // after the popover / menu has finished closing, or the activation is lost
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate()
+            self?.settingsWindow?.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -295,8 +335,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        prefItems[.stillSnow]?.isHidden = !reduceMotion
-        rebuildWhereMenu()
+        nevarItem.state = enabled ? .on : .off
+        intensityControl.selectedSegment = Intensity.saved(ud).rawValue
         updateStatus()
     }
 
@@ -367,11 +407,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func pickIntensity(_ sender: NSMenuItem) {
-        guard let v = Intensity(rawValue: sender.tag) else { return }
+    @objc private func pickIntensity(_ sender: NSSegmentedControl) {
+        guard let v = Intensity(rawValue: sender.selectedSegment) else { return }
         ud.set(v.rawValue, forKey: Intensity.key)
-        for m in sender.menu?.items ?? [] where Intensity(rawValue: m.tag) != nil && m.action == sender.action { m.state = m == sender ? .on : .off }
         applyPrefs()
+        updateStatus()
+        statusItem?.menu?.cancelTracking()
     }
 
     /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on Dock AX events, app launch/quit, screen changes, every 30s.
@@ -399,15 +440,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var axPoll: Timer?
 
     /// Register / unregister as a login item (needs the app bundle; /Applications is most reliable).
-    @objc private func toggleLogin() {
+    private func setLogin(_ on: Bool) {
         let svc = SMAppService.mainApp
         do {
-            if svc.status == .enabled || svc.status == .requiresApproval { try svc.unregister() } else { try svc.register() }
+            if on { try svc.register() } else { try svc.unregister() }
         } catch {
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "login").error("login item: \(error.localizedDescription)")
         }
         if svc.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-        loginItem.state = svc.status == .enabled ? .on : .off
     }
 
     /// Switching Spaces hides every window at once: drop piles silently instead of an avalanche.

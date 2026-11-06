@@ -41,22 +41,23 @@ private func slide(_ n: Int, total: CGFloat) -> (c0: Int, heights: [Float]) {
 }
 
 // 2 + 3. Drawn contour stays under a front window's underside.
-private func flatten(_ path: CGPath) -> [CGPoint] {
-    var pts: [CGPoint] = [], cur = CGPoint.zero
-    path.applyWithBlock { e in
-        let p = e.pointee.points
-        switch e.pointee.type {
-        case .moveToPoint, .addLineToPoint: cur = p[0]; pts.append(cur)
-        case .addQuadCurveToPoint:
-            for t in stride(from: CGFloat(0.05), through: 1, by: 0.05) {
-                let u = 1 - t
-                pts.append(CGPoint(x: u * u * cur.x + 2 * u * t * p[0].x + t * t * p[1].x, y: u * u * cur.y + 2 * u * t * p[0].y + t * t * p[1].y))
-            }
-            cur = p[1]
-        default: break
-        }
-    }
-    return pts
+/// Contour points (segment ends, tops and bases) of everything `writePiles` emits, fully eased.
+func pilePoints(_ f: SnowField) -> [CGPoint] {
+    pileSegs(f).flatMap { [CGPoint(x: Double($0.x0), y: Double($0.top0)), CGPoint(x: Double($0.x1), y: Double($0.top1)),
+                           CGPoint(x: Double($0.x0), y: Double($0.base0)), CGPoint(x: Double($0.x1), y: Double($0.base1))] }
+}
+
+func pileSegs(_ f: SnowField) -> [PileSeg] {
+    let cap = 8192
+    let p = UnsafeMutablePointer<PileSeg>.allocate(capacity: cap)
+    defer { p.deallocate() }
+    let n = f.writePiles(to: p, capacity: cap, dt: 10, force: true)!
+    return Array(UnsafeBufferPointer(start: p, count: n))
+}
+
+/// Tops only (what the old path's top edge was).
+private func flatten(_ f: SnowField) -> [CGPoint] {
+    pileSegs(f).flatMap { [CGPoint(x: Double($0.x0), y: Double($0.top0)), CGPoint(x: Double($0.x1), y: Double($0.top1))] }
 }
 
 @Test func drawnContourNeverEntersFrontWindow() {
@@ -66,21 +67,21 @@ private func flatten(_ path: CGPath) -> [CGPoint] {
     f.update(windows: [front410, back])
     let i = f.surfaces.firstIndex { $0.id == 1 }!
     for _ in 0..<40 { for b in 0..<f.surfaces[i].pile.heights.count { f.deposit(surface: i, bin: b, volume: 4) } }
-    let pts = flatten(f.pilePath()).filter { $0.x >= 200 && $0.x <= 400 }
+    let pts = flatten(f).filter { $0.x >= 200 && $0.x <= 400 }
     #expect(pts.count > 20)
     #expect(pts.map(\.y).max()! <= 410 + 1e-9)
-    #expect(flatten(f.pilePath()).filter { $0.x < 190 }.map(\.y).max()! > 410)   // snow left of the front window is still tall
+    #expect(flatten(f).filter { $0.x < 190 }.map(\.y).max()! > 410)   // snow left of the front window is still tall
 }
 
 @Test func contourIrregularityIsStableAndTravelsWithThePile() {
     let f = piledField()
-    let a = flatten(f.pilePath()).filter { $0.x > 330 && $0.x < 670 }   // ends: corner taper clips on the next move
-    #expect(flatten(f.pilePath()).filter { $0.x > 330 && $0.x < 670 } == a)   // no frame-to-frame shimmer
+    let a = flatten(f).filter { $0.x > 330 && $0.x < 670 }   // ends: corner taper clips on the next move
+    #expect(flatten(f).filter { $0.x > 330 && $0.x < 670 } == a)   // no frame-to-frame shimmer
     let tops = a.filter { $0.y > 500 + 5 && $0.x > 400 && $0.x < 600 }.map(\.y)
     #expect(Set(tops.map { ($0 * 100).rounded() }).count > 5)   // not a smooth band
     #expect(a.map(\.y).max()! <= 500 + Double(Tuning.maxPileHeight) + 1.5 + 1e-9)
     f.update(windows: [win(1, 340, 300, 400, 200)], dt: 1)      // 40 pt = 20 whole columns
-    let b = flatten(f.pilePath()).filter { $0.x > 370 && $0.x < 710 }
+    let b = flatten(f).filter { $0.x > 370 && $0.x < 710 }
     #expect(a.count > 100 && a.count == b.count && zip(a, b).allSatisfy { abs($1.x - $0.x - 40) < 1e-9 && abs($1.y - $0.y) < 1e-9 })
 }
 
@@ -132,8 +133,44 @@ private func maxSway(calm: Bool) -> Float {
     f.update(windows: [])
     let g = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
     for _ in 0..<40 { for b in stride(from: 5, to: f.surfaces[g].pile.heights.count - 5, by: 2) { f.deposit(surface: g, bin: b, volume: 4) } }
-    let ys = flatten(f.pilePath()).map(\.y)
+    let ys = pilePoints(f).map(\.y)
     #expect(ys.count > 20)
     #expect(ys.min()! >= 0)
     #expect(ys.max()! > 10 && ys.max()! <= Double(Tuning.groundMaxHeight) + 2)
+}
+
+// Smooth growth: `shown` rises with tau 0.25 s, snaps down, and writePiles rewrites only when something changed.
+@Test func shownEasesUpAndSnapsDown() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    let buf = UnsafeMutablePointer<PileSeg>.allocate(capacity: 4096)
+    defer { buf.deallocate() }
+    _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60)
+    for _ in 0..<4 { f.deposit(surface: i, bin: 100, volume: 4) }
+    let target = f.surfaces[i].pile.heights[100]
+    #expect(target > 3)
+    _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60)
+    #expect(f.surfaces[i].pile.shown[100] < 1.5)
+    for _ in 0..<90 { _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60) }
+    #expect(f.surfaces[i].pile.shown[100] >= target * 0.95)
+    for _ in 0..<200 { _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60) }
+    #expect(f.writePiles(to: buf, capacity: 4096, dt: 1 / 60) == nil)   // settled: reuse the last slot
+    f.surfaces[i].pile.heights[100] = 0
+    f.pilesDirty = true
+    _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60)
+    #expect(f.surfaces[i].pile.shown[100] == 0)   // snap down at once
+}
+
+@Test func pileVersionBumpsOnlyWhenHeightsChange() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    let v = f.pileVersion
+    f.deposit(surface: i, bin: 100, volume: 1)
+    #expect(f.pileVersion > v)
+    let v2 = f.pileVersion
+    f.step(dt: 0.0)                                  // nothing falls: no change
+    f.update(windows: [win(1, 300, 300, 400, 200)])  // identical poll
+    #expect(f.pileVersion == v2)
 }
