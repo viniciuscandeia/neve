@@ -72,6 +72,8 @@ extension SnowField {
         let g = gust, scale = f.scale, half = f.radii.x, auto = !f.fromBalls
         m.rest = max(0, m.rest - dt)
         m.wobble = max(0, m.wobble - dt)
+        m.squash = max(0, m.squash - dt)
+        m.headHit = max(0, m.headHit - dt)
         var moving = false, jump: Float = 0
         let range = walkRange(surface: sid, x: f.foot.x, half: half)
         // Steps x by `dx`, never past the stretch ends (and the auto snowman never onto bare ground).
@@ -116,7 +118,8 @@ extension SnowField {
         let wob = sin(m.wobble * 28) * min(m.wobble, 0.7)
         f.pose.hop = abs(sin(m.phase)) * 2.2 * scale * m.gait + jump
         f.pose.lean = m.windLean + sin(m.phase * 0.5) * 1.4 * scale * m.gait + wob * 7 * scale
-        f.pose.shake = wob
+        f.pose.squash = 0.12 * sin(.pi * (1 - m.squash / Tuning.squashTime)) * (m.squash > 0 ? 1 : 0)   // 1.06 x 0.95 at the peak
+        f.pose.shake = wob + sin(m.headHit * 45) * (m.headHit / 0.7) * 1.5 * scale
         m.flutter += dt * Flutter.rate(gust: g, gait: m.gait)
         f.pose.flutter = .make(gust: g, gait: m.gait, dir: f.facing, phase: m.flutter, cheer: m.cheer)
         f.motion = m

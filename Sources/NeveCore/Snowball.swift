@@ -15,6 +15,7 @@ public struct Snowball: Equatable {
     public internal(set) var face: Float = 0            // a loose head: ±1 = draws its face (facing), 0 = plain ball
     public internal(set) var fade: Float = 1            // 1 -> 0 while melting away
     var vel: SIMD2<Float> = .zero
+    var spin: Float = 0                                 // rad/s of a flying head; keeps turning (decaying) after it lands
     var melting = false
 }
 
@@ -95,7 +96,7 @@ extension SnowField {
         }
         if let (j, d2) = figureTop(at: q, slack: 4), d2 < bestD, let ids = demote(figures[j].id), let k = index(of: ids.top) { best = k }
         guard let i = best else { return nil }
-        balls[i].state = .held; balls[i].parent = nil; balls[i].surfaceID = nil; balls[i].vel = .zero
+        balls[i].state = .held; balls[i].parent = nil; balls[i].surfaceID = nil; balls[i].vel = .zero; balls[i].spin = 0
         ballsVersion &+= 1
         return balls[i].id
     }
@@ -124,8 +125,14 @@ extension SnowField {
             b.rotation -= dx / b.radius
             if abs(dx) > 0, b.radius < Tuning.ballMax {
                 let r = b.radius, r2 = min(r + abs(dx) * Tuning.ballGrowth, Tuning.ballMax)
-                let got = takeSnow(si, column: c, area: Float.pi * (r2 * r2 - r * r))
-                b.radius = (r * r + got / .pi).squareRoot()
+                // A groove as wide as the ball's footprint: parabola area 4/3 w depth = what the ball grows by, never below 0.5 pt of snow.
+                let w = r * 0.6, need = Float.pi * (r2 * r2 - r * r), h = surfaces[si].pile.heights[c]
+                let depth = min(need / (4 / 3 * w), max(h - 0.5, 0))
+                if depth > 0.01 {
+                    let got = surfaces[si].pile.carve(centerX: q.x, halfWidth: w, depth: depth, berm: 0.15)
+                    pilesDirty = true
+                    b.radius = (r * r + got / .pi).squareRoot()
+                }
             }
         } else {
             b.pos = q
@@ -148,6 +155,12 @@ extension SnowField {
         guard !balls.isEmpty else { return }
         for i in balls.indices where balls[i].state == .falling { fall(i, dt) }
         for i in balls.indices where balls[i].state == .resting && balls[i].parent == nil { rest(i, dt) }
+        for i in balls.indices where balls[i].spin != 0 && balls[i].state == .resting {   // a landed head keeps turning, then lies crooked
+            balls[i].rotation += balls[i].spin * dt
+            balls[i].spin *= exp(-4 * dt)
+            if abs(balls[i].spin) < 0.2 { balls[i].spin = 0 }
+            ballsVersion &+= 1
+        }
         for _ in 0..<2 {   // stacks are at most 3 high: two passes settle children after parents
             for i in balls.indices where balls[i].state == .resting && balls[i].parent != nil { follow(i) }
         }
@@ -193,7 +206,7 @@ extension SnowField {
         b.vel.y = max(b.vel.y - Tuning.debrisGravity * 0.8 * dt, -1300)
         b.vel.x -= b.vel.x * 1.5 * dt
         b.pos += b.vel * dt
-        b.rotation -= b.vel.x / b.radius * dt
+        if b.spin != 0 { b.rotation += b.spin * dt } else { b.rotation -= b.vel.x / b.radius * dt }
         if b.pos.x < b.radius { b.pos.x = b.radius; b.vel.x = abs(b.vel.x) * 0.3 }
         if b.pos.x > size.x - b.radius { b.pos.x = size.x - b.radius; b.vel.x = -abs(b.vel.x) * 0.3 }
         var landed = false
@@ -233,7 +246,7 @@ extension SnowField {
                 let dist = (d.x * d.x + d.y * d.y).squareRoot()
                 guard dist < minD * 0.98, d.y > -r * 0.2 else { continue }
                 if f.headless, k == 1, b.radius <= r + 0.01, abs(d.x) <= 0.4 * r {
-                    reattach(j, radius: b.radius)
+                    reattach(j, radius: b.radius, tilt: b.rotation)
                     b.melting = true; b.fade = 0; b.state = .resting   // used up: removed at the end of this step
                 } else {
                     let n = dist > 1e-3 ? d / dist : SIMD2<Float>(1, 0)

@@ -11,7 +11,33 @@ public struct Shot {
     public internal(set) var pos: SIMD2<Float>
     let from: SIMD2<Float>, to: SIMD2<Float>, peak: Float, dur: Float
     var t: Float = 0
-    let hit: Bool, head: Bool, target: Int
+    let hit: Bool, head: Bool, target: Int, surface: Int
+    var impactT: Float = -1                          // < 0 in flight; else seconds of the squashed hold left after landing
+    public internal(set) var normal = SIMD2<Float>(0, 1)   // impact normal (valid while impacting)
+    public var impacting: Bool { impactT >= 0 }
+
+    /// Where the ball was `k` trail steps (0.035 of the flight each) ago; nil before take-off or once it has landed.
+    public func ghost(_ k: Int) -> SIMD2<Float>? {
+        let u = t / dur - Float(k) * 0.035
+        guard !impacting, u > 0 else { return nil }
+        return from + (to - from) * u + SIMD2(0, 4 * peak * u * (1 - u))
+    }
+}
+
+/// A flattened splat of snow, stuck to a figure (`target` >= 0: `rel` is the offset from its foot) or lying on a pile.
+public struct Splat {
+    public let target: Int, surface: Int
+    public let rel: SIMD2<Float>, scale: Float
+    public internal(set) var age: Float = 0
+    public var alpha: Float { max(0, 1 - age / Tuning.splatLife) }
+}
+
+extension Tuning {
+    static let maxSplats = 8
+    static let splatLife: Float = 1.2        // s a splat takes to fade
+    static let impactHold: Float = 0.07      // s a landed ball stays squashed (1.5 x 0.6) before it is hidden
+    static let squashTime: Float = 0.12      // s of the hit wobble squash
+    static let headSpin: Float = 14          // rad/s of a flying head
 }
 
 extension SnowField {
@@ -75,7 +101,7 @@ extension SnowField {
         var to = head ? at.head : at.body
         if !hit { to = SIMD2(at.body.x + dir * Float.random(in: 28...70, using: &rng), at.ground) }   // sails past
         to.x += drift
-        shots.append(Shot(pos: from.arm, from: from.arm, to: to, peak: 18 + 0.18 * d, dur: dur, hit: hit, head: head, target: you))
+        shots.append(Shot(pos: from.arm, from: from.arm, to: to, peak: 18 + 0.18 * d, dur: dur, hit: hit, head: head, target: you, surface: figures[i].surfaceID ?? Tuning.groundID))
         fights[k].turn = 1 - f.turn; fights[k].thrown += 1
         fights[k].timer = Tuning.throwGap + Float.random(in: 0...0.4, using: &rng)
     }
@@ -85,20 +111,79 @@ extension SnowField {
         while k >= 0 {
             defer { k -= 1 }
             var s = shots[k]
+            if s.impacting {
+                s.impactT -= dt
+                if s.impactT <= 0 { shots.remove(at: k) } else { shots[k] = s }
+                continue
+            }
             s.t += dt
             let u = min(s.t / s.dur, 1)
             s.pos = s.from + (s.to - s.from) * u + SIMD2(0, 4 * s.peak * u * (1 - u))
             guard u >= 1 else { shots[k] = s; continue }
-            shots.remove(at: k)
-            puff(s.to, big: s.hit)
-            if s.hit, let j = figureIndex(s.target), figures[j].fight != nil { registerHit(s.target, head: s.head) }
+            s.impactT = Tuning.impactHold
+            land(&s)
+            shots[k] = s
         }
     }
 
-    private func puff(_ p: SIMD2<Float>, big: Bool) {
+    /// The ball touches down: splat (on the target, or on the pile), spray fanned around the reflected direction, a puff,
+    /// and the hit itself. Sets the impact normal for the squash.
+    func land(_ s: inout Shot) {
+        let v = (s.to - s.from) / s.dur + SIMD2(0, -4 * s.peak / s.dur)   // velocity at touch-down
+        let j = figureIndex(s.target)
+        let onBody = s.hit && j != nil
+        s.normal = onBody ? SIMD2(v.x >= 0 ? -1 : 1, 0) : SIMD2(0, 1)
+        s.pos = s.to
+        let refl = v - 2 * (v.x * s.normal.x + v.y * s.normal.y) * s.normal
+        var rel = s.to + SIMD2(0, 1), scale: Float = 1
+        if onBody, let j { rel = s.to - figures[j].foot; scale = figures[j].scale }
+        addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: scale))
+        spray(at: s.to, reflected: refl, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
+        if onBody, let j, figures[j].fight != nil { registerHit(s.target, head: s.head) }
+    }
+
+    private func addSplat(_ p: Splat) {
+        if splats.count >= Tuning.maxSplats { splats.removeFirst() }
+        splats.append(p)
+    }
+
+    func stepSplats(_ dt: Float) {
+        var i = splats.count - 1
+        while i >= 0 {
+            splats[i].age += dt
+            if splats[i].age >= Tuning.splatLife { splats.remove(at: i) }
+            i -= 1
+        }
+    }
+
+    /// Clumps fanned +-70 degrees around `dir` at 60-160 pt/s, plus one puff.
+    /// TODO(P4-A1): switch to the clump / puff instance kinds once they are on main; plain debris dots until then.
+    private func spray(at p: SIMD2<Float>, reflected dir: SIMD2<Float>, count: Int) {
         guard !silent else { return }
-        for _ in 0..<(big ? 9 : 5) {
-            addDebris(x: p.x, y: p.y, vx: Float.random(in: -70...70, using: &rng), fall: Float.random(in: 0...25, using: &rng), size: Float.random(in: 2.5...4, using: &rng))
+        let base = atan2(dir.y, dir.x), fan: Float = 70 * .pi / 180
+        for _ in 0..<count {
+            let a = base + Float.random(in: -fan...fan, using: &rng), sp = Float.random(in: 60...160, using: &rng)
+            addDebris(x: p.x, y: p.y, vx: cos(a) * sp, fall: -sin(a) * sp, size: Float.random(in: 2.5...4, using: &rng))
+        }
+        addDebris(x: p.x, y: p.y, vx: 0, fall: 0, size: 6)
+    }
+
+    /// Splat position now (it follows its figure), or nil when the figure is gone.
+    public func position(of s: Splat) -> SIMD2<Float>? {
+        guard s.target >= 0 else { return s.rel }
+        return figureIndex(s.target).map { figures[$0].foot + s.rel }
+    }
+
+    /// Splats, trails and shots as prims. `shift` gives the drag offset of a surface id (windows being dragged).
+    public func writeShotPrims(_ w: inout PrimWriter, trails: Bool, shift: (Int?) -> SIMD2<Float>) {
+        for s in splats {
+            guard let p = position(of: s) else { continue }
+            let sid = s.target >= 0 ? figureIndex(s.target).flatMap { figures[$0].surfaceID } : s.surface
+            Rig.splat(center: p + shift(sid), scale: s.scale, alpha: s.alpha, into: &w)
+        }
+        for s in shots {
+            if trails { for k in 1...4 { if let g = s.ghost(k) { Rig.shotGhost(pos: g + shift(s.surface), k: k, into: &w) } } }
+            Rig.shot(pos: s.pos + shift(s.surface), radius: 3.6, alpha: 1, squash: s.impacting ? 1 : 0, normal: s.normal, into: &w)
         }
     }
 
@@ -106,6 +191,8 @@ extension SnowField {
     func registerHit(_ id: Int, head: Bool) {
         guard let j = figureIndex(id) else { return }
         figures[j].motion.wobble = 0.7
+        figures[j].motion.squash = Tuning.squashTime
+        if head { figures[j].motion.headHit = 0.7 }
         guard head, var fight = figures[j].fight else { return }
         fight.hits += 1
         figures[j].fight = fight
@@ -131,6 +218,7 @@ extension SnowField {
         nextBallID += 1
         b.state = .falling
         b.face = figures[j].facing
+        b.spin = -dir * Tuning.headSpin
         b.vel = SIMD2(dir * 110, 200)
         balls.append(b)
         ballsVersion &+= 1
