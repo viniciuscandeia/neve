@@ -12,6 +12,7 @@ public struct Shot {
     let from: SIMD2<Float>, to: SIMD2<Float>, peak: Float, dur: Float
     var t: Float = 0
     let hit: Bool, head: Bool, target: Int, surface: Int
+    var radius: Float = 3.6                          // ball radius (scaled with the snowmen)
     var impactT: Float = -1                          // < 0 in flight; else seconds of the squashed hold left after landing
     public internal(set) var normal = SIMD2<Float>(0, 1)   // impact normal (valid while impacting)
     public var impacting: Bool { impactT >= 0 }
@@ -102,7 +103,7 @@ extension SnowField {
         var to = head ? at.head : at.body
         if !hit { to = SIMD2(at.body.x + dir * Float.random(in: 28...70, using: &rng), at.ground) }   // sails past
         to.x += drift
-        shots.append(Shot(pos: from.arm, from: from.arm, to: to, peak: 18 + 0.18 * d, dur: dur, hit: hit, head: head, target: you, surface: figures[i].surfaceID ?? Tuning.groundID))
+        shots.append(Shot(pos: from.arm, from: from.arm, to: to, peak: 18 + 0.18 * d, dur: dur, hit: hit, head: head, target: you, surface: figures[i].surfaceID ?? Tuning.groundID, radius: 3.6 * snowmanScale))
         fights[k].turn = 1 - f.turn; fights[k].thrown += 1
         fights[k].timer = Tuning.throwGap + Float.random(in: 0...0.4, using: &rng)
     }
@@ -137,10 +138,10 @@ extension SnowField {
         s.pos = s.to
         shotLand = (s.to, time)
         let refl = v - 2 * (v.x * s.normal.x + v.y * s.normal.y) * s.normal
-        var rel = s.to + SIMD2(0, 1), scale: Float = 1
+        var rel = s.to + SIMD2(0, 1), scale = snowmanScale
         if onBody, let j { rel = s.to - figures[j].foot; scale = figures[j].scale }
         let cursor = s.target == SnowField.cursorTarget   // a throw at the cursor: bigger blot, longer fade
-        addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: cursor && s.hit ? 14.0 / 12 : scale, life: cursor && s.hit ? 1.5 : Tuning.splatLife))
+        addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: cursor && s.hit ? 14.0 / 12 * snowmanScale : scale, life: cursor && s.hit ? 1.5 : Tuning.splatLife))
         spray(at: s.to, reflected: refl, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
         if onBody, let j, figures[j].fight != nil { registerHit(s.target, head: s.head) }
         if onBody, let j, figures[j].kind == .rabbit { rabbitHit(j) }
@@ -187,8 +188,8 @@ extension SnowField {
             Rig.splat(center: p + shift(sid), scale: s.scale, alpha: s.alpha, into: &w)
         }
         for s in shots {
-            if trails { for k in 1...4 { if let g = s.ghost(k) { Rig.shotGhost(pos: g + shift(s.surface), k: k, into: &w) } } }
-            Rig.shot(pos: s.pos + shift(s.surface), radius: 3.6, alpha: 1, squash: s.impacting ? 1 : 0, normal: s.normal, into: &w)
+            if trails { for k in 1...4 { if let g = s.ghost(k) { Rig.shotGhost(pos: g + shift(s.surface), k: k, radius: s.radius, into: &w) } } }
+            Rig.shot(pos: s.pos + shift(s.surface), radius: s.radius, alpha: 1, squash: s.impacting ? 1 : 0, normal: s.normal, into: &w)
         }
     }
 

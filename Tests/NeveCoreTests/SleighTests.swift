@@ -104,7 +104,7 @@ private func starts(_ f: SnowField, hours: Float) -> Int {
             #expect(!g.falling)
             let si = f.index[g.surface!]!
             let top = f.standY(si: si, x: g.pos.x)
-            #expect(abs(g.pos.y - (top + Tuning.giftSize * (0.5 - Tuning.giftSink))) < 0.5)   // sunk 30% into the pile
+            #expect(abs(g.pos.y - (top + g.size * (0.5 - Tuning.giftSink))) < 0.5)   // sunk 30% into the pile
         }
     }
     let f = field(seed: 3)
@@ -177,7 +177,7 @@ private func starts(_ f: SnowField, hours: Float) -> Int {
     for deer in 2...4 {
         let p = UnsafeMutablePointer<Prim>.allocate(capacity: 300)
         var w = PrimWriter(p, capacity: 300)
-        Rig.sleigh(SleighLook(pos: SIMD2(100, 700), facing: -1, scale: 1.5, deer: deer, t: 1.3), into: &w)
+        Rig.sleigh(SleighLook(pos: SIMD2(100, 700), facing: -1, scale: 1.5, deer: deer, t: 1.3), contrast: false, into: &w)
         #expect(w.n > 40 && w.n <= 110)
     }
 }

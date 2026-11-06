@@ -489,7 +489,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                      face: b.face != 0, facing: b.face == 0 ? 1 : b.face, into: &w)
         }
         for f in field.figures where f.phase != .hidden {
-            if f.kind == .sleigh { Rig.sleigh(field.sleighLook(of: f), into: &w); continue }
+            if f.kind == .sleigh { Rig.sleigh(field.sleighLook(of: f), contrast: hc, into: &w); continue }
             if f.kind == .rabbit {
                 var l = field.rabbitLook(of: f)
                 let o = d(f.surfaceID)
@@ -516,9 +516,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             Rig.snowman(look, contrast: hc, into: &w)
         }
         field.writeCarrotPrims(&w, shift: d)
-        field.writeGiftPrims(&w, shift: d)
+        field.writeGiftPrims(&w, contrast: hc, shift: d)
         field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
-        field.writeIciclePrims(&w, shift: d)
+        field.writeIciclePrims(&w, contrast: hc, shift: d)
     }
 
     private func render(_ drawable: CAMetalDrawable) {

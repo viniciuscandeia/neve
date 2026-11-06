@@ -20,6 +20,9 @@ public struct Gift {
     public let color: UInt8                               // 0 red, 1 green, 2 gold
     public internal(set) var rest: Float = 0              // seconds resting
     public internal(set) var opened: Float = -1           // < 0 closed; else seconds since the lid popped off
+    public internal(set) var land: Float = 1              // seconds since touching down (squash + bounce for the first 0.27 s)
+    public var scale: Float = 1                           // snowman scale at drop time
+    public var size: Float { Tuning.giftSize * scale }
     public var fade: Float { min(max(1 - (rest - Tuning.giftLife), 0), 1) }
     public var falling: Bool { surface == nil }
 }
@@ -42,11 +45,11 @@ extension SnowField {
 
     func dropGift(at p: SIMD2<Float>, dir: Float) {
         guard giftState.gifts.count < Tuning.maxGifts else { return }
-        giftState.gifts.append(Gift(pos: p, vel: SIMD2(dir * Tuning.sleighSpeed, 0), surface: nil, rot: 0, spin: Float.random(in: -3...3, using: &rng) , color: UInt8.random(in: 0...2, using: &rng)))
+        giftState.gifts.append(Gift(pos: p, vel: SIMD2(dir * Tuning.sleighSpeed, 0), surface: nil, rot: 0, spin: Float.random(in: -3...3, using: &rng) , color: UInt8.random(in: 0...2, using: &rng), scale: snowmanScale))
     }
 
     /// Resting y of the box centre over a pile top.
-    private var giftRest: Float { Tuning.giftSize * (0.5 - Tuning.giftSink) }
+    private func giftRest(_ g: Gift) -> Float { g.size * (0.5 - Tuning.giftSink) }
 
     func stepGifts(dt: Float) {
         if outro { giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true); return }
@@ -67,9 +70,9 @@ extension SnowField {
             if let sid = g.surface {
                 guard let si = index[sid], column(g.pos.x) - surfaces[si].c0 >= 0, column(g.pos.x) - surfaces[si].c0 < surfaces[si].pile.heights.count,
                       surfaces[si].pile.visible[column(g.pos.x) - surfaces[si].c0] else { g.surface = nil; g.vel = .zero; g.spin = 0; giftState.gifts[i] = g; continue }   // the pile is gone: it falls on
-                g.rest += dt
+                g.rest += dt; g.land += dt
                 if g.rest >= Tuning.giftLife + 1 { giftState.gifts.remove(at: i); continue }
-                g.pos.y = standY(si: si, x: g.pos.x) + giftRest
+                g.pos.y = standY(si: si, x: g.pos.x) + giftRest(g)
             } else {
                 let prev = g.pos
                 g.vel.y = max(g.vel.y - Tuning.debrisGravity * 0.8 * dt, -1300)
@@ -77,8 +80,8 @@ extension SnowField {
                 g.pos += g.vel * dt
                 g.rot += g.spin * dt
                 g.pos.x = min(max(g.pos.x, 5), size.x - 5)
-                if let (si, _, top) = supportTop(x: g.pos.x, fromY: prev.y), g.pos.y <= top + giftRest {
-                    g.pos.y = top + giftRest
+                if let (si, _, top) = supportTop(x: g.pos.x, fromY: prev.y), g.pos.y <= top + giftRest(g) {
+                    g.pos.y = top + giftRest(g); g.land = 0
                     g.surface = surfaces[si].id; g.vel = .zero; g.spin = 0
                     g.rot = Float.random(in: -0.25...0.25, using: &rng)
                     if !calm, !silent { addPuff(x: g.pos.x, y: top + 2) }
@@ -93,7 +96,7 @@ extension SnowField {
     func giftUnder(_ q: SIMD2<Float>) -> Int? {
         for i in giftState.gifts.indices where !giftState.gifts[i].falling {
             let d = q - giftState.gifts[i].pos
-            if d.x * d.x + d.y * d.y <= (Tuning.giftSize / 2 + 4) * (Tuning.giftSize / 2 + 4) { return i }
+            if d.x * d.x + d.y * d.y <= (giftState.gifts[i].size / 2 + 4) * (giftState.gifts[i].size / 2 + 4) { return i }
         }
         return nil
     }
@@ -120,7 +123,7 @@ extension SnowField {
             defer { i -= 1 }
             let g = giftState.gifts[i]
             let t = min(max(((g.pos.x - ax) * dx + (g.pos.y - ay) * dy) / len2, 0), 1)
-            let ex = ax + t * dx - g.pos.x, ey = ay + t * dy - g.pos.y, reach = r + Tuning.giftSize / 2
+            let ex = ax + t * dx - g.pos.x, ey = ay + t * dy - g.pos.y, reach = r + g.size / 2
             guard ex * ex + ey * ey <= reach * reach else { continue }
             giftState.gifts.remove(at: i)
             for _ in 0..<14 where giftState.confetti.count < Tuning.maxConfetti {
@@ -151,8 +154,8 @@ extension SnowField {
     }
 
     /// Gifts and confetti as prims; `shift` gives the drag offset of a surface id.
-    public func writeGiftPrims(_ w: inout PrimWriter, shift: (Int?) -> SIMD2<Float>) {
-        for g in giftState.gifts { Rig.gift(g, offset: shift(g.surface), into: &w) }
+    public func writeGiftPrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
+        for g in giftState.gifts { Rig.gift(g, offset: shift(g.surface), contrast: contrast, into: &w) }
         for c in giftState.confetti { Rig.confetti(center: c.pos, rot: c.rot, color: c.color, alpha: min(1, c.life * 3), into: &w) }
     }
 }

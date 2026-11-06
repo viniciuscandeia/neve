@@ -20,6 +20,12 @@ public struct RabbitLook {
 extension Rig {
     static let rabbitFur = C(0.93, 0.95, 0.99, 1), earPink = C(0.95, 0.75, 0.80, 1), pom = C(1, 1, 1, 1)
 
+    static let rimLight = C(0.85, 0.92, 1.0, 1)
+    /// Faint top rim light under a body ellipse so dark parts read on dark wallpapers.
+    static func rim(_ c: V, _ r: V, _ al: Float, _ s: Float, into w: inout PrimWriter) {
+        w.ellipse(center: c + V(0, 0.6 * s), radii: r * 0.97, color: a(rimLight, 0.35 * al))
+    }
+
     /// Rabbit: ground shadow, ears (inner pink), haunch, chest, head with a coal eye and pink nose, white pom tail, optional carrot in the mouth.
     /// Bluish drop shadow under every body part (a darker outline in high contrast). Local x runs forward, y up, in points at scale 1.
     public static func rabbit(_ l: RabbitLook, contrast: Bool, into w: inout PrimWriter) {
@@ -46,7 +52,7 @@ extension Rig {
             let i = k % 3, dark = k < 3
             let cx: Float = i == 0 ? -3 : i == 1 ? 1.2 : 5.4, cy: Float = i == 0 ? 3.4 : i == 1 ? 3.6 : 6.0 + hy
             let rx: Float = i == 0 ? 5.2 : i == 1 ? 4.4 : 3.3, ry: Float = i == 0 ? 3.4 : i == 1 ? 3.2 : 2.8
-            if dark { w.ellipse(center: p(cx, cy - 0.5), radii: r(rx * 1.1, ry * 1.1), color: sh, soft: 0.5 * s) } else { w.ellipse(center: p(cx, cy), radii: r(rx, ry), color: fur) }
+            if dark { w.ellipse(center: p(cx, cy - 0.1 * ry), radii: r(rx * 1.1, ry * 1.1), color: sh, soft: 0.5 * s) } else { w.ellipse(center: p(cx, cy), radii: r(rx, ry), color: fur) }
         }
         w.ellipse(center: p(6.4, 6.6 + hy), radii: r(0.7, 0.7), color: cl)                   // eye
         w.ellipse(center: p(8.5, 6.1 + hy), radii: r(0.55, 0.5), color: pink)                // nose

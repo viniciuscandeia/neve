@@ -79,6 +79,6 @@ extension SnowField {
         let d = abs(p.x - a.arm.x)
         let to = hit ? p : SIMD2(p.x + dir * Float.random(in: 28...70, using: &rng), a.ground)   // a miss sails past the cursor
         shots.append(Shot(pos: a.arm, from: a.arm, to: to, peak: 18 + 0.18 * d, dur: 0.6 + 0.4 * min(d / Tuning.fightRange, 1), hit: hit, head: false,
-                          target: SnowField.cursorTarget, surface: figures[j].surfaceID ?? Tuning.groundID))
+                          target: SnowField.cursorTarget, surface: figures[j].surfaceID ?? Tuning.groundID, radius: 3.6 * snowmanScale))
     }
 }

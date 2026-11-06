@@ -90,7 +90,7 @@ extension SnowField {
         m.wobble = max(0, m.wobble - dt)
         m.squash = max(0, m.squash - dt)
         m.headHit = max(0, m.headHit - dt)
-        var moving = false, jump: Float = 0
+        var moving = false, jump: Float = 0, cheerSquash: Float = 0
         let range = walkRange(surface: sid, x: f.foot.x, half: half, height: Snowman.height * scale)
         let outside = range.map { f.foot.x < $0.0 || f.foot.x > $0.1 } ?? false   // in a column too low for it: walks out, bare ground allowed
         // Steps x by `dx`, never past the stretch ends (and the auto snowman never onto bare ground).
@@ -104,6 +104,7 @@ extension SnowField {
         if m.cheer > 0 {
             m.cheer = max(0, m.cheer - dt)
             jump = abs(sin(m.cheer * 2 * .pi * 1.5)) * 7 * scale * min(1, m.cheer)
+            cheerSquash = 0.15 * max(0, 1 - jump / scale / 0.8)   // squashes at ground contact, like the rabbit
         } else if f.fight == nil, m.idle <= 0 || outside, let (lo, hi) = range, hi > lo + 4 {
             m.nextIdle -= dt
             if m.nextIdle <= 0 {
@@ -135,7 +136,7 @@ extension SnowField {
         let wob = sin(m.wobble * 28) * min(m.wobble, 0.7)
         f.pose.hop = abs(sin(m.phase)) * 2.2 * scale * m.gait + jump
         f.pose.lean = m.windLean + sin(m.phase * 0.5) * 1.4 * scale * m.gait + wob * 7 * scale
-        f.pose.squash = 0.12 * sin(.pi * (1 - m.squash / Tuning.squashTime)) * (m.squash > 0 ? 1 : 0)   // 1.06 x 0.95 at the peak
+        f.pose.squash = max(cheerSquash, 0.12 * sin(.pi * (1 - m.squash / Tuning.squashTime)) * (m.squash > 0 ? 1 : 0))   // 1.06 x 0.95 at the peak
         f.pose.shake = wob + sin(m.headHit * 45) * (m.headHit / 0.7) * 1.5 * scale
         m.flutter += dt * Flutter.rate(gust: g, gait: m.gait)
         f.pose.flutter = .make(gust: g, gait: m.gait, dir: f.facing, phase: m.flutter, cheer: m.cheer)

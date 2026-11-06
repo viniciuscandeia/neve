@@ -189,7 +189,7 @@ extension SnowField {
         let hit = Float.random(in: 0..<1, using: &director.rng) < min(1, Tuning.hitChance(distance: d) * rabbitHitScale)
         var to = SIMD2(f.foot.x + vx * dur, f.foot.y + 5 * f.scale)
         if !hit { to = SIMD2(to.x + (Bool.random(using: &director.rng) ? 1 : -1) * Float.random(in: 22...45, using: &director.rng), f.foot.y); to.x = storyMiss(to.x, rabbitX: f.foot.x) }
-        shots.append(Shot(pos: from, from: from, to: to, peak: 12 + 0.12 * d, dur: dur, hit: hit, head: false, target: f.id, surface: f.surfaceID ?? Tuning.groundID))
+        shots.append(Shot(pos: from, from: from, to: to, peak: 12 + 0.12 * d, dur: dur, hit: hit, head: false, target: f.id, surface: f.surfaceID ?? Tuning.groundID, radius: 3.6 * snowmanScale))
         figuresVersion &+= 1
     }
 

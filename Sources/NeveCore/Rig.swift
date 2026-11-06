@@ -63,7 +63,7 @@ public enum Rig {
     /// Ball body: shadow, (contrast outline), body, lit disc, optional rolling speckles, crest. Radii may be squashed.
     static func body(_ c: V, _ r: V, alpha: Float, contrast: Bool, rotation: Float, speckles: Bool, into w: inout PrimWriter) {
         let u = (r.x + r.y) / 2
-        w.ellipse(center: c + V(0, -0.08 * u), radii: r, color: a(contrast ? shadowHC : shadow, (contrast ? 0.8 : 0.45) * alpha), soft: 0.16 * u)
+        w.ellipse(center: c + V(0, -0.1 * u), radii: r, color: a(contrast ? shadowHC : shadow, (contrast ? 0.8 : 0.45) * alpha), soft: 0.16 * u)
         var rr = r
         if contrast {
             w.ellipse(center: c, radii: r * 1.04, color: a(shadowHC, alpha))
@@ -168,14 +168,14 @@ public enum Rig {
     /// A snowball in the air; on impact `squash` 1 flattens it to 1.5 x 0.6, thin along `normal`.
     public static func shot(pos: SIMD2<Float>, radius: Float, alpha: Float, squash: Float = 0, normal: SIMD2<Float> = SIMD2(0, 1), into w: inout PrimWriter) {
         let r = V(radius * (1 + 0.5 * squash), radius * (1 - 0.4 * squash)), rot = squash > 0 ? atan2(normal.y, normal.x) - .pi / 2 : 0
-        w.ellipse(center: pos + V(0, -0.28 * radius), radii: r, rotation: rot, color: a(shadow, 0.5 * alpha), soft: 0.42 * radius)
+        w.ellipse(center: pos + V(0, -0.1 * radius), radii: r, rotation: rot, color: a(shadow, 0.5 * alpha), soft: 0.42 * radius)
         w.ellipse(center: pos, radii: r, rotation: rot, color: a(shotSnow, alpha))
     }
 
     /// Ghost `k` (1...4) of the trail behind a ball in flight.
-    public static func shotGhost(pos: SIMD2<Float>, k: Int, into w: inout PrimWriter) {
+    public static func shotGhost(pos: SIMD2<Float>, k: Int, radius: Float = 3.6, into w: inout PrimWriter) {
         let al: [Float] = [0.35, 0.22, 0.14, 0.08]
-        let r = 3.6 * (1 - 0.15 * Float(k))
+        let r = radius * (1 - 0.15 * Float(k))
         w.ellipse(center: pos, radii: V(r, r), color: a(shotSnow, al[k - 1]))
     }
 

@@ -171,7 +171,7 @@ extension SnowField {
 
     /// Triangle (blue edge behind, pale fill) plus a white highlight; `shift` moves the ones on the dragged window.
     /// Top icicles get their snow lip + knob first; frozen windows their frost lip (Frost.swift).
-    public func writeIciclePrims(_ w: inout PrimWriter, shift: (Int?) -> SIMD2<Float>) {
+    public func writeIciclePrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
         let snow = SIMD4<Float>(0.97, 0.98, 1, 0.97)
         for (i, c) in icicles.enumerated() where !c.bottom {
             guard !icicles[..<i].contains(where: { !$0.bottom && $0.win == c.win && $0.right == c.right }) else { continue }
@@ -184,11 +184,12 @@ extension SnowField {
             guard ok, let side = prev else { continue }
             w.ellipse(center: side + sh + SIMD2(sg * 2.5, 0.8), radii: SIMD2(4.5, 2), color: snow)
         }
-        writeFrostPrims(&w, shift: shift)
+        writeFrostPrims(&w, contrast: contrast, shift: shift)
+        let edge = Rig.a(contrast ? Rig.shadowHC : SIMD4(0.45, 0.62, 0.85, 1), 0.7)
         for c in icicles {
             let p = SIMD2(c.x, c.y) + shift(c.win), a = c.fade, hw = c.width / 2
             let tip = p + SIMD2(c.tilt, -c.len)
-            w.triangle(p + SIMD2(-hw - 0.5, 0.5), p + SIMD2(hw + 0.5, 0.5), tip + SIMD2(0, -0.8), color: SIMD4(0.45, 0.62, 0.85, 0.5 * a))
+            w.triangle(p + SIMD2(-hw - 0.5, 0.5), p + SIMD2(hw + 0.5, 0.5), tip + SIMD2(0, -0.8), color: Rig.a(edge, a))
             w.triangle(p + SIMD2(-hw, 0), p + SIMD2(hw, 0), tip, color: SIMD4(0.80, 0.90, 1.0, 0.75 * a))
             w.capsule(from: p + SIMD2(-hw * 0.5, -0.5), to: p + SIMD2(c.tilt * 0.4 - hw * 0.15, -c.len * 0.65), width: 0.6, color: SIMD4(1, 1, 1, 0.7 * a))
         }

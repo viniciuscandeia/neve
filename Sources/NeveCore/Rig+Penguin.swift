@@ -28,12 +28,14 @@ extension Rig {
         w.ellipse(center: l.foot + V(0, 0.4 * s), radii: V(7 * s, 1.3 * s), color: Rig.a(shadow, 0.35 * al), soft: 1.6)
         func ell(_ x: Float, _ y: Float, _ rx: Float, _ ry: Float, _ c: C) { w.ellipse(center: p(x, y), radii: r(rx, ry), rotation: a, color: c) }
         let sh = Rig.a(contrast ? shadowHC : shadow, (contrast ? 0.85 : 0.5) * al)
-        w.ellipse(center: p(0, 8.7), radii: r(6.9, 9.8), rotation: a, color: sh, soft: 0.5 * s)
+        w.ellipse(center: p(0, 9.8 - 0.1 * 9.8), radii: r(6.9, 9.8), rotation: a, color: sh, soft: 0.5 * s)   // drop shadow 0.1 r below
         ell(-2.2, 0.8, 2.6, 1.1, org); ell(2.6, 0.8, 2.6, 1.1, org)                       // feet
         let sw = l.flap * 0.5 * m
         let fb = p(-0.5, 12.5), ft = rot(p(-5.2, 7.2), fb, sw)
         w.capsule(from: fb, to: ft, width: 2.6 * s, color: back)                          // far flipper
+        w.ellipse(center: p(0, 10.6), radii: r(6.1, 9.0), rotation: a, color: Rig.a(rimLight, 0.35 * al))   // top rim light
         ell(0, 10, 6.3, 9.3, back)                                                        // body
+        w.ellipse(center: p(1.2, 8.8), radii: r(4.7, 7.5), rotation: a, color: Rig.a(contrast ? shadowHC : shadow, (contrast ? 0.9 : 0.5) * al))   // blue outline so the belly reads on white
         ell(1.2, 8.8, 4.2, 7.0, white)                                                    // belly
         ell(0.5, 17.6, 4.7, 4.3, back)                                                    // head
         ell(2.9, 18.5, 0.95, 0.95, cl)                                                    // eye

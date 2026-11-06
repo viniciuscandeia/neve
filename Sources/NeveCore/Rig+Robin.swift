@@ -26,7 +26,8 @@ extension Rig {
         func r(_ a: Float, _ b: Float) -> V { V(a * s, b * s) }
         let sh = a(contrast ? shadowHC : shadow, (contrast ? 0.85 : 0.5) * al), back = a(robinBack, al), br = a(robinBreast, al), wg = a(robinWing, al), cl = a(coal, al)
         if !l.flying { w.ellipse(center: l.foot + V(0, 0.4 * s), radii: r(4.5, 1.0), color: a(shadow, 0.35 * al), soft: 1.2) }
-        w.ellipse(center: p(0.4, 4.6), radii: r(5.0, 3.8), color: sh, soft: 0.5 * s)
+        w.ellipse(center: p(0.4, 4.4 - 0.1 * 3.8), radii: r(5.0, 3.8), color: sh, soft: 0.5 * s)   // below the body
+        rim(p(0, 4.4), r(4.4, 3.3), al, s, into: &w)
         w.capsule(from: p(-3.4, 4.8), to: p(-6.6, 3.4), width: 2.0 * s, color: back)
         if !l.flying {
             w.capsule(from: p(-0.6, 1.6), to: p(-0.6, 0.1), width: 0.7 * s, color: cl)

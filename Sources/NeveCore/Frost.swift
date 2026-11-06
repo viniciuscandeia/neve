@@ -82,8 +82,13 @@ extension SnowField {
     }
 
     /// Frost lip: a pale blue-white line 0.8pt under the bottom edge and its rounded corners, plus a faint haze at each lower corner.
-    func writeFrostPrims(_ w: inout PrimWriter, shift: (Int?) -> SIMD2<Float>) {
-        let col = SIMD3<Float>(0.85, 0.93, 1.0)
+    func writeFrostPrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
+        let col = SIMD3<Float>(0.85, 0.93, 1.0), sc = Rig.a(contrast ? Rig.shadowHC : Rig.shadow, 0.25)
+        // Frost capsule with a faint shadow capsule 0.8 pt below it, so the lip reads on light backgrounds.
+        func lip(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ al: Float, _ w: inout PrimWriter) {
+            w.capsule(from: a + SIMD2(0, -0.8), to: b + SIMD2(0, -0.8), width: 1.8, color: Rig.a(sc, al))
+            w.capsule(from: a, to: b, width: 1.8, color: SIMD4(col, 0.75 * al))
+        }
         for s in iceWin where s.frost > 0.01 {
             guard let si = index[s.id] else { continue }
             let fr = surfaces[si].frame, r = surfaces[si].radius, R = r + 0.8, sh = shift(s.id), a = s.frost
@@ -94,13 +99,13 @@ extension SnowField {
                 for k in 1...3 {   // from the bottom point round to the side
                     let t = Float.pi / 2 * Float(k) / 3
                     let q = SIMD2(cx + sg * R * sin(t), cy - R * cos(t))
-                    w.capsule(from: prev + sh, to: q + sh, width: 1.8, color: SIMD4(col, 0.75 * a))
+                    lip(prev + sh, q + sh, a, &w)
                     prev = q
                 }
                 let m = Float.pi / 4
                 w.ellipse(center: SIMD2(cx + sg * (R + 2) * sin(m), cy - (R + 2) * cos(m)) + sh, radii: SIMD2(5, 4), color: SIMD4(col, 0.16 * a), soft: 3)
             }
-            w.capsule(from: SIMD2(x0 + r, y0 - 0.8) + sh, to: SIMD2(x1 - r, y0 - 0.8) + sh, width: 1.8, color: SIMD4(col, 0.75 * a))
+            lip(SIMD2(x0 + r, y0 - 0.8) + sh, SIMD2(x1 - r, y0 - 0.8) + sh, a, &w)
         }
     }
 }
