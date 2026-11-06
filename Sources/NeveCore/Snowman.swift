@@ -95,6 +95,7 @@ extension SnowField {
     /// Cursor segment a->b (radius r) through a standing figure's balls shatters it whole.
     func sweepFigures(_ ax: Float, _ ay: Float, _ bx: Float, _ by: Float, _ r: Float, _ v: SIMD2<Float>) {
         guard !figures.isEmpty else { return }
+        sweepPenguins(ax, ay, bx, by, r)
         let dx = bx - ax, dy = by - ay, len2 = max(dx * dx + dy * dy, 1e-6)
         var i = figures.count - 1
         while i >= 0 {

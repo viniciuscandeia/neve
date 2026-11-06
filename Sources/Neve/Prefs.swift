@@ -27,6 +27,7 @@ let simConfig: SimConfig = {
     if env["NEVE_SNOWMAN_FAST"] == "1" { c.snowmanSpeed = 20; c.snowmanDepth = 4 }
     if env["NEVE_DIRECTOR_FAST"] == "1" { c.directorSpeed = 30 }
     if env["NEVE_DEMO_ICE"] == "1" { c.iceSpeed = 120 }
+    c.penguinDemo = env["NEVE_DEMO_PENGUIN"] == "1"
     c.avalancheDemo = Float(env["NEVE_DEMO_AVALANCHE"] ?? "") ?? 0
     return c
 }()

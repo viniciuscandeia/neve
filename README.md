@@ -152,6 +152,8 @@ Para demonstrações, `NEVE_SNOWMAN_FAST=1` faz o boneco se montar 20 vezes mais
 NEVE_SNOWMAN_FAST=1 .build/release/Neve
 ```
 
+`NEVE_DEMO_PENGUIN=1` força uma visita do pinguim a cada ~12 s (precisa de uma janela com topo largo e neve acumulada; use com `NEVE_SCENARIO=heavy`).
+
 `NEVE_DEMO_ICE=1` faz os pingentes crescerem 120 vezes mais rápido; `NEVE_DEMO_AVALANCHE=<segundos>` enche as pilhas e dispara uma avalanche a cada tanto tempo.
 
 ## 📜 Licença

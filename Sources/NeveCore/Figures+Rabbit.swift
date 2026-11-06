@@ -91,6 +91,7 @@ extension SnowField {
 
     /// The rabbit leaves at once, carrots and held noses are restored: Reduce Motion / walking off.
     func clearCritters() {
+        clearPenguins()
         var i = figures.count - 1
         while i >= 0 {
             if figures[i].kind == .rabbit { removeFigure(i) } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter(); figuresVersion &+= 1 }

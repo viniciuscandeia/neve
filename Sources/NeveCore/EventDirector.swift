@@ -24,9 +24,10 @@ public struct EventDirector {
         switch k {
         case .snowman: return nil
         case .rabbit: return Spec(mean: 360, cooldown: 240)
+        case .penguin: return Spec(mean: 480, cooldown: 300, windowOnly: true)
         }
     }
-    static let kinds: [FigureKind] = [.rabbit]   // the kinds the Poisson roll considers
+    static let kinds: [FigureKind] = [.rabbit, .penguin]   // the kinds the Poisson roll considers
 
     struct Request { var kind: FigureKind, at: Float }
 
@@ -71,6 +72,7 @@ extension SnowField {
         director.acc -= 1
         guard visitorsEnabled, walkEnabled, !calm, !outro else { director.queue.removeAll(keepingCapacity: true); return }
         let eco = economy || lowPower
+        if config.penguinDemo, !visitorsGroundOnly, stepPenguinDemo() { return }
         let limit = eco ? 1 : EventDirector.maxAmbient
         var ambient = 0, big = 0
         for f in figures where f.kind != .snowman { if EventDirector.spec(f.kind)?.big == true { big += 1 } else { ambient += 1 } }
@@ -106,6 +108,7 @@ extension SnowField {
     private func startVisitor(_ kind: FigureKind) -> Bool {
         switch kind {
         case .rabbit: return startRabbit()
+        case .penguin: return startPenguin()
         case .snowman: return false
         }
     }

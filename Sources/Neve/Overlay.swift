@@ -479,6 +479,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                 Rig.rabbit(l, contrast: hc, into: &w)
                 continue
             }
+            if f.kind == .penguin {
+                var l = field.penguinLook(of: f)
+                l.foot += d(f.surfaceID)
+                Rig.penguin(l, contrast: hc, into: &w)
+                continue
+            }
             var look = field.look(of: f)
             look.foot += d(f.surfaceID)
             if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }
