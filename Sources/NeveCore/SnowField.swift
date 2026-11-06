@@ -21,6 +21,7 @@ public final class SnowField {
     var chain = AvaChain()       // Avalanche.swift
     var fxRng: SplitMix64        // icicles / avalanches: kept apart from `rng` so they never perturb the other sequences
     var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
+    var sweepOwed: Float = 0     // cursor-dent volume (pt^2) not yet launched as debris
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints
     var surfaces: [Surface] = []

@@ -96,7 +96,7 @@ extension SnowField {
                 let h = surfaces[si].pile.heights[b], cur = surfaces[si].pile.shown[b]
                 if h == cur { continue }
                 if h < cur && calm { surfaces[si].pile.shown[b] = h; continue }   // Reduce Motion: drops snap
-                let nx = cur + (h - cur) * (h < cur ? (cur - h < 3 && h > 0.3 ? kSoft : kDrop) : k)   // small drops that leave snow (a plowed groove) ease over ~0.3 s
+                let nx = cur + (h - cur) * (h < cur ? (cur - h < 12 && h > 0.3 ? kSoft : kDrop) : k)   // small drops that leave snow (a plowed groove) ease over ~0.3 s
                 if abs(h - nx) < (h < cur ? 0.05 : 0.01) { surfaces[si].pile.shown[b] = h } else { surfaces[si].pile.shown[b] = nx; active = true }
             }
         }

@@ -264,6 +264,9 @@ extension SnowField {
         let v = (SIMD2(dx, dy) / dt).limited()
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
+        let speed = len2.squareRoot() / dt, share = min(len2.squareRoot() / (1.33 * r), 1)
+        let depth = min(max(speed / 150, 0.6), 6)   // total dent depth of a pass (pt): a slow brush barely marks, a fast swipe cuts
+        var owed: Float = 0, cx: Float = 0, cy: Float = 0, sum: Float = 0
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         breakGifts(ax, ay, Float(b.x), Float(b.y), r, v)
@@ -274,6 +277,7 @@ extension SnowField {
             guard hi >= edgeY - Tuning.maxPileHeight, lo <= edgeY + Tuning.maxPileHeight else { continue }
             let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(surfaces[si].pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
             guard b0 <= b1 else { continue }
+            var removed: Float = 0, wx: Float = 0, wy: Float = 0
             for k in b0...b1 {
                 let h = surfaces[si].pile.heights[k]
                 guard h > 0.5, surfaces[si].pile.visible[k] else { continue }
@@ -281,11 +285,68 @@ extension SnowField {
                 let t = min(max(((x - ax) * dx + (my - ay) * dy) / len2, 0), 1)
                 let qx = ax + t * dx, qy = ay + t * dy
                 guard abs(qx - x) <= r, abs(qy - my) <= r + h / 2 else { continue }
-                let keep = min(max(qy - r - bottom, 0), h)
-                guard keep < h else { continue }
-                surfaces[si].pile.heights[k] = keep
-                _ = shedBin(col: c + k, edgeY: bottom, from: keep, amount: h - keep, velocity: v)
+                let u = (x - qx) / r
+                // Mostly horizontal path: integrate the parabola along it, so a bin's total over a pass is the same however the frames sample it (smooth dent).
+                let cover: Float
+                if abs(dx) >= abs(dy) {
+                    let p0 = min(max(ax - x, -r), r), p1 = min(max(ax + dx - x, -r), r)
+                    cover = abs((p1 - p0) - (p1 * p1 * p1 - p0 * p0 * p0) / (3 * r * r)) / (1.3333 * r)
+                } else { cover = (1 - u * u) * share }
+                let keep = min(max(qy - r - bottom, 0), h)   // snow below the cursor's lower edge stays
+                let dh = min(depth * cover, h - keep)   // soft parabolic dent: nothing pops, the edges stay round
+                guard dh > 0.01 else { continue }
+                surfaces[si].pile.heights[k] = h - dh
+                pilesDirty = true
+                let a = dh * Tuning.binWidth
+                removed += a; wx += x * a; wy += (bottom + h) * a
             }
+            if removed > 0 {
+                let banked = berm(si, atX: (dx > 0 ? max(ax, ax + dx) + r : min(ax, ax + dx) - r), dir: dx > 0 ? 1 : -1, area: 0.12 * removed)
+                owed += removed - banked; cx += wx; cy += wy; sum += removed
+            }
+        }
+        guard sum > 0, !calm, !silent else { return }
+        sweepOwed = min(sweepOwed + owed, 600)
+        launchSweepDebris(x: cx / sum, y: cy / sum, v: v, speed: speed, r: r)
+    }
+
+    /// Banks `area` (pt^2) on the four bins ahead of global x in direction `dir` (the lip ahead of the cursor, tapering off), capped by the pile limit.
+    /// Returns the area actually banked.
+    func berm(_ si: Int, atX x: Float, dir: Int, area: Float) -> Float {
+        var banked: Float = 0
+        for (n, w) in [Float(0.15), 0.35, 0.35, 0.15].enumerated() {
+            let k = Int(x * invBin) - surfaces[si].c0 + dir * (n + 1)
+            guard k >= 0, k < surfaces[si].pile.heights.count, surfaces[si].pile.visible[k] else { continue }
+            let h = surfaces[si].pile.heights[k], lim = max(surfaces[si].pile.limit(k), h)
+            let nh = min(h + w * area / Tuning.binWidth, lim)
+            surfaces[si].pile.heights[k] = nh; banked += (nh - h) * Tuning.binWidth
+        }
+        return banked
+    }
+
+    /// Turns the owed volume into debris launched along the cursor: fine powder plus a few clumps (fast), or a gentle sift (slow hover).
+    /// Each carries its own volume (`vol`), so what leaves the pile lands again.
+    func launchSweepDebris(x: Float, y: Float, v: SIMD2<Float>, speed: Float, r: Float) {
+        let fast = speed > 120, dir: Float = v.x >= 0 ? 1 : -1
+        var spawned = 0
+        while sweepOwed >= 1.5, spawned < 8 {
+            let grow = max(1, sweepOwed / 40)   // a big backlog goes out in bigger pieces: volume is carried, not dropped
+            let clump = fast && sweepOwed >= 6 && Float.random(in: 0..<1, using: &rng) < 0.3
+            let area = (clump ? Float.random(in: 4...7, using: &rng) : Float.random(in: 1.2...2.2, using: &rng)) * grow
+            let along = fast ? min(speed * 0.3, 360) * Float.random(in: 0.5...1.2, using: &rng) : Float.random(in: -10...10, using: &rng)
+            var f = Flake(pos: [x + Float.random(in: -r...r, using: &rng), y + Float.random(in: 0...2, using: &rng)],
+                          vx: (fast ? dir * along : along) + Float.random(in: -15...15, using: &rng),
+                          fall: fast ? -Float.random(in: 20...90, using: &rng) : Float.random(in: 0...12, using: &rng),
+                          phase: 0.5, amp: 0, freq: 0, size: (clump ? Float.random(in: 3.5...5, using: &rng) : Float.random(in: 2.2...3.2, using: &rng)) * min(grow.squareRoot(), 2),
+                          alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -3...3, using: &rng), vol: area, shape: clump ? 1 : 0)
+            f.fall -= max(min(v.y, 200), -200) * 0.2   // a cursor moving up kicks the snow up
+            guard put(f) else { break }
+            sweepOwed -= area; spawned += 1
+        }
+        if fast, Float.random(in: 0..<1, using: &rng) < 0.25 { addPuff(x: x, y: y + 3) }
+        if fast, Float.random(in: 0..<1, using: &rng) < 0.08, !economy, !lowPower, glints.count < Tuning.maxGlints {   // fresh crest catches the light
+            glints.append(Flake(pos: [x, y], vx: 0, fall: 0, phase: 0, amp: 0, freq: 0, size: Float.random(in: 4...6, using: &rng), alpha: 1, kind: .debris,
+                                seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4))
         }
     }
 
