@@ -11,3 +11,4 @@ build/
 /*.mp4
 /before
 /after
+dist/

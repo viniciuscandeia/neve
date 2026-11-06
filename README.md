@@ -95,6 +95,14 @@ Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar
 
 ## 🔥 Instalação
 
+### Baixar o app
+
+1. Baixe `Neve-<versão>.zip` em [Releases](https://github.com/viniciuscandeia/neve/releases), descompacte e mova **Neve.app** para `/Applications`.
+2. O app não é notarizado (não há conta paga da Apple), então o Gatekeeper bloqueia a primeira abertura. Tente abrir, depois vá em **Ajustes do Sistema > Privacidade e Segurança** e clique em **Abrir Mesmo Assim** (macOS 15+). Alternativa no Terminal: `xattr -dr com.apple.quarantine /Applications/Neve.app`.
+3. Para a neve no Dock, conceda **Acessibilidade** em Ajustes do Sistema > Privacidade e Segurança. Ao atualizar para uma nova versão, a permissão pode precisar ser concedida de novo (a assinatura ad-hoc muda a cada build).
+
+### Compilar do código-fonte
+
 Requisitos: macOS 14 ou superior e toolchain Swift 6 (as Command Line Tools bastam; o Xcode não é necessário).
 
 ```sh
