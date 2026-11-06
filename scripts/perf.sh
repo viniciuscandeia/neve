@@ -1,17 +1,17 @@
 #!/bin/bash
-# Usage: scripts/perf.sh [heavy|media|max] [secs=60] [--drag] [--runs N=3] [--bin PATH]
+# Usage: scripts/perf.sh [heavy|media|max|still] [secs=60] [--drag] [--runs N=3] [--bin PATH]
 # Runs its own dev instance (never touches the user's Neve) under the screen lock. Measures Neve CPU / idle wakeups and WindowServer CPU (top) over N runs. See README "Desenvolvimento".
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE=media; SECS=60; DRAG=0; RUNS=3; BIN=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    heavy|media|max) MODE=$1 ;;
+    heavy|media|max|still) MODE=$1 ;;
     --drag) DRAG=1 ;;
     --runs) RUNS=$2; shift ;;
     --bin) BIN=$2; shift ;;
     [0-9]*) SECS=$1 ;;
-    *) echo "usage: $0 [heavy|media|max] [secs] [--drag] [--runs N] [--bin PATH]" >&2; exit 2 ;;
+    *) echo "usage: $0 [heavy|media|max|still] [secs] [--drag] [--runs N] [--bin PATH]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -43,6 +43,8 @@ if [ -z "$BIN" ]; then NEVE_DEV=$NAME "$ROOT/scripts/make-app.sh" >&2; BIN="$ROO
 
 defaults write "$SUITE" intensity -int 1
 defaults write "$SUITE" enabled -bool true
+[ -n "${ADAPTIVE:-}" ] && defaults write "$SUITE" adaptiveFps -bool "$ADAPTIVE"   # A/B for the adaptive frame rate (ADAPTIVE=true|false)
+[ "$MODE" = still ] && defaults write "$SUITE" stillSnow -bool true
 defaults write "$SUITE" ambient -bool true   # Modo ambiente: Neve otherwise pauses after 5 min without input, which would measure 0%
 
 # Finder windows (bounds are left, top, right, bottom in top-left-origin points).
@@ -74,6 +76,7 @@ fi
 
 ENVV=(NEVE_PERF=1 NEVE_INSTANCE="$NAME")
 [ "$MODE" = heavy ] && ENVV+=(NEVE_SCENARIO=heavy)
+[ "$MODE" = still ] && ENVV+=(NEVE_REDUCE_MOTION=1)   # still mode = Reduce Motion + Neve parada
 caffeinate -dimsu -t $(( RUNS * (SECS + 25) + 60 )) & CAFF_PID=$!; disown
 
 if pgrep -f "$USER_APP/Contents/MacOS/" >/dev/null; then

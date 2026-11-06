@@ -174,3 +174,18 @@ private func maxSway(calm: Bool) -> Float {
     f.update(windows: [win(1, 300, 300, 400, 200)])  // identical poll
     #expect(f.pileVersion == v2)
 }
+
+@Test func pilesSettledOnlyAfterTheLastWriteAndBusyIsFalseForQuietSnow() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    let buf = UnsafeMutablePointer<PileSeg>.allocate(capacity: 4096)
+    defer { buf.deallocate() }
+    _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60, force: true)
+    #expect(f.pilesSettled)
+    f.deposit(surface: i, bin: 100, volume: 4)
+    #expect(!f.pilesSettled)                         // changed: a frame is owed
+    for _ in 0..<600 { _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60) }
+    #expect(f.pilesSettled)                          // eased to the end: the link may sleep
+    #expect(!f.isBusy)
+}
