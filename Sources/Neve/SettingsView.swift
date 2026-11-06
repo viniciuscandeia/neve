@@ -11,6 +11,15 @@ struct SettingsEnv {
     let target: Binding<String>
     let login: Binding<Bool>
     let openWindow: () -> Void
+    let panel: PanelState
+    let askAccessibility, clear, quit: () -> Void
+}
+
+/// Live status shown at the top of the popover; the controller keeps it current (updateStatus / syncOverlays).
+@MainActor final class PanelState: ObservableObject {
+    @Published var status = ""
+    @Published var axMissing = false
+    @Published var metalMissing = false
 }
 
 /// Hands a Bool pref's binding (backed by the app's defaults store) to `content`.
@@ -86,6 +95,42 @@ private struct IntensityTile: View {
     }
 }
 
+private struct Header: View {
+    @ObservedObject var panel: PanelState
+    let env: SettingsEnv
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PrefBinding(.enabled, env.store) { on in
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nevar").font(.callout.weight(.medium))
+                        Text(panel.status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("Nevar", isOn: on).labelsHidden().toggleStyle(.switch).controlSize(.small).keyboardShortcut("n")
+                }
+            }
+            if panel.axMissing { FooterRow("Permitir neve no Dock…", "exclamationmark.triangle", action: env.askAccessibility) }
+            if panel.metalMissing { Label("Metal indisponível", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary) }
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+private struct FooterRow: View {
+    let title: String, symbol: String, chevron: Bool, action: () -> Void
+    init(_ title: String, _ symbol: String, chevron: Bool = false, action: @escaping () -> Void) {
+        self.title = title; self.symbol = symbol; self.chevron = chevron; self.action = action
+    }
+    var body: some View {
+        Button(action: action) {
+            HStack { Label(title, systemImage: symbol); Spacer(); if chevron { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) } }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).padding(.horizontal, 4)
+    }
+}
+
 /// The popover: Control-Center-style tiles. Sized by its content (the hosting controller reports preferredContentSize).
 struct QuickSettingsView: View {
     let env: SettingsEnv
@@ -97,6 +142,8 @@ struct QuickSettingsView: View {
     var body: some View {
         let tiles = figures + [economyOpt, ambientOpt] + (env.reduceMotion ? [stillOpt] : [])
         VStack(spacing: 8) {
+            Header(panel: env.panel, env: env)
+            Divider()
             IntensityTile(store: env.store)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                 ForEach(tiles, id: \.pref) { o in PrefBinding(o.pref, env.store) { Tile(option: o, on: $0) } }
@@ -107,11 +154,9 @@ struct QuickSettingsView: View {
             }
             .padding(.horizontal, 4).padding(.top, 2)
             Divider()
-            Button(action: env.openWindow) {
-                HStack { Label("Mais…", systemImage: "gearshape"); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).padding(.horizontal, 4)
+            FooterRow("Limpar neve", "sparkles", action: env.clear).keyboardShortcut("k")
+            FooterRow("Ajustes", "gearshape", chevron: true, action: env.openWindow).keyboardShortcut(",")
+            FooterRow("Sair", "power", action: env.quit).keyboardShortcut("q")
         }
         .padding(12)
         .frame(width: 320)
@@ -120,7 +165,7 @@ struct QuickSettingsView: View {
 
 // MARK: window (full)
 
-/// The "Ajustes do Neve" window: every option, by tab.
+/// The "Ajustes" window: every option, by tab.
 struct SettingsWindowView: View {
     let env: SettingsEnv
 
