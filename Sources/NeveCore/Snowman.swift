@@ -21,7 +21,7 @@ extension SnowField {
 
     /// Starts a snowman where the pile is deep: runs from `step` while there is none (the cooldown counts snowfall time).
     func stepBuilder(dt: Float) {
-        guard snowmanEnabled, autoFigure == nil else { return }
+        guard snowmanEnabled, !melting, autoFigure == nil else { return }
         if snowmanCooldown > 0 { snowmanCooldown -= dt * config.snowmanSpeed; return }
         guard canSpawnFigure else { return }
         snowmanScan += dt
@@ -34,7 +34,7 @@ extension SnowField {
 
     /// Snowfall time advances the build of a standing auto figure `f` on surface index `si`.
     func advanceBuild(_ f: inout Figure, si: Int, dt: Float) {
-        guard f.built < Snowman.stageCount else { return }
+        guard !melting, f.built < Snowman.stageCount else { return }   // frozen while the idle melt sags it
         f.progress += dt * config.snowmanSpeed / Snowman.seconds[f.built]
         if f.progress >= 1 {
             f.progress = 0; f.built += 1; f.stageAge = 0

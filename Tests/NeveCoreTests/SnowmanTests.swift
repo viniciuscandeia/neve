@@ -191,3 +191,12 @@ private func live(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .dormant
     #expect(f.figures.first?.built == Snowman.stageCount)
     #expect(collapses == 0)
 }
+
+@Test func meltFreezesBuildAndStartsNoNewSnowman() {
+    let f = groundField(Tuning.snowmanDepth + 4)
+    for _ in 0..<2000 where f.figures.first?.built ?? 0 < 1 { f.step(dt: 1 / 20) }
+    let built = f.figures[0].built
+    #expect(built >= 1 && built < Snowman.stageCount)
+    f.beginMelt(duration: 20)
+    for _ in 0..<80 { f.step(dt: 1 / 20); #expect(f.figures.count <= 1 && (f.figures.first?.built ?? 0) <= built) }
+}
