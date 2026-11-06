@@ -130,6 +130,7 @@ extension SnowField {
         var b = Snowball(id: nextBallID, pos: SIMD2(a.body.x + dir * (r.y + r.z + 1), a.body.y + r.y * 0.4), radius: r.z, surfaceID: nil)
         nextBallID += 1
         b.state = .falling
+        b.face = figures[j].facing
         b.vel = SIMD2(dir * 110, 200)
         balls.append(b)
         ballsVersion &+= 1

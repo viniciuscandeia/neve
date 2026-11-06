@@ -22,8 +22,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let gpu: Gpu
     private let window: NSWindow
     private let view = InteractView()
-    private let ballLayers = BallLayers()
-    private let fightLayers = FightLayers()   // thrown snowballs
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0
     private var piles: PileLayers!
@@ -35,7 +33,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let buffers: [MTLBuffer]
     private static let primCapacity = 640   // ~600 prims / screen
     private let primBuffers: [MTLBuffer]
-    private let primsOn = ProcessInfo.processInfo.environment["NEVE_PRIMS"] == "1"   // test: draw balls / snowmen / shots through Rig
+    private var shiftID: Int?, shift = SIMD2<Float>.zero   // dragged window: its figures / balls ride with the drag pile layer
     private var bufferIndex = 0
     private let inFlight = DispatchSemaphore(value: 3)
     private var link: CAMetalDisplayLink?
@@ -44,7 +42,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var occluded = false
     private var lowPower = false
     private var contrast: Float = 0
-    private let snowmanLayers = SnowmanLayers()
     private var reduceMotion = false
     private var prefs: OverlayPrefs
     private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
@@ -108,11 +105,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         piles = PileLayers(in: root, bounds: bounds)
         dragPile = PileLayers(in: root, bounds: bounds)
 
-        root.addSublayer(snowmanLayers.root)   // above the piles, under the flakes
-        root.addSublayer(ballLayers.root)
-        root.addSublayer(fightLayers.root)
-        if primsOn { snowmanLayers.root.isHidden = true; ballLayers.root.isHidden = true; fightLayers.root.isHidden = true }
-
         let scale = screen.backingScaleFactor
         metalLayer.device = gpu.device
         metalLayer.pixelFormat = .bgra8Unorm
@@ -161,8 +153,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         reduceMotion = motion
         still = prefs.still && motion
         contrast = hc ? 1 : 0
-        snowmanLayers.setContrast(hc)
-        ballLayers.setContrast(hc)
         piles.setContrast(hc)
         dragPile.setContrast(hc)
     }
@@ -174,6 +164,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.update(windows: windows, dt: Float(min(max(now - lastChange, 1.0 / 240), 0.5)))
         if windows != lastWindows { lastWindows = windows; lastChange = now }
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
+        shift = .zero; shiftID = nil
         forcePath = true                    // re-place the piles at once, dropping any drag offset
     }
     func clear() { field.clear() }
@@ -335,14 +326,10 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             CATransaction.setDisableActions(true)
             dragPile.setTransform(t)
             CATransaction.commit()
+            shiftID = drag
+            shift = SIMD2(Float(t.tx), Float(t.ty))
         }
-        Perf.add(.pile, t0); t0 = Perf.now()
-        if !primsOn {
-            snowmanLayers.update(field, reduceMotion: reduceMotion)
-            ballLayers.update(field, reduceMotion: reduceMotion)
-            fightLayers.update(field)
-        }
-        Perf.add(.actors, t0)
+        Perf.add(.pile, t0)
         render(drawable)
         Perf.frame(field)   // after the drag transform: a skipped Metal frame never starves the pile
     }
@@ -365,14 +352,17 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.drop(id, throwing: throwing)
     }
 
-    /// NEVE_PRIMS test path: the current sim state through `Rig` (read-only public APIs; P2-C replaces this with `writePrims`).
+    /// Balls, figures and shots through `Rig`; the ones standing on the dragged window are shifted by the drag.
     private func writePrims(_ w: inout PrimWriter) {
         let hc = contrast > 0
+        func d(_ sid: Int?) -> SIMD2<Float> { sid != nil && sid == shiftID ? shift : .zero }
         for b in field.balls {
-            Rig.ball(center: b.pos, radius: b.radius, rotation: b.rotation, fade: b.fade, squash: 0, contrast: hc, face: false, into: &w)
+            Rig.ball(center: b.pos + d(b.surfaceID), radius: b.radius, rotation: b.rotation, fade: b.fade, squash: 0, contrast: hc,
+                     face: b.face != 0, facing: b.face == 0 ? 1 : b.face, into: &w)
         }
         for f in field.figures where f.phase != .hidden {
             var look = field.look(of: f)
+            look.foot += d(f.surfaceID)
             if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }
             Rig.snowman(look, contrast: hc, into: &w)
         }
@@ -394,7 +384,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         Perf.setInstances(count)
         let pbuf = primBuffers[(bufferIndex + 2) % 3]   // bufferIndex already advanced: the same ring slot as `buffer`
         var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: Overlay.primCapacity)
-        if primsOn { writePrims(&w) }
+        t0 = Perf.now()
+        writePrims(&w)
+        Perf.add(.actors, t0); t0 = Perf.now()
         pass.colorAttachments[0].texture = drawable.texture
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size

@@ -12,6 +12,7 @@ public struct Snowball: Equatable {
     public internal(set) var state = State.held
     public internal(set) var surfaceID: Int?            // surface it rests on (a stacked ball inherits its parent's)
     public internal(set) var parent: Int?               // ball it sits on
+    public internal(set) var face: Float = 0            // a loose head: ±1 = draws its face (facing), 0 = plain ball
     public internal(set) var fade: Float = 1            // 1 -> 0 while melting away
     var vel: SIMD2<Float> = .zero
     var melting = false

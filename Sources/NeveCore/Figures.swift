@@ -37,7 +37,7 @@ public struct Figure {
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
     var active: Bool { phase != .hidden && phase != .collapsing && phase != .building && !headless && stageAge >= 0.3 }
-    var surfaceID: Int? { if case .surface(let id, _) = at { return id }; return nil }
+    public var surfaceID: Int? { if case .surface(let id, _) = at { return id }; return nil }
 
     init(id: Int, kind: FigureKind, foot: SIMD2<Float>, radii: SIMD3<Float>, fromBalls: Bool) {
         self.id = id; self.kind = kind; self.foot = foot; self.radii = radii; self.fromBalls = fromBalls
@@ -63,12 +63,6 @@ extension SnowField {
         let t = min(f.stageAge / 0.3, 1)
         return SnowmanLook(foot: SIMD2(f.foot.x, f.foot.y - (1 - SnowField.sink) * f.radii.x), radii: f.radii, facing: f.facing, pose: f.pose,
                            built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop)
-    }
-
-    /// Centres of the three stacked balls (hop and lean applied), for renderers that draw balls themselves.
-    public func ballCenters(of f: Figure) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>) {
-        let a = anchors(of: f)
-        return (a.base, a.body, a.head)
     }
 
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
