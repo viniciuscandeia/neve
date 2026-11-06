@@ -79,7 +79,7 @@ private func flatten(_ f: SnowField) -> [CGPoint] {
     #expect(flatten(f).filter { $0.x > 330 && $0.x < 670 } == a)   // no frame-to-frame shimmer
     let tops = a.filter { $0.y > 500 + 5 && $0.x > 400 && $0.x < 600 }.map(\.y)
     #expect(Set(tops.map { ($0 * 100).rounded() }).count > 5)   // not a smooth band
-    #expect(a.map(\.y).max()! <= 500 + Double(Tuning.maxPileHeight) + 1.5 + 1e-9)
+    #expect(a.map(\.y).max()! <= 500 + Double(Tuning.maxPileHeight) + 1.5 + 0.3 + 1e-9)
     f.update(windows: [win(1, 340, 300, 400, 200)], dt: 1)      // 40 pt = 20 whole columns
     let b = flatten(f).filter { $0.x > 370 && $0.x < 710 }
     #expect(a.count > 100 && a.count == b.count && zip(a, b).allSatisfy { abs($1.x - $0.x - 40) < 1e-9 && abs($1.y - $0.y) < 1e-9 })
@@ -140,7 +140,7 @@ private func maxSway(calm: Bool) -> Float {
 }
 
 // Smooth growth: `shown` rises with tau 0.25 s, snaps down, and writePiles rewrites only when something changed.
-@Test func shownEasesUpAndSnapsDown() {
+@Test func shownEasesUpAndDown() {
     let f = makeField()
     f.update(windows: [win(1, 300, 300, 400, 200)])
     let i = f.surfaces.firstIndex { $0.id == 1 }!
@@ -159,7 +159,9 @@ private func maxSway(calm: Bool) -> Float {
     f.surfaces[i].pile.heights[100] = 0
     f.pilesDirty = true
     _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60)
-    #expect(f.surfaces[i].pile.shown[100] == 0)   // snap down at once
+    #expect(f.surfaces[i].pile.shown[100] > 0 && f.surfaces[i].pile.shown[100] < target)   // eases down, no 1-frame snap
+    for _ in 0..<18 { _ = f.writePiles(to: buf, capacity: 4096, dt: 1 / 60) }
+    #expect(f.surfaces[i].pile.shown[100] == 0)   // within 0.3 s
 }
 
 @Test func pileVersionBumpsOnlyWhenHeightsChange() {

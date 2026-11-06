@@ -33,18 +33,21 @@ extension SnowField {
         switch kind {
         case .background:
             let s = Float.random(in: 1.5...3.5, using: &rng)
-            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
+            return Flake(pos: [x, y], vx: Tuning.wind * 0.6 * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
                          phase: phase, amp: Float.random(in: 5...15, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
-                         size: s, alpha: Float.random(in: 0.25...0.55, using: &rng), kind: .background,
+                         size: s, alpha: max(0.35, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .background,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         default:
             let s = Float.random(in: 2.5...7, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
                          phase: phase, amp: Float.random(in: 8...25, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
-                         size: s, alpha: Float.random(in: 0.7...1, using: &rng), kind: .sky,
+                         size: s, alpha: min(1, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .sky,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         }
     }
+
+    /// Bigger = nearer = more opaque: 0.5 at 1.5pt up to 1 at 7pt.
+    func depthAlpha(_ s: Float) -> Float { 0.5 + 0.5 * (s - 1.5) / 5.5 }
 
     /// 0..<1 position of slot `i` among the active ones of its pool (the order they wake in during the intro).
     func introRank(_ i: Int) -> Float { i < skyCount ? Float(i) / Float(skyLimit) : Float(i - skyCount) / Float(bgLimit) }
@@ -71,7 +74,7 @@ extension SnowField {
             if outro, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             f.phase += f.freq * dt
             f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
-            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1)
+            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(2 * f.phase))   // vertical flutter, a bit more for big flakes
             if let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
                 if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {

@@ -1,3 +1,4 @@
+import NeveCore
 import Metal
 
 /// Shared Metal objects, built once: one library (runtime-compiled from the shader strings), the flake and the prim pipelines.
@@ -42,7 +43,7 @@ let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
 struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint
-struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; };
+struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
@@ -59,6 +60,7 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.seed = i.seed;
     o.wpos = p;
     o.kind = float(i.kind);
+    o.rot = i.rot;
     return o;
 }
 // White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
@@ -76,16 +78,20 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     if (hide >= 1.0) discard_fragment();
     int kind = int(in.kind + 0.5);
     if (kind > 0) {
-        float3 body = float3(0.84, 0.90, 0.98), shadow = mix(float3(0.25, 0.40, 0.65), float3(0.15, 0.28, 0.50), contrast);
+        float3 body = \(Palette.msl(Palette.snow)), shadow = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
         float2 u = in.uv;
+        // Light stays fixed while the shape turns: shading masks use the un-rotated position (world offset / half-size), clamped to the quad.
+        float rc = cos(in.rot), rs = sin(in.rot);
+        float2 ul = float2(rc * u.x - rs * u.y, rs * u.x + rc * u.y);
+        if (kind == 2) ul.y = clamp((rs * u.x + rc * 0.45 * u.y) / 0.45, -1.0, 1.0);
         float a = 0.0;
         float3 c = float3(1.0);
         if (kind == 1) {   // clump: lumpy disc, shadowed below, whiter on top
             float th = atan2(u.y, u.x) + seed * 6.2832;
             float d = length(u) / (1.0 + 0.12 * cos(3.0 * th + seed * 17.0) + 0.06 * cos(5.0 * th));
-            a = 1.0 - smoothstep(0.82, 1.0, d);
-            c = mix(body, shadow, 0.35 * (1.0 - smoothstep(-0.3, 0.2, u.y)));
-            c = mix(c, float3(1.0), 0.3 * smoothstep(0.3, 0.7, u.y));
+            a = 1.0 - smoothstep(1.0 - max(0.18, 1.5 * fwidth(d)), 1.0, d);
+            c = mix(body, shadow, 0.35 * (1.0 - smoothstep(-0.3, 0.2, ul.y)));
+            c = mix(c, float3(1.0), 0.3 * smoothstep(0.3, 0.7, ul.y));
         } else if (kind == 2) {   // slab: rounded rect (aspect 0.45, corner 0.3), white crest, bluish base, ragged bottom
             float2 hs = float2(in.size * 0.5, in.size * 0.225);
             float2 q = u * hs;
@@ -94,15 +100,16 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
             float r = hs.y * 0.6;
             float2 dd = abs(q) - (hs - r);
             float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0) - r;
-            a = clamp(0.5 - sd, 0.0, 1.0);
-            c = mix(body, shadow, 0.6 * (1.0 - smoothstep(-0.9, -0.7, u.y)));
-            c = mix(c, float3(1.0), smoothstep(0.45, 0.55, u.y));
+            a = clamp(0.5 - sd / max(fwidth(sd), 0.3), 0.0, 1.0);
+            c = mix(body, shadow, 0.6 * (1.0 - smoothstep(-0.9, -0.7, ul.y)));
+            c = mix(c, float3(1.0), smoothstep(0.45, 0.55, ul.y));
         } else if (kind == 3) {   // puff: soft white, no rim
             a = max(1.0 - dot(u, u), 0.0);
         } else {   // glint: 4-point star
             float v = sqrt(abs(u.x)) + sqrt(abs(u.y));
             a = (1.0 - smoothstep(0.5, 1.0, v)) + 0.5 * (1.0 - smoothstep(0.0, 0.5, length(u)));
             a = min(a, 1.0);
+            c = float3(1.0, 0.97, 0.88);
         }
         a *= in.alpha * (1.0 - hide);
         return float4(c * a, a);
@@ -116,8 +123,9 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         d *= 1.0 - big * (wob + 0.04);
     }
     float core = 1.0 - smoothstep(0.1, 0.45, d);
-    float3 rim = mix(float3(0.56, 0.65, 0.80), float3(0.40, 0.50, 0.70), contrast);
-    float a = (1.0 - smoothstep(0.55, 1.0, d)) * in.alpha * (1.0 - hide);
+    float3 rim = mix(\(Palette.msl(Palette.rim)), float3(0.40, 0.50, 0.70), contrast);
+    rim = mix(mix(float3(0.78, 0.85, 0.95), rim, contrast), rim, smoothstep(2.5, 6.0, in.size));   // small flakes: lighter rim (kept as-is under Increase Contrast)
+    float a = (1.0 - smoothstep(1.0 - max(0.45, 1.5 * fwidth(d)), 1.0, d)) * in.alpha * (1.0 - hide);
     return float4(mix(rim, float3(1.0), core) * a, a);
 }
 """

@@ -108,13 +108,15 @@ extension SnowField {
         debris[i].delay += dt
         guard debris[i].delay > 0.25, debris.count < Tuning.maxDebris, Float.random(in: 0..<1, using: &rng) < 1.5 * dt else { return }
         var a = debris[i]
-        a.shape = 1; a.vol /= 2; a.size *= 0.6; a.delay = 0
+        a.vol /= 2; a.size *= 0.6; a.delay = 0
+        if a.size < 6 { a.shape = 1 }   // still a slab (half the volume, 0.6x as wide) until it is small
         var b = a
         let d = a.size * 0.5, kick = Float.random(in: 5...15, using: &rng)
         a.pos.x -= d; a.vx -= kick; a.spin = Float.random(in: -2...2, using: &rng)
         b.pos.x += d; b.vx += kick; b.spin = Float.random(in: -2...2, using: &rng); b.seed = Float.random(in: 0..<1, using: &rng)
         debris[i] = a
         debris.append(b)
+        if !calm { addPuff(x: (a.pos.x + b.pos.x) / 2, y: a.pos.y) }
     }
 
     /// Heavy landing: the carried volume goes into a crater with a raised rim (+-4 columns, rim ~2x the centre) and clumps jump up.

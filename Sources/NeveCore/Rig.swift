@@ -34,10 +34,11 @@ public struct SnowmanLook {
 public enum Rig {
     typealias V = SIMD2<Float>
     typealias C = SIMD4<Float>
-    static let snow = C(0.84, 0.90, 0.98, 1), lift = C(0.88, 0.93, 0.99, 1), crest = C(1, 1, 1, 0.85)
-    static let shadow = C(0.25, 0.4, 0.65, 1), shadowHC = C(0.15, 0.28, 0.5, 1)
+    static func c4(_ c: SIMD3<Float>, _ a: Float = 1) -> C { C(c.x, c.y, c.z, a) }
+    static let snow = c4(Palette.snow), lift = c4(Palette.lift), crest = C(1, 1, 1, Palette.crestAlpha)
+    static let shadow = c4(Palette.shadow), shadowHC = c4(Palette.shadowHC)
     static let carrot = C(0.96, 0.52, 0.12, 1), scarfRed = C(0.82, 0.17, 0.20, 1), twig = C(0.38, 0.25, 0.14, 1), coal = C(0.13, 0.14, 0.16, 1)
-    static let stripe = C(0.98, 0.88, 0.86, 0.9), speckle = C(0.60, 0.70, 0.86, 0.85), shotSnow = C(0.93, 0.96, 1, 1)
+    static let stripe = C(0.98, 0.88, 0.86, 0.9), speckle = C(0.60, 0.70, 0.86, 0.85), shotSnow = c4(Palette.lift)
     /// Rolling speckles: (radius fraction, angle, size fraction).
     static let specks: [SIMD3<Float>] = [SIMD3(0.55, 0.5, 0.095), SIMD3(0.72, 2.4, 0.12), SIMD3(0.3, 4.0, 0.08),
                                          SIMD3(0.8, 5.3, 0.10), SIMD3(0.45, 3.0, 0.07), SIMD3(0.62, 1.5, 0.065)]
@@ -183,6 +184,6 @@ public enum Rig {
     public static func splat(center: SIMD2<Float>, scale: Float, alpha: Float, into w: inout PrimWriter) {
         let r = V(6, 3) * scale
         w.ellipse(center: center, radii: r + V(0.8, 0.8), color: a(shadow, 0.6 * alpha))
-        w.ellipse(center: center, radii: r, color: C(1, 1, 1, alpha))
+        w.ellipse(center: center, radii: r, color: a(lift, alpha))
     }
 }
