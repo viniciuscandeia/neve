@@ -46,6 +46,8 @@ public final class SnowField {
     var time: Float = 0
     var windGain: Float = 8
     var wind: Float = 0
+    public var music = MusicInput.silent   // injected each frame by the app (Music.swift)
+    var musicKick: Float = 0, musicDir: Float = 1, musicEdge = false, musicSway: Float = 1, musicGlint: Float = 1, musicBoost: Float = 1
     public var pilesDirty = false { didSet { if pilesDirty { pileVersion &+= 1 } } }
     /// Bumps whenever pile heights or geometry may have changed; `writePiles` rewrites only then (or while easing).
     public internal(set) var pileVersion = 0
@@ -128,10 +130,10 @@ public final class SnowField {
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
     public func setIntensity(_ v: Intensity, immediate: Bool = false) {
         intensity = v
-        let m = v.multiplier / Intensity.nevasca.multiplier * areaScale
+        let m = v.multiplier / Intensity.nevasca.multiplier * areaScale * musicBoost
         let k: Float = calm ? 0.3 : 1
-        skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1) * k)
-        bgLimit = Int(Float(flakes.count - skyCount) * m * k)
+        skyLimit = min(skyCount, Int(Float(skyCount) * m * (lowPower ? 0.5 : 1) * k))
+        bgLimit = min(flakes.count - skyCount, Int(Float(flakes.count - skyCount) * m * k))
         skyEnd = max(skyEnd, skyLimit); bgEnd = max(bgEnd, bgLimit)
         if immediate {
             for i in flakes.indices where !isActive(i) { flakes[i].kind = .dormant }
@@ -234,7 +236,8 @@ public final class SnowField {
         stepFigures(dt: dt)
         stepSplats(dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
-        wind = calm ? 0 : windGain * windShape()
+        stepMusic(dt: dt)
+        wind = calm ? 0 : windGain * windShape() + musicKick
         stepFlakes(dt: dt)
         stepPeel(dt: dt)
         stepIce(dt: dt)

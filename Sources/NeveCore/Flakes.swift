@@ -73,7 +73,7 @@ extension SnowField {
             f.fade = quiet ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
             if quiet, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             f.phase += f.freq * dt
-            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * cos(f.phase)) * dt
+            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * musicSway * cos(f.phase)) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(2 * f.phase))   // vertical flutter, a bit more for big flakes
             if let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y

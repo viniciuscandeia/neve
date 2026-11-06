@@ -20,6 +20,7 @@ struct SettingsEnv {
     @Published var status = ""
     @Published var axMissing = false
     @Published var metalMissing = false
+    @Published var musicNote = ""
 }
 
 /// Hands a Bool pref's binding (backed by the app's defaults store) to `content`.
@@ -40,6 +41,7 @@ private let figures = [Option(pref: .snowman, title: "Boneco de neve", symbol: "
                        Option(pref: .sleigh, title: "Trenó do Papai Noel", symbol: "gift")]
 private let economyOpt = Option(pref: .economy, title: "Modo econômico", symbol: "leaf")
 private let ambientOpt = Option(pref: .ambient, title: "Modo ambiente", symbol: "sun.max")
+private let musicOpt = Option(pref: .music, title: "Neve dança com a música", symbol: "music.note")
 private let stillOpt = Option(pref: .stillSnow, title: "Neve parada", symbol: "pause.circle")
 private let intensitySymbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
 
@@ -117,6 +119,15 @@ private struct Header: View {
     }
 }
 
+private struct MusicNote: View {
+    @ObservedObject var panel: PanelState
+    let reduceMotion: Bool
+    var body: some View {
+        let t = !MusicTap.supported ? "Neve dança com a música: requer macOS 14.2 ou mais recente." : reduceMotion ? "Indisponível com Reduzir movimento." : panel.musicNote
+        if !t.isEmpty { Text(t).font(.caption).foregroundStyle(.secondary) }
+    }
+}
+
 private struct FooterRow: View {
     let title: String, symbol: String, chevron: Bool, action: () -> Void
     init(_ title: String, _ symbol: String, chevron: Bool = false, action: @escaping () -> Void) {
@@ -140,7 +151,7 @@ struct QuickSettingsView: View {
     }
 
     var body: some View {
-        let tiles = figures + [economyOpt, ambientOpt] + (env.reduceMotion ? [stillOpt] : [])
+        let tiles = figures + [economyOpt, ambientOpt] + (env.reduceMotion ? [stillOpt] : []) + (MusicTap.supported && !env.reduceMotion ? [musicOpt] : [])
         VStack(spacing: 8) {
             Header(panel: env.panel, env: env)
             Divider()
@@ -198,6 +209,11 @@ struct SettingsWindowView: View {
                 case .desempenho:
                     toggle(economyOpt)
                     toggle(ambientOpt)
+                    PrefBinding(.music, env.store) { b in
+                        Toggle(isOn: b) { Label(musicOpt.title, systemImage: musicOpt.symbol) }
+                            .disabled(!MusicTap.supported || env.reduceMotion)
+                    }
+                    MusicNote(panel: env.panel, reduceMotion: env.reduceMotion)
                     if env.reduceMotion { toggle(stillOpt) }
                 case .sistema:
                     PrefBinding(.showInCaptures, env.store) { b in Toggle(isOn: b) { Label("Mostrar em capturas", systemImage: "camera") } }
@@ -209,6 +225,6 @@ struct SettingsWindowView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 460, height: 260)
+        .frame(width: 460, height: 290)
     }
 }
