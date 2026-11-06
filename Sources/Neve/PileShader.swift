@@ -28,7 +28,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float cover = (1.0 - smoothstep(-w, w, dTop)) * smoothstep(-w, w, -dBase);
     // Shadow skirt under the base + faint halo above the top; both fade out where the pile is flat (ends, thin snow).
     float3 shCol = mix(float3(0.25, 0.40, 0.65), float3(0.15, 0.28, 0.50), contrast);
-    float hf = smoothstep(0.0, 2.0, top - base);
+    float hf = smoothstep(1.5, 3.5, top - base);   // no skirt / halo below ~1.5pt of snow (windows draw 1pt under the edge)
     float skirt = mix(0.45, 0.8, contrast) * smoothstep(-1.5, -0.5, dBase) * (1.0 - smoothstep(-0.5, 3.0, dBase));
     float halo = 0.11 * (1.0 - smoothstep(0.0, 2.5, dTop));
     float sa = max(skirt, halo) * hf * step(s.x0, in.p.x) * step(in.p.x, s.x1);   // overlap strips draw coverage only (no doubled shadow)
@@ -37,7 +37,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float depth = in.p.y - base, tall = smoothstep(8.0, 40.0, top - base);
     rgb = mix(rgb, rgb * float3(0.90, 0.94, 1.0), 0.8 * tall * (1.0 - smoothstep(0.0, min(top - base, 40.0), depth)));
     rgb = mix(rgb, float3(1.0), 0.95 * (1.0 - smoothstep(2.4, 3.2, -dTop)));
-    float a = 0.97 * cover;
+    float a = 0.97 * cover * smoothstep(1.05, 3.0, top - base);   // thin-layer fade: a light dusting is faint, never a hard line
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a));
 }
 """

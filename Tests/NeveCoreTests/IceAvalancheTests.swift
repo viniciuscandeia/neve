@@ -86,7 +86,7 @@ private func stackedField(seed: UInt64) -> SnowField {
 
 @Test func avalancheFeedsTheLowerPileAndCascadeDepthIsBounded() {
     var cascaded = 0
-    for seed in 1...12 as ClosedRange<UInt64> {
+    for seed in 1...30 as ClosedRange<UInt64> {
         let f = stackedField(seed: seed)
         let lower = f.pile(id: 2)!.heights.reduce(0, +)
         #expect(f.triggerAvalanche(near: CGPoint(x: 480, y: 550)))
