@@ -38,7 +38,7 @@ extension SnowField {
     private func hasChild(_ i: Int) -> Bool { balls.contains { $0.parent == balls[i].id } }
 
     /// Highest surface top under x whose base is at or below `fromY`: (surface, local column, top y).
-    private func supportTop(x: Float, fromY: Float) -> (Int, Int, Float)? {
+    func supportTop(x: Float, fromY: Float) -> (Int, Int, Float)? {
         let c = column(x)
         var best: (Int, Int, Float)?
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
@@ -71,7 +71,7 @@ extension SnowField {
             let d = q - b.pos
             if d.x * d.x + d.y * d.y <= (b.radius + 4) * (b.radius + 4) { return true }
         }
-        return overFigure(q) || pileUnder(q) != nil
+        return overFigure(q) || giftUnder(q) != nil || pileUnder(q) != nil
     }
 
     private func pileUnder(_ q: SIMD2<Float>) -> (Int, Int)? {
