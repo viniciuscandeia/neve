@@ -15,6 +15,7 @@ public final class SnowField {
     var glintT: Float = 0
     var icicles: [Icicle] = []   // Icicles.swift: decoration of window ends; iceT = seconds since the last spawn scan
     var iceT: Float = 0
+    var iceWin: [WinIce] = []   // Frost.swift: per-window freeze progress
     var chain = AvaChain()       // Avalanche.swift
     var fxRng: SplitMix64        // icicles / avalanches: kept apart from `rng` so they never perturb the other sequences
     var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
@@ -106,7 +107,7 @@ public final class SnowField {
         let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
-        icicles.reserveCapacity(Tuning.maxIciclesPerScreen)
+        icicles.reserveCapacity(Tuning.maxIciclesPerScreen + Tuning.maxStalactitesPerScreen); iceWin.reserveCapacity(16)
         glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); runBins.reserveCapacity(8)
         figures.reserveCapacity(Tuning.maxFigures + EventDirector.maxAmbient); carrots.reserveCapacity(4); fights.reserveCapacity(4); shots.reserveCapacity(6); splats.reserveCapacity(Tuning.maxSplats + 1)
         flakes.reserveCapacity(pool)

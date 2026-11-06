@@ -16,7 +16,7 @@ private func iceField(seed: UInt64 = 1) -> SnowField {
     #expect(!f.icicles.isEmpty)
     for c in f.icicles { #expect(c.len >= min(c.maxLen, 10) - 0.5) }
     #expect(f.icicles.contains { $0.len >= 10 })
-    for c in f.icicles { #expect(c.len <= c.maxLen && c.maxLen >= 6 && c.maxLen <= 18) }
+    for c in f.icicles where !c.bottom { #expect(c.len <= c.maxLen && c.maxLen >= 6 && c.maxLen <= 18) }
 }
 
 @Test func noIciclesWhereThePileIsLowAndCapsHold() {

@@ -9,6 +9,7 @@ struct Surface {
     let anchor: Int      // window's left edge in whole columns (absolute): pile moves are differences of these, so rounding never accumulates
     var pile: Pile
     var vel: SIMD2<Float> = .zero   // window velocity (pt/s) at the last poll that moved it
+    var radius: Float = 0           // window corner radius (clamped to the frame), for ice hung along the silhouette
     var runs: [Range<Int>] = []     // visible stretches of the pile (local bins), set when the surfaces are built
 }
 

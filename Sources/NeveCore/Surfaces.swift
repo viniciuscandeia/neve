@@ -214,7 +214,7 @@ extension SnowField {
                 }
             }
         }
-        return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel)
+        return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel, radius: Float(min(radius, frame.width / 2, frame.height / 2)))
     }
 
     /// Drift excess whose delay ran out turns into debris (wall first, so the ramp unzips); volume is conserved.
