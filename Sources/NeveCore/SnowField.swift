@@ -30,7 +30,11 @@ public final class SnowField {
     var time: Float = 0
     var windGain: Float = 8
     var wind: Float = 0
-    public var pilesDirty = false
+    public var pilesDirty = false { didSet { if pilesDirty { pileVersion &+= 1 } } }
+    /// Bumps whenever pile heights or geometry may have changed; `writePiles` rewrites only then (or while easing).
+    public internal(set) var pileVersion = 0
+    var pileWritten = -1, pileEasing = false
+    var pileEnds: [PileEnd] = []
     /// Everyone standing on a surface (at most `Tuning.maxFigures`): the auto snowman, snowmen made of user balls; see Figures.swift.
     /// `figuresVersion` changes whenever one moves, poses, appears or leaves.
     public internal(set) var figures: [Figure] = []

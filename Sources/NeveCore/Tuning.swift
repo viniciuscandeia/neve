@@ -7,6 +7,7 @@ public enum Tuning {
     public static let flakes = 400                 // per 1440x900 screen (scaled by area)
     static let backgroundFraction: Float = 0.35
     static let maxPileHeight: Float = 18
+    static let pileEase: Float = 0.25               // time constant of the drawn pile height rising toward the real one
     static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
     static let groundID = -1
     static let bankSlope: Float = 0.35      // repose slope (pt per pt) of the ground snowbank rising toward a bottom Dock bar

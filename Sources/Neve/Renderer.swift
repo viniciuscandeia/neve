@@ -6,17 +6,20 @@ struct Gpu {
     let queue: MTLCommandQueue
     let flakes: MTLRenderPipelineState
     let prims: MTLRenderPipelineState
+    let piles: MTLRenderPipelineState
 
     init?() {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue(),
-              let library = try? device.makeLibrary(source: flakeShaderSource + primShaderSource, options: nil),
+              let library = try? device.makeLibrary(source: flakeShaderSource + primShaderSource + pileShaderSource, options: nil),
               let flakes = Gpu.pipeline(device, library, "flakeVertex", "flakeFragment"),
-              let prims = Gpu.pipeline(device, library, "primVertex", "primFragment") else { return nil }
+              let prims = Gpu.pipeline(device, library, "primVertex", "primFragment"),
+              let piles = Gpu.pipeline(device, library, "pileVertex", "pileFragment") else { return nil }
         self.device = device
         self.queue = queue
         self.flakes = flakes
         self.prims = prims
+        self.piles = piles
     }
 
     /// Premultiplied-alpha blending into a bgra8 drawable.
