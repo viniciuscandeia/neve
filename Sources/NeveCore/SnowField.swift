@@ -51,6 +51,7 @@ public final class SnowField {
     var nextFigureID = 1
     public internal(set) var fights: [Fight] = []     // snowball fights; see Fights.swift
     public internal(set) var shots: [Shot] = []
+    public internal(set) var splats: [Splat] = []    // <= Tuning.maxSplats, pool
     public var walkEnabled = true      // figures walk and fight (Walk.swift)
     var gustOverride: Float?           // tests
     public var snowmanEnabled = true { didSet { if !snowmanEnabled { dropAutoFigure() } } }
@@ -88,7 +89,7 @@ public final class SnowField {
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
         glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); runBins.reserveCapacity(8)
-        figures.reserveCapacity(Tuning.maxFigures); fights.reserveCapacity(4); shots.reserveCapacity(6)
+        figures.reserveCapacity(Tuning.maxFigures); fights.reserveCapacity(4); shots.reserveCapacity(6); splats.reserveCapacity(Tuning.maxSplats + 1)
         flakes.reserveCapacity(pool)
         for i in 0..<pool { flakes.append(spawn(i < skyCount ? .sky : .background, anywhere: true)) }
         skyEnd = skyCount; bgEnd = pool - skyCount
@@ -160,7 +161,7 @@ public final class SnowField {
     }
 
     public func clear() {
-        figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true)
+        figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         figuresVersion &+= 1
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
         for i in surfaces.indices { surfaces[i].pile.empty() }
@@ -191,6 +192,7 @@ public final class SnowField {
         if introDur > 0 { introT += dt }
         stepBalls(dt: dt)
         stepFigures(dt: dt)
+        stepSplats(dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
         stepFlakes(dt: dt)

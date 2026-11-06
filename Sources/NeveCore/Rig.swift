@@ -21,10 +21,11 @@ public struct SnowmanLook {
     public var collapsing = false            // the three balls are debris: only accessories (fading) remain
     public var headless = false              // head ball, face and scarf absent
     public var droop: Float = 0              // 0...1 arms hang down (the loser)
+    public var headTilt: Float = 0           // radians the head (face, nose, scarf) is turned
     public init(foot: SIMD2<Float>, radii: SIMD3<Float>, facing: Float = 1, pose: Pose = Pose(), built: Int = 7, newest: Float = 1,
-                fade: Float = 1, collapsing: Bool = false, headless: Bool = false, droop: Float = 0) {
+                fade: Float = 1, collapsing: Bool = false, headless: Bool = false, droop: Float = 0, headTilt: Float = 0) {
         self.foot = foot; self.radii = radii; self.facing = facing; self.pose = pose; self.built = built; self.newest = newest
-        self.fade = fade; self.collapsing = collapsing; self.headless = headless; self.droop = droop
+        self.fade = fade; self.collapsing = collapsing; self.headless = headless; self.droop = droop; self.headTilt = headTilt
     }
 }
 
@@ -130,11 +131,12 @@ public enum Rig {
             let e = l.newest
             return (fade * e, (i < 3 ? 0.3 : 0.85) + (i < 3 ? 0.7 : 0.15) * e)
         }
-        func fr(_ c: V, _ r: Float, _ m: Float, _ g: Float) -> Fr { Fr(o: c, s: r * g, m: m, foot: foot, sx: sx, sy: sy) }
+        func fr(_ c: V, _ r: Float, _ m: Float, _ g: Float, tilt: Float = 0) -> Fr { Fr(o: c, s: r * g, m: m, c: cos(tilt), sn: sin(tilt), foot: foot, sx: sx, sy: sy) }
         if let (al, g) = st(5) {   // arms first: they come out from behind the middle ball
             let f = fr(cm, rm, 1, g)
-            arm(f, side: -1, ang: l.pose.flutter.arm(side: -1) + l.droop * 1.5, al, &w)
-            arm(f, side: 1, ang: l.pose.flutter.arm(side: 1) - l.droop * 1.5, al, &w)
+            let dr = l.droop * l.droop * (3 - 2 * l.droop) * 1.1   // eased; ~1.1 rad: arms down and out
+            arm(f, side: -1, ang: l.pose.flutter.arm(side: -1) + dr, al, &w)
+            arm(f, side: 1, ang: l.pose.flutter.arm(side: 1) - dr, al, &w)
         }
         for i in 0..<3 {
             guard let (al, g) = st(i) else { continue }
@@ -145,10 +147,10 @@ public enum Rig {
         if let (al, g) = st(3) {
             let m = fr(cm, rm, 1, g)
             for k in 0..<3 { w.ellipse(center: m.p(0, 0.44 - 0.425 * Float(k)), radii: m.r(0.112), color: a(coal, al)) }
-            if !l.headless { eyes(fr(ch, rh, l.facing, g), al, &w) }
+            if !l.headless { eyes(fr(ch, rh, l.facing, g, tilt: l.headTilt), al, &w) }
         }
-        if let (al, g) = st(4) { nose(fr(ch, rh, l.facing, g), al, &w) }
-        if let (al, g) = st(6) { scarf(fr(ch, rh, l.facing, g), flutter: l.pose.flutter, al, &w) }
+        if let (al, g) = st(4) { nose(fr(ch, rh, l.facing, g, tilt: l.headTilt), al, &w) }
+        if let (al, g) = st(6) { scarf(fr(ch, rh, l.facing, g, tilt: l.headTilt), flutter: l.pose.flutter, al, &w) }
     }
 
     /// A loose ball. `face` draws eyes, smile, carrot and scarf rotated with it (a flying head); `facing` mirrors them.
@@ -162,9 +164,24 @@ public enum Rig {
         eyes(f, fade, &w); nose(f, fade, &w); scarf(f, flutter: Flutter(), fade, &w)
     }
 
-    /// A snowball in the air.
-    public static func shot(pos: SIMD2<Float>, radius: Float, alpha: Float, into w: inout PrimWriter) {
-        w.ellipse(center: pos + V(0, -0.28 * radius), radii: V(radius, radius), color: a(shadow, 0.5 * alpha), soft: 0.42 * radius)
-        w.ellipse(center: pos, radii: V(radius, radius), color: a(shotSnow, alpha))
+    /// A snowball in the air; on impact `squash` 1 flattens it to 1.5 x 0.6, thin along `normal`.
+    public static func shot(pos: SIMD2<Float>, radius: Float, alpha: Float, squash: Float = 0, normal: SIMD2<Float> = SIMD2(0, 1), into w: inout PrimWriter) {
+        let r = V(radius * (1 + 0.5 * squash), radius * (1 - 0.4 * squash)), rot = squash > 0 ? atan2(normal.y, normal.x) - .pi / 2 : 0
+        w.ellipse(center: pos + V(0, -0.28 * radius), radii: r, rotation: rot, color: a(shadow, 0.5 * alpha), soft: 0.42 * radius)
+        w.ellipse(center: pos, radii: r, rotation: rot, color: a(shotSnow, alpha))
+    }
+
+    /// Ghost `k` (1...4) of the trail behind a ball in flight.
+    public static func shotGhost(pos: SIMD2<Float>, k: Int, into w: inout PrimWriter) {
+        let al: [Float] = [0.35, 0.22, 0.14, 0.08]
+        let r = 3.6 * (1 - 0.15 * Float(k))
+        w.ellipse(center: pos, radii: V(r, r), color: a(shotSnow, al[k - 1]))
+    }
+
+    /// A flattened splat of snow: white 12 x 6 ellipse (x scale) with a 0.8 pt shadow rim at 0.6 alpha.
+    public static func splat(center: SIMD2<Float>, scale: Float, alpha: Float, into w: inout PrimWriter) {
+        let r = V(6, 3) * scale
+        w.ellipse(center: center, radii: r + V(0.8, 0.8), color: a(shadow, 0.6 * alpha))
+        w.ellipse(center: center, radii: r, color: C(1, 1, 1, alpha))
     }
 }

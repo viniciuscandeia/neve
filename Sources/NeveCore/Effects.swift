@@ -57,7 +57,7 @@ extension SnowField {
         return n
     }
 
-    private func put(_ f: Flake) -> Bool {
+    func put(_ f: Flake) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
         debris.append(f)
         return true

@@ -119,6 +119,32 @@ public struct Pile {
         return changed
     }
 
+    /// Carves a groove centred at global x `centerX`: depth * (1 - (d/halfWidth)^2) off each visible bin within halfWidth (never below 0),
+    /// and `berm` (a share, 0.15) of the carved area piled onto the bins at halfWidth ... halfWidth + 2 on both sides (capped by `limit`).
+    /// Returns the carved area (pt^2).
+    @discardableResult
+    mutating func carve(centerX: Float, halfWidth w: Float, depth: Float, berm: Float) -> Float {
+        guard w > 0, depth > 0 else { return 0 }
+        let bw = Tuning.binWidth
+        let lo = max(0, Int(((centerX - w - 2) / bw).rounded(.down)) - c0), hi = min(heights.count - 1, Int(((centerX + w + 2) / bw).rounded(.up)) - c0)
+        guard lo <= hi else { return 0 }
+        var removed: Float = 0, edges = 0
+        for i in lo...hi where visible[i] {
+            let d = abs(binCenter(c0 + i) - centerX)
+            if d < w {
+                let dh = min(depth * (1 - (d / w) * (d / w)), heights[i])
+                heights[i] -= dh; removed += dh * bw
+            } else if d <= w + 2 + 0.01 { edges += 1 }
+        }
+        guard removed > 0, edges > 0 else { return removed }
+        let add = berm * removed / (Float(edges) * bw)
+        for i in lo...hi where visible[i] {
+            let d = abs(binCenter(c0 + i) - centerX)
+            if d >= w, d <= w + 2 + 0.01 { heights[i] = min(heights[i] + add, max(limit(i), heights[i])) }
+        }
+        return removed
+    }
+
     /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.
     private func continuesPastScreen(left: Bool) -> Bool {
         left ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth

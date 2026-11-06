@@ -451,7 +451,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }
             Rig.snowman(look, contrast: hc, into: &w)
         }
-        for s in field.shots { Rig.shot(pos: s.pos, radius: 3.6, alpha: 1, into: &w) }
+        field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
     }
 
     private func render(_ drawable: CAMetalDrawable) {

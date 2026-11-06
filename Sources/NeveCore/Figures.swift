@@ -12,6 +12,7 @@ struct Motion {
     var windLean: Float = 0, flutter: Float = 0, phase: Float = 0, gait: Float = 0
     var idle: Float = 0, nextIdle: Float = 6, rest: Float = 0
     var wobble: Float = 0, cheer: Float = 0     // seconds of hit wobble / celebration left
+    var squash: Float = 0, headHit: Float = 0   // seconds of hit squash (0.12) / head jitter (0.7) left
 }
 
 /// One actor on a surface. Data-oriented: one struct, `kind` picks the behaviour in a `switch`.
@@ -32,6 +33,7 @@ public struct Figure {
     public let fromBalls: Bool                                  // false: the auto snowman
     public internal(set) var fight: (foe: Int, hits: Int)?
     public internal(set) var headless = false                   // lost its head: stands there, arms drooped
+    public internal(set) var headTilt: Float = 0                // radians the head is turned (a re-stacked flying head straightens out)
     public internal(set) var droop: Float = 0                   // 0...1 arms hanging (eases to 1 once headless)
     var motion = Motion()
     var scale: Float { radii.x / 11.5 }
@@ -62,7 +64,7 @@ extension SnowField {
     public func look(of f: Figure) -> SnowmanLook {
         let t = min(f.stageAge / 0.3, 1)
         return SnowmanLook(foot: SIMD2(f.foot.x, f.foot.y - (1 - SnowField.sink) * f.radii.x), radii: f.radii, facing: f.facing, pose: f.pose,
-                           built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop)
+                           built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop, headTilt: f.headTilt)
     }
 
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
@@ -207,7 +209,8 @@ extension SnowField {
     }
 
     /// A loose head ball lands on a headless figure: it gets its head back (ease-in again, arms rise).
-    func reattach(_ j: Int, radius: Float) {
+    func reattach(_ j: Int, radius: Float, tilt: Float = 0) {
+        figures[j].headTilt = tilt - 2 * .pi * (tilt / (2 * .pi)).rounded()   // as it lay: eases to upright in 0.25 s
         figures[j].headless = false
         figures[j].radii.z = radius
         figures[j].stageAge = 0
@@ -229,7 +232,7 @@ extension SnowField {
             guard stepFigure(i, dt, animate: animate) else { continue }
             let f = figures[i]
             if f.foot != before.foot || f.pose != before.pose || f.facing != before.facing || f.phase != before.phase || f.built != before.built
-                || f.headless != before.headless || f.droop != before.droop || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
+                || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
             i += 1
         }
         if animate {
@@ -259,7 +262,9 @@ extension SnowField {
             f.foot.y = s.edgeY + s.pile.base[c] + avg
         }
         f.stageAge += dt
-        f.droop += ((f.headless ? 1 : 0) - f.droop) * min(1, dt * 8)
+        let dd = (f.headless ? 1 : 0) - f.droop
+        f.droop += dd > 0 ? min(dd, dt / 0.6) : max(dd, -dt / 0.3)   // arms fall over 0.6 s, rise over 0.3 s
+        if f.headTilt != 0 { f.headTilt *= exp(-16 * dt); if abs(f.headTilt) < 0.03 { f.headTilt = 0 } }
         if !f.fromBalls { advanceBuild(&f, si: si, dt: dt) }
         var moving = false
         if animate, visible, f.built == Snowman.stageCount, f.stageAge >= 0.3, !f.headless {
