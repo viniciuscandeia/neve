@@ -32,6 +32,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let nevarItem = NSMenuItem(title: "Nevar", action: #selector(toggleEnabled), keyEquivalent: "n")
     private let intensityControl = NSSegmentedControl()
     private var popover: NSPopover?
+    private var settingsWindow: NSWindow?
+    private var intensitySnapshot = Intensity.media
     private var prefSnapshot: [Pref: Bool] = [:]
     private var loginOn: Bool { SMAppService.mainApp.status == .enabled }
 
@@ -92,6 +94,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
         prefSnapshot = prefValues()
+        intensitySnapshot = Intensity.saved(ud)
         nc.addObserver(self, selector: #selector(syncPrefs), name: UserDefaults.didChangeNotification, object: ud)
         nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         nc.addObserver(self, selector: #selector(powerChanged), name: .NSProcessInfoPowerStateDidChange, object: nil)
@@ -181,6 +184,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let changed = changedPrefs(old: prefSnapshot, new: new)
         prefSnapshot = new
         changed.forEach(prefChanged)
+        let level = Intensity.saved(ud)   // not a Pref: set by the menu row, the popover tiles
+        if level != intensitySnapshot { intensitySnapshot = level; applyPrefs(); updateStatus() }
     }
 
     /// The single reaction path for a pref that just changed.
@@ -206,24 +211,49 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncPrefs()
     }
 
-    @objc private func showSettings() {
-        guard let button = statusItem?.button else { return }
-        statusItem?.menu?.cancelTracking()
+    private func settingsEnv() -> SettingsEnv {
         var rows: [(title: String, id: String)] = []
         if NSScreen.screens.count > 1 { rows = NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
         let cur = (["all", "main"] + rows.map(\.id)).contains(target) ? target : "all"
-        let view = SettingsView(store: ud, screens: rows, reduceMotion: reduceMotion, isDev: neveInstance != nil,
-                                target: Binding(get: { cur }, set: { [weak self] in self?.setTarget($0) }),
-                                login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }))
+        return SettingsEnv(store: ud, screens: rows, reduceMotion: reduceMotion, isDev: neveInstance != nil,
+                           target: Binding(get: { cur }, set: { [weak self] in self?.setTarget($0) }),
+                           login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
+                           openWindow: { [weak self] in self?.showSettingsWindow() })
+    }
+
+    /// ⌘, : the quick popover; ⌥-click on the item opens the full window.
+    @objc private func showSettings() {
+        if NSEvent.modifierFlags.contains(.option) { return showSettingsWindow() }
+        guard let button = statusItem?.button else { return }
+        statusItem?.menu?.cancelTracking()
+        let host = NSHostingController(rootView: QuickSettingsView(env: settingsEnv()))
+        host.sizingOptions = .preferredContentSize
         let pop = popover ?? NSPopover()
         pop.behavior = .transient
-        pop.contentViewController = NSHostingController(rootView: view)
-        pop.contentSize = NSSize(width: 320, height: reduceMotion ? 790 : 730)
+        pop.contentViewController = host
         popover = pop
         // after the menu has closed
         DispatchQueue.main.async {
             pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate()
+        }
+    }
+
+    /// The single "Ajustes do Neve" window (rebuilt on each open so the screen list is fresh).
+    private func showSettingsWindow() {
+        popover?.performClose(nil)
+        if settingsWindow == nil {
+            let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            w.title = "Ajustes do Neve"
+            w.isReleasedWhenClosed = false
+            w.center()
+            settingsWindow = w
+        }
+        settingsWindow?.contentViewController = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
+        // after the popover / menu has finished closing, or the activation is lost
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate()
+            self?.settingsWindow?.makeKeyAndOrderFront(nil)
         }
     }
 
