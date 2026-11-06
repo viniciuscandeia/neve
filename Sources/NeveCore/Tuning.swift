@@ -12,6 +12,12 @@ public enum Tuning {
     static let groundID = -1
     static let bankSlope: Float = 0.35      // repose slope (pt per pt) of the ground snowbank rising toward a bottom Dock bar
     static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
+    static let maxDrift: Float = 24         // snow banked against a front window reaches its top up to this step (and no higher)
+    static let driftFar: Float = 120        // step beyond which the drift is only a small ramp
+    static let driftFarRamp: Float = 4
+    static let driftSlope: Float = 0.3      // pt per pt of the drift profile (below the 0.35 repose)
+    static let driftMinWidth: Float = 30
+    static let peelSpeed: Float = 180       // pt/s: a collapsing drift lets go from the wall outward
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)

@@ -88,6 +88,8 @@ public final class SnowField {
         setIntensity(.media, immediate: true)
         updateSurfaces(windows: [])
     }
+    var seams: [SeamLink] = []    // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
+    var peeledVolume: Float = 0   // drift snow let go so far (tests)
     var moved: Int?   // scratch for updateSurfaces/buildSurface
 
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
@@ -185,6 +187,7 @@ public final class SnowField {
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         wind = calm ? 0 : windGain * windShape()
         stepFlakes(dt: dt)
+        stepPeel(dt: dt)
         stepDebris(dt: dt)
     }
 }

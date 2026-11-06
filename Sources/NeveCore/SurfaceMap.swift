@@ -68,3 +68,33 @@ extension SnowField {
         }
     }
 }
+
+/// Two window piles that read as one snowbank: `left`'s right end meets `right`'s left end (surface ids).
+/// `*Supported`: that end holds snow against the other side (no dip, taper or spill).
+struct SeamLink {
+    let left: Int, right: Int
+    var leftSupported = false, rightSupported = false
+}
+
+extension SnowField {
+    /// Overlap: a front window hiding the back one with its top 1...maxDrift above joins at its side edge(s) (the back snow drifts up
+    /// to the front top). Side by side: gap <= 6 and tops within 4 join both ends. Rects are front to back.
+    func computeSeams(rects: [CGRect], windows: [WindowInfo]) -> [SeamLink] {
+        var out: [SeamLink] = []
+        for i in rects.indices where windows[i].number != 0 {
+            for k in (i + 1)..<max(rects.count, i + 1) where windows[k].number != 0 {
+                let f = rects[i], b = rects[k], step = f.maxY - b.maxY
+                if step > 1, step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
+                    if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: windows[k].number, right: windows[i].number, rightSupported: true)) }
+                    if f.maxX < b.maxX - 2, f.maxX > b.minX + 2 { out.append(SeamLink(left: windows[i].number, right: windows[k].number, leftSupported: true)) }
+                } else if abs(step) <= 4 {
+                    let l = f.minX < b.minX ? f : b, r = f.minX < b.minX ? b : f
+                    if r.minX - l.maxX >= 0, r.minX - l.maxX <= 6 {
+                        out.append(SeamLink(left: windows[f.minX < b.minX ? i : k].number, right: windows[f.minX < b.minX ? k : i].number, leftSupported: true, rightSupported: true))
+                    }
+                }
+            }
+        }
+        return out
+    }
+}

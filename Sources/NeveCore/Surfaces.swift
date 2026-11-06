@@ -57,6 +57,7 @@ extension SnowField {
         rects.reserveCapacity(windows.count)
         for w in windows { rects.append(w.frame.offsetBy(dx: -ox, dy: -oy)) }
 
+        seams = computeSeams(rects: rects, windows: windows)
         let before = surfaces
         var old = before
         var built: [Surface] = []
@@ -136,20 +137,26 @@ extension SnowField {
         guard c1 > c0 else { return nil }
         let anchor = Int((Float(frame.minX) / bw).rounded())
         var pile = Pile(columns: c1 - c0, inset: Tuning.cornerInset, c0: c0, x0: Float(frame.minX), x1: Float(frame.maxX))
+        for l in seams {   // an end facing a drift (or a neighbour window at the same height) is a wall: no dip, taper or spill
+            if l.right == id, l.rightSupported { pile.supportL = true }
+            if l.left == id, l.leftSupported { pile.supportR = true }
+        }
         pile.round(radius: Float(min(radius, frame.width / 2, frame.height / 2)), c0: c0, minX: Float(frame.minX), maxX: Float(frame.maxX))
         let y = CGFloat(edgeY) + 1
+        var hideTop = [Float](repeating: 0, count: c1 - c0)   // top of the window hiding each hidden bin
         for b in 0..<(c1 - c0) {
             let x = CGFloat(binCenter(c0 + b))
             var hidden = false
             var ceiling = Float.infinity   // lowest underside of a front window above the edge in this column
             for j in 0..<front {
                 let r = rects[j]
-                if r.contains(CGPoint(x: x, y: y)) { hidden = true; break }
+                if r.contains(CGPoint(x: x, y: y)) { hidden = true; hideTop[b] = Float(r.maxY); break }
                 if r.minY > y, x >= r.minX, x < r.maxX { ceiling = min(ceiling, Float(r.minY)) }
             }
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
         }
+        pile.addWalls(hideTop: hideTop, edgeY: edgeY)
         var vel = SIMD2<Float>.zero
         if let k = old.firstIndex(where: { $0.id == id }) {
             let prev = old.swapRemove(k)
@@ -173,10 +180,18 @@ extension SnowField {
                 var kept = prev.pile
                 kept.visible = pile.visible
                 kept.cap = pile.cap
+                kept.base = pile.base; kept.boost = pile.boost; kept.walls = pile.walls
+                kept.supportL = pile.supportL; kept.supportR = pile.supportR
                 for b in kept.heights.indices where pile.visible[b] {   // hidden bins stay frozen; uncovered ones shed what no longer fits
                     let h = kept.heights[b], keep = min(h, kept.cap[b])
                     kept.heights[b] = keep
                     if !prev.pile.visible[b] { spawned += shedBin(col: c0 + b, edgeY: edgeY + kept.base[b], from: keep, amount: h - keep, velocity: .zero) }
+                    else if keep > kept.limit(b) + 0.05, kept.peel.isEmpty || kept.peel[b] < 0 {   // a drift lost its wall: it lets go from where the wall was, outward
+                        if kept.peel.isEmpty { kept.peel = [Float](repeating: -1, count: kept.heights.count) }
+                        var d: Float = 0
+                        if !prev.pile.walls.isEmpty { d = .infinity; for w in prev.pile.walls { d = min(d, abs(binCenter(c0 + b) - w)) } }
+                        kept.peel[b] = d / Tuning.peelSpeed
+                    }
                 }
                 pile = kept
             } else if sameSize {   // moved: the pile travels with the window; a speed-dependent share falls off
@@ -196,6 +211,27 @@ extension SnowField {
             }
         }
         return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel)
+    }
+
+    /// Drift excess whose delay ran out turns into debris (wall first, so the ramp unzips); volume is conserved.
+    func stepPeel(dt: Float) {
+        for si in surfaces.indices where surfaces[si].pile.peeling {
+            let c0 = surfaces[si].c0, edgeY = surfaces[si].edgeY
+            var pending = false
+            for b in surfaces[si].pile.heights.indices {
+                let t = surfaces[si].pile.peel[b]
+                guard t >= 0 else { continue }
+                let over = surfaces[si].pile.heights[b] - surfaces[si].pile.limit(b)
+                guard over > 0.05, surfaces[si].pile.visible[b] else { surfaces[si].pile.peel[b] = -1; continue }
+                if t > dt { surfaces[si].pile.peel[b] = t - dt; pending = true; continue }
+                surfaces[si].pile.peel[b] = -1
+                surfaces[si].pile.heights[b] -= over
+                peeledVolume += over
+                _ = shedBin(col: c0 + b, edgeY: edgeY + surfaces[si].pile.base[b], from: surfaces[si].pile.heights[b], amount: over, velocity: .zero)
+                pilesDirty = true
+            }
+            if !pending { surfaces[si].pile.peel = [] }
+        }
     }
 
     /// Takes `fraction` of the pile off as debris, preferring the tops and the window ends.

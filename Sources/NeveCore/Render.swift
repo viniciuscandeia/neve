@@ -108,7 +108,8 @@ extension SnowField {
             }
             func top(_ i: Int, _ b: Int, _ e: Int) -> Float {
                 // Runs split at the Dock bar ends keep their full height there (no taper): that edge is a wall, not a pile end.
-                let l = i > b ? h[i - 1] : (s.pile.splits.contains(b) ? h[i] : 0), r = i < e - 1 ? h[i + 1] : (s.pile.splits.contains(e) ? h[i] : 0)
+                // Walls (a hidden neighbour), supported ends and Dock splits hold their full height: no taper there.
+                let l = i > b ? h[i - 1] : (b > 0 || s.pile.supportL || s.pile.splits.contains(b) ? h[i] : 0), r = i < e - 1 ? h[i + 1] : (e < cnt || s.pile.supportR || s.pile.splits.contains(e) ? h[i] : 0)
                 let sm = (l + 2 * h[i] + r) / 4
                 return min(edge + base[i] + sm + jitter(i, sm), ceiling(i))
             }
@@ -131,7 +132,7 @@ extension SnowField {
                             prev = cur
                         }
                     }
-                    if s.id == Tuning.groundID || s.id == 0 { pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag)) }
+                    pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag))
                 }
                 b = e
             }
@@ -143,6 +144,14 @@ extension SnowField {
                     put(g.last.x, g.last.t, g.last.b, d.first.x, d.first.t, d.first.b, d.drag)
                 } else if d.last.x <= g.first.x, g.first.x - d.last.x < 60, abs(g.first.t - d.last.t) <= 2.5 {
                     put(d.last.x, d.last.t, d.last.b, g.first.x, g.first.t, g.first.b, d.drag)
+                }
+            }
+        }
+        // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
+        for l in seams {
+            for a in pileEnds where a.id == l.left {
+                for c in pileEnds where c.id == l.right && c.first.x >= a.last.x && c.first.x - a.last.x < 8 {
+                    put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag || c.drag)
                 }
             }
         }

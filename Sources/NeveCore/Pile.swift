@@ -16,6 +16,12 @@ public struct Pile {
     let x0: Float, x1: Float     // taper and spill-off are measured against these, not the screen-clipped pile
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField
     var spillR: Float = 0
+    var boost: [Float] = []      // extra height limit per bin: snow banked against a front window (empty = none)
+    var walls: [Float] = []      // x of each wall (visible bin next to a hidden one), global
+    var supportL = false         // the pile end faces a drift (SeamLink): no corner dip, taper or spill there
+    var supportR = false
+    var peel: [Float] = []       // per bin: seconds until its excess over `limit` lets go as debris (-1 = none); empty = nothing pending
+    var peeling: Bool { !peel.isEmpty }
 
     init(columns: Int, inset: Float, c0: Int = 0, x0: Float = 0, x1: Float? = nil) {
         self.c0 = c0; self.x0 = x0; self.x1 = x1 ?? Float(c0 + columns) * Tuning.binWidth
@@ -45,16 +51,39 @@ public struct Pile {
         guard radius > 0 else { return }
         for b in base.indices {
             let x = binCenter(c0 + b)
-            let d = max(min(x - minX, maxX - x), 0)
+            let d = max(min(supportL ? .infinity : x - minX, supportR ? .infinity : maxX - x), 0)
             if d < radius { let k = radius - d; base[b] = -(radius - (radius * radius - k * k).squareRoot()) }
         }
     }
 
+    /// Snow banks against the front windows hiding the neighbours of visible bins (walls): the limit rises toward the wall
+    /// to reach the front top (step <= maxDrift), a capped drift (<= driftFar) or a small ramp, sloping off over >= driftMinWidth.
+    mutating func addWalls(hideTop: [Float], edgeY: Float) {
+        let n = heights.count, bw = Tuning.binWidth
+        func wall(_ top: Float, _ wx: Float, _ self_: inout Pile) {
+            let step = top - edgeY
+            let peak = step <= Tuning.maxDrift ? step : step <= Tuning.driftFar ? Tuning.maxDrift : self_.maxHeight + Tuning.driftFarRamp
+            let amount = peak - self_.maxHeight
+            self_.walls.append(wx)
+            guard amount > 0 else { return }
+            let width = max(Tuning.driftMinWidth, amount / Tuning.driftSlope)
+            if self_.boost.isEmpty { self_.boost = [Float](repeating: 0, count: n) }
+            for k in 0..<n {
+                let d = abs(binCenter(self_.c0 + k) - wx)
+                if d < width { self_.boost[k] = max(self_.boost[k], amount * (1 - d / width)) }
+            }
+        }
+        for b in 0..<n where visible[b] {
+            if b > 0, !visible[b - 1] { wall(hideTop[b - 1], Float(c0 + b) * bw, &self) }
+            if b + 1 < n, !visible[b + 1] { wall(hideTop[b + 1], Float(c0 + b + 1) * bw, &self) }
+        }
+    }
+
     func limit(_ bin: Int) -> Float {
-        var l = maxes.isEmpty ? maxHeight : maxes[bin]
+        var l = (maxes.isEmpty ? maxHeight : maxes[bin]) + (boost.isEmpty ? 0 : boost[bin])
         if inset > 0 {
             let x = binCenter(c0 + bin)
-            l *= min(1, max(min(x - x0, x1 - x), 0) / inset)
+            l *= min(1, max(min(supportL ? .infinity : x - x0, supportR ? .infinity : x1 - x), 0) / inset)
         }
         return min(l, cap[bin])
     }
@@ -82,7 +111,7 @@ public struct Pile {
         }
         for i in max(lo - 1, 0)...min(hi + 1, heights.count - 1) {   // relaxation reaches one bin past the window
             let over = heights[i] - max(limit(i), 0)
-            guard visible[i], over > 0 else { continue }
+            guard visible[i], over > 0, peel.isEmpty || peel[i] < 0 else { continue }
             heights[i] -= over
             if i == 0 { spillL += over } else if i == heights.count - 1 { spillR += over }
             changed = true
@@ -99,7 +128,7 @@ public struct Pile {
     /// A hidden j is a wall (no flow, nothing lost); past the ends the snow spills off as debris.
     private mutating func relax(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
-        if !inRange && continuesPastScreen(left: j < 0) { return false }
+        if !inRange && (continuesPastScreen(left: j < 0) || (j < 0 ? supportL : supportR)) { return false }
         if inRange && !visible[j] { return false }
         let ok = inRange
         let tj = ok ? base[j] + heights[j] : base[i] - 4
