@@ -29,7 +29,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     // Shadow skirt under the base + faint halo above the top; both fade out where the pile is flat (ends, thin snow).
     float3 shCol = mix(float3(0.25, 0.40, 0.65), float3(0.15, 0.28, 0.50), contrast);
     float hf = smoothstep(0.0, 2.0, top - base);
-    float skirt = mix(0.45, 0.8, contrast) * (1.0 - smoothstep(-1.5, 3.0, dBase));
+    float skirt = mix(0.45, 0.8, contrast) * smoothstep(-1.5, -0.5, dBase) * (1.0 - smoothstep(-0.5, 3.0, dBase));
     float halo = 0.11 * (1.0 - smoothstep(0.0, 2.5, dTop));
     float sa = max(skirt, halo) * hf;
     float3 rgb = mix(float3(0.84, 0.90, 0.98), float3(0.88, 0.93, 0.99), smoothstep(1.0, 2.0, -dBase));
