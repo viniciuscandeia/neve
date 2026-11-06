@@ -41,6 +41,7 @@ extension SnowField {
         // User snowmen: keep whole ones on the ground, drop leftovers (headless bodies, loose heads), rebuild up to two.
         var i = figures.count - 1
         while i >= 0 {
+            if figures[i].kind != .snowman { i -= 1; continue }   // visitors are not user snowmen
             if figures[i].fromBalls && !figures[i].headless && figures[i].surfaceID == g.id { i -= 1; continue }
             if figures[i].fromBalls || figures[i].headless { removeFigure(i) }
             i -= 1
@@ -48,7 +49,7 @@ extension SnowField {
         let before = balls.count
         balls.removeAll { $0.state != .held }
         if balls.count != before { ballsVersion &+= 1 }
-        let kept = figures.filter { $0.fromBalls }
+        let kept = figures.filter { $0.fromBalls && $0.kind == .snowman }
         var xs = [mid - 75, mid + 75]
         if let k = kept.first { xs = [k.foot.x < mid ? mid + 75 : mid - 75] }
         for x in xs.prefix(2 - kept.count) {
