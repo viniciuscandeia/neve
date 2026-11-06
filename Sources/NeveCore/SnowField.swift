@@ -59,6 +59,11 @@ public final class SnowField {
     public var visitorsEnabled = false   // the EventDirector may start visitors (the app sets it from Pref.visitors; tests opt in)
     public var groundOnlyActors = false  // behind-windows mode: visitors only on the ground / Dock (compact mode, areaScale < 1, implies it)
     public internal(set) var director: EventDirector
+    public var sleighEnabled = false     // the sleigh may fly (the app sets it from Pref.sleigh; tests opt in)
+    public var calendarDay: (month: Int, day: Int) = (0, 0)   // injected by the app (tests set Dec 24): picks the sleigh frequency
+    var giftState = GiftState()          // gifts + confetti (Gifts.swift)
+    var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
+    public var optionHeld = false        // the overlay reports the ⌥ key every frame
     var carrots: [Carrot] = []           // stolen noses lying on a pile or falling (Figures+Rabbit.swift)
     var shotLand: (p: SIMD2<Float>, t: Float)?, impactAt: (x: Float, y: Float, t: Float)?   // last landings (robin startle)
     var rabbitHitScale = Tuning.rabbitHitScale   // tests force hits (large) or misses (0)
@@ -215,6 +220,7 @@ public final class SnowField {
         }
         if introDur > 0 { introT += dt }
         stepBalls(dt: dt)
+        stepGifts(dt: dt)
         stepFigures(dt: dt)
         stepSplats(dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)

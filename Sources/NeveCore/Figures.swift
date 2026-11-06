@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public enum FigureKind: UInt8, Sendable { case snowman, rabbit, robin }   // future: penguin, robin, sleigh (one `Figures+<Kind>.swift` + a Rig entry + an EventDirector spec)
+public enum FigureKind: UInt8, Sendable { case snowman, rabbit, penguin, sleigh, robin }   // future: penguin, robin, sleigh (one `Figures+<Kind>.swift` + a Rig entry + an EventDirector spec)
 public enum Phase: UInt8 { case building, idle, walking, fighting, cheering, collapsing, hidden }
 /// Where a figure stands: on a surface at x (a window top, the Dock bar, the ground), or in the air.
 public enum Attachment: Equatable { case surface(id: Int, x: Float), air }
@@ -38,6 +38,8 @@ public struct Figure {
     public internal(set) var carrot = true                      // the snowman still has its nose (a rabbit may steal it)
     var robin = RobinState()                                    // (Figures+Robin.swift)
     var critter = Critter()                                     // visitor / theft bookkeeping (Figures+Rabbit.swift)
+    var penguin = PenguinState()                                // Figures+Penguin.swift
+    var sleigh = SleighState()                                  // sleigh crossing bookkeeping (Figures+Sleigh.swift)
     var motion = Motion()
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
@@ -74,9 +76,11 @@ extension SnowField {
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
     func anchors(of f: Figure) -> Anchors {
         switch f.kind {
-        case .rabbit, .robin:
+        case .rabbit, .penguin, .robin:
             let p = SIMD2(f.foot.x, f.foot.y + f.pose.hop)
             return Anchors(base: p, body: p, head: p, arm: p, ground: f.foot.y)
+        case .sleigh:
+            return Anchors(base: f.foot, body: f.foot, head: f.foot, arm: f.foot, ground: f.foot.y)
         case .snowman:
             let r = f.radii
             let y0 = f.foot.y + f.pose.hop + SnowField.sink * r.x
@@ -250,6 +254,7 @@ extension SnowField {
             stepFights(dt)
             stepShots(dt)
             stepCarrots(dt)
+            stepCursorThrow(dt: dt)
         }
     }
 
@@ -257,6 +262,8 @@ extension SnowField {
     private func stepFigure(_ i: Int, _ dt: Float, animate: Bool) -> Bool {
         if figures[i].kind == .rabbit { return stepRabbit(i, dt) }
         if figures[i].kind == .robin { return stepRobin(i, dt) }
+        if figures[i].kind == .penguin { return stepPenguin(i, dt) }
+        if figures[i].kind == .sleigh { return stepSleigh(i, dt) }
         var f = figures[i]
         f.phaseT += dt
         if f.phase == .collapsing {

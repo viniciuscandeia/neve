@@ -29,7 +29,8 @@ public struct Splat {
     public let target: Int, surface: Int
     public let rel: SIMD2<Float>, scale: Float
     public internal(set) var age: Float = 0
-    public var alpha: Float { max(0, 1 - age / Tuning.splatLife) }
+    var life: Float = Tuning.splatLife
+    public var alpha: Float { max(0, 1 - age / life) }
 }
 
 extension Tuning {
@@ -138,7 +139,8 @@ extension SnowField {
         let refl = v - 2 * (v.x * s.normal.x + v.y * s.normal.y) * s.normal
         var rel = s.to + SIMD2(0, 1), scale: Float = 1
         if onBody, let j { rel = s.to - figures[j].foot; scale = figures[j].scale }
-        addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: scale))
+        let cursor = s.target == SnowField.cursorTarget   // a throw at the cursor: bigger blot, longer fade
+        addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: cursor && s.hit ? 14.0 / 12 : scale, life: cursor && s.hit ? 1.5 : Tuning.splatLife))
         spray(at: s.to, reflected: refl, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
         if onBody, let j, figures[j].fight != nil { registerHit(s.target, head: s.head) }
         if onBody, let j, figures[j].kind == .rabbit { rabbitHit(j) }
@@ -153,7 +155,7 @@ extension SnowField {
         var i = splats.count - 1
         while i >= 0 {
             splats[i].age += dt
-            if splats[i].age >= Tuning.splatLife { splats.remove(at: i) }
+            if splats[i].age >= splats[i].life { splats.remove(at: i) }
             i -= 1
         }
     }

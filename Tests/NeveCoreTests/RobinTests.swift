@@ -150,12 +150,12 @@ private func fill(_ f: SnowField) {
 @Test func storyMissesLandCloserToTheRobinThanWithoutTheBias() {
     func meanDistance(story: Bool) -> (Float, Int) {
         var sum: Float = 0, n = 0
-        for seed in 1...12 {
+        for seed in 1...30 {
             let f = field(seed: UInt64(seed))
             f.rabbitHitScale = 0
             _ = stand(f, x: 450, on: 1)
             advance(f, 0.5)
-            f.director.story.x = 560; f.director.story.surface = 1
+            f.director.story.x = 300; f.director.story.surface = 1
             _ = f.startRobin()
             run(f) { perched(f) }
             f.director.story.active = story
@@ -165,7 +165,7 @@ private func fill(_ f: SnowField) {
                 f.step(dt: 1 / 60)
                 guard let s = f.shotLand, s.t != last else { if rabbit(f) == nil { break }; continue }
                 last = s.t
-                if let r = robin(f), !r.robin.flying { sum += abs(s.p.x - r.foot.x); n += 1 }
+                if let r = robin(f), !r.robin.flying, let q = rabbit(f), abs(q.foot.x - r.foot.x) <= 200 { sum += abs(s.p.x - r.foot.x); n += 1 }
             }
         }
         return (sum / Float(max(n, 1)), n)

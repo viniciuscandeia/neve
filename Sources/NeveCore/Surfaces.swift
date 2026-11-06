@@ -81,6 +81,7 @@ extension SnowField {
         for (i, s) in surfaces.enumerated() { index[s.id] = i }
         buildColumns()
         transportBalls(before: before)
+        transportGifts(before: before)
         transportFigures(before: before)
         pilesDirty = true
         return spawned
@@ -264,6 +265,7 @@ extension SnowField {
         let first = debris.count
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
+        breakGifts(ax, ay, Float(b.x), Float(b.y), r, v)
         breakIcicles(ax, ay, Float(b.x), Float(b.y), r, v)
         defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
