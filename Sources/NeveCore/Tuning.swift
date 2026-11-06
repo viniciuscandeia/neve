@@ -35,6 +35,8 @@ public enum Tuning {
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
+    static let dustSlope: Float = 1.0       // extra step allowed onto an empty bin (fades to 0 as it fills to dustDepth): fresh dusting stays put
+    static let dustDepth: Float = 2.0
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
     /// Window corner radius: ~20pt from macOS 26 (Tahoe) on, ~10pt before.
     public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }

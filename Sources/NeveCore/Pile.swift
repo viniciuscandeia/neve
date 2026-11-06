@@ -157,7 +157,8 @@ public struct Pile {
         if inRange && !visible[j] { return false }
         let ok = inRange
         let tj = ok ? base[j] + heights[j] : base[i] - 4
-        let excess = base[i] + heights[i] - tj - Tuning.slope
+        // Fresh snow on bare ground sticks where it lands (steeper step allowed onto an almost empty bin): a dusting of specks, not an instant wide film.
+        let excess = base[i] + heights[i] - tj - Tuning.slope - (ok ? Tuning.dustSlope * max(0, 1 - heights[j] / Tuning.dustDepth) : 0)
         guard excess > 0, heights[i] > 0 else { return false }
         var m = min(excess * 0.5, heights[i])
         if ok, cap[j].isFinite { m = min(m, max(cap[j] - heights[j], 0)) }   // a roofed / under-Dock column takes no more than its room: nothing is lost there
