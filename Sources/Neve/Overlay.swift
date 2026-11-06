@@ -25,11 +25,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let view = InteractView()
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0
+    private var dayChecked: CFTimeInterval = -1000
     private var pollMouse = NSEvent.mouseLocation
     private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
-    private static let primCapacity = 640   // ~600 prims / screen
+    private static let primCapacity = 800   // ~700 prims / screen
     private let primBuffers: [MTLBuffer]
     // MARK: pile pass
     private static let pileCapacity = 8192
@@ -325,6 +326,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.snowmanEnabled = p.snowman
         field.walkEnabled = p.walk
         field.visitorsEnabled = p.visitors
+        field.sleighEnabled = p.sleigh
+        refreshDay(force: true)
         field.groundOnlyActors = p.behind
         field.economy = p.economy
         field.setIntensity(p.intensity)
@@ -422,6 +425,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         let local = SIMD2(Float(cursor.x - frame.origin.x), Float(cursor.y - frame.origin.y))
         let moved = lastCursor.map { SIMD2(Float(cursor.x - $0.x), Float(cursor.y - $0.y)) / Float(dt) } ?? .zero
+        field.optionHeld = option
+        refreshDay(now: now)
         field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
         lastCursor = cursor
         Perf.add(.input, t0); t0 = Perf.now()
@@ -443,9 +448,18 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if still, !dirty, field.pilesSettled { stillPaused = true; link?.isPaused = true }
     }
 
+    /// Tells the simulation today's date (sleigh frequency); re-read every 10 minutes so a Mac left on rolls over into December.
+    private func refreshDay(now: CFTimeInterval = 0, force: Bool = false) {
+        guard force || now - dayChecked > 600 else { return }
+        dayChecked = now
+        let c = Calendar.current.dateComponents([.month, .day], from: Date())
+        field.calendarDay = (c.month ?? 0, c.day ?? 0)
+    }
+
     private func mouseDown(_ e: NSEvent) {
         guard e.modifierFlags.contains(.option) || NSEvent.modifierFlags.contains(.option) else { return }
         let p = local(e)
+        if field.openGift(at: p) { return }
         held = field.pickSnowball(at: p) ?? field.scoop(at: p)
         lastDragTime = e.timestamp
     }
@@ -471,6 +485,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                      face: b.face != 0, facing: b.face == 0 ? 1 : b.face, into: &w)
         }
         for f in field.figures where f.phase != .hidden {
+            if f.kind == .sleigh { Rig.sleigh(field.sleighLook(of: f), into: &w); continue }
             if f.kind == .rabbit {
                 var l = field.rabbitLook(of: f)
                 let o = d(f.surfaceID)
@@ -491,6 +506,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             Rig.snowman(look, contrast: hc, into: &w)
         }
         field.writeCarrotPrims(&w, shift: d)
+        field.writeGiftPrims(&w, shift: d)
         field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
         field.writeIciclePrims(&w, shift: d)
     }

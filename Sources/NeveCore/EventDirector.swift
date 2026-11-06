@@ -25,9 +25,10 @@ public struct EventDirector {
         case .snowman: return nil
         case .rabbit: return Spec(mean: 360, cooldown: 240)
         case .penguin: return Spec(mean: 480, cooldown: 300, windowOnly: true)
+        case .sleigh: return Spec(mean: 10800, cooldown: 1200, big: true)   // mean / cooldown really come from `SnowField.sleighInterval`
         }
     }
-    static let kinds: [FigureKind] = [.rabbit, .penguin]   // the kinds the Poisson roll considers
+    static let kinds: [FigureKind] = [.rabbit, .penguin, .sleigh]   // the kinds the Poisson roll considers
 
     struct Request { var kind: FigureKind, at: Float }
 
@@ -37,6 +38,7 @@ public struct EventDirector {
     var lastStart = -Float.infinity
     var cooldownUntil = [Float](repeating: 0, count: 8)   // by `FigureKind.rawValue`; infinity while a visit runs
     var queue: [Request] = []
+    var sleighCooldown: Float = 1200
     public internal(set) var started = 0    // visits started so far (tests / diagnostics)
 
     /// Story extension point: called (outside the director's mutation) right after an ambient visit of `kind` starts. A later slice sets
@@ -56,7 +58,7 @@ public struct EventDirector {
 
     mutating func ended(_ kind: FigureKind, at t: Float) {
         guard let s = Self.spec(kind) else { return }
-        cooldownUntil[Int(kind.rawValue)] = t + s.cooldown / speed
+        cooldownUntil[Int(kind.rawValue)] = t + (kind == .sleigh ? sleighCooldown : s.cooldown) / speed
     }
 }
 
@@ -70,7 +72,7 @@ extension SnowField {
         director.acc += dt
         guard director.acc >= 1 else { return }
         director.acc -= 1
-        guard visitorsEnabled, walkEnabled, !calm, !outro else { director.queue.removeAll(keepingCapacity: true); return }
+        guard visitorsEnabled || sleighEnabled, walkEnabled, !calm, !outro else { director.queue.removeAll(keepingCapacity: true); return }
         let eco = economy || lowPower
         if config.penguinDemo, !visitorsGroundOnly, stepPenguinDemo() { return }
         let limit = eco ? 1 : EventDirector.maxAmbient
@@ -92,7 +94,7 @@ extension SnowField {
         guard ambient < limit, time - director.lastStart >= EventDirector.minGap / director.speed else { return }
         for kind in EventDirector.kinds {
             guard let spec = EventDirector.spec(kind), canStart(kind, ambient: ambient, big: big, limit: limit) else { continue }
-            let p = director.speed / (spec.mean * (eco ? 2 : 1))   // dt = 1 s
+            let p = kind == .sleigh ? sleighChance() : director.speed / (spec.mean * (eco ? 2 : 1))   // dt = 1 s
             guard Float.random(in: 0..<1, using: &director.rng) < p, startVisitor(kind) else { continue }
             visitStarted(kind)
             return
@@ -102,6 +104,7 @@ extension SnowField {
     private func canStart(_ kind: FigureKind, ambient: Int, big: Int, limit: Int) -> Bool {
         guard let spec = EventDirector.spec(kind), time >= director.cooldownUntil[Int(kind.rawValue)] else { return false }
         if visitorsGroundOnly && spec.windowOnly { return false }
+        if kind == .sleigh { if !sleighAllowed { return false } } else if !visitorsEnabled { return false }
         return spec.big ? big < EventDirector.maxBig : ambient < limit
     }
 
@@ -109,6 +112,7 @@ extension SnowField {
         switch kind {
         case .rabbit: return startRabbit()
         case .penguin: return startPenguin()
+        case .sleigh: return startSleigh()
         case .snowman: return false
         }
     }

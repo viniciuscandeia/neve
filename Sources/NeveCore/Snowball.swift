@@ -71,7 +71,7 @@ extension SnowField {
             let d = q - b.pos
             if d.x * d.x + d.y * d.y <= (b.radius + 4) * (b.radius + 4) { return true }
         }
-        return overFigure(q) || pileUnder(q) != nil
+        return overFigure(q) || giftUnder(q) != nil || pileUnder(q) != nil
     }
 
     private func pileUnder(_ q: SIMD2<Float>) -> (Int, Int)? {
