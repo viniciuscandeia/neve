@@ -28,7 +28,8 @@ struct PenguinState {
     var spin: Float = 0             // rad/s while airborne
     var rockT: Float = 0
     var sinceSlide: Float = 0
-    var crumbT: Float = 0
+    var ref: Float = 0              // pile height the groove is cut from (at slide start)
+    var spray: Float = 0            // plowed area (pt^2) still owed as debris
     var duck: Float = 0             // seconds of cursor-duck hop left
     var lastBall = 0                // ball it last launched from (no double launch)
     var leaving = false
@@ -97,14 +98,16 @@ extension SnowField {
         }
     }
 
-    private func carvePath(si: Int, from a: Float, to b: Float) {
-        var c = column(a)
-        let c1 = column(b), step = c1 >= c ? 1 : -1
-        while c != c1 {
-            c += step
-            let h = meanHeight(si: si, col: c, span: 1) ?? 0
-            guard h > 0.3 else { continue }
-            if surfaces[si].pile.carve(centerX: binCenter(c), halfWidth: 5, depth: min(3, 0.4 * h), berm: 0.15) > 0 { pilesDirty = true }
+    /// Plows a shallow trench under the belly (see `Pile.plow`); the area not banked in berms comes back as a forward spray of debris.
+    private func plowPath(si: Int, x: Float, dir d: Float, _ p: inout PenguinState, y: Float) {
+        let w: Float = 6, ref = p.ref   // the level when the slide began: the berm and spray piled ahead must not raise the cut
+        guard ref > 0.3 else { return }
+        let sprayed = surfaces[si].pile.plow(centerX: x, halfWidth: w, depth: min(Tuning.penguinGroove, 0.35 * ref) * min(p.t / 0.2, 1), ref: ref, berm: Tuning.penguinBerm, side: d, maxStep: 1)
+        if sprayed > 0 { pilesDirty = true; p.spray += sprayed }
+        while p.spray >= Tuning.penguinPuff {
+            let size = Tuning.penguinPuff / (Tuning.depositScale * Tuning.binWidth)   // lands as exactly the area it took
+            guard addDebris(x: x + d * 4, y: y + 14, vx: d * (max(p.speed, 0) + Float.random(in: 30...150, using: &rng)), fall: Float.random(in: 0...30, using: &rng), size: size) else { break }
+            p.spray -= Tuning.penguinPuff
         }
     }
 
@@ -151,17 +154,12 @@ extension SnowField {
         case .flop:
             let u = min(p.t / 0.2, 1)
             p.angle = Tuning.penguinFlop * u * (2 - u)
-            if u >= 1 { p.stage = .slide; p.t = 0; p.speed = Tuning.penguinSlide; p.slides += 1; p.crumbT = 0 }
+            if u >= 1 { p.stage = .slide; p.t = 0; p.speed = Tuning.penguinSlide; p.slides += 1; p.ref = meanHeight(si: si, col: column(f.foot.x), span: 1) ?? 0 }
         case .slide:
             p.speed -= Tuning.penguinDecel * dt
             f.foot.x += d * max(p.speed, 0) * dt
-            carvePath(si: si, from: prevX, to: f.foot.x)
+            plowPath(si: si, x: f.foot.x, dir: d, &p, y: f.foot.y)
             p.groove += abs(f.foot.x - prevX)
-            p.crumbT += dt
-            if p.crumbT >= 0.5 {
-                p.crumbT -= 0.5
-                _ = addDebris(x: f.foot.x, y: f.foot.y + 3, vx: d * Float.random(in: 15...45, using: &rng), fall: -Float.random(in: 40...80, using: &rng), size: Float.random(in: 3...4.5, using: &rng))
-            }
             if p.speed <= Tuning.penguinSlideEnd { p.stage = .stand; p.t = 0; p.sinceSlide = 0 }
         case .sink:
             let u = min(p.t / 0.45, 1)

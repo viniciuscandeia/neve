@@ -42,10 +42,10 @@ private func run(_ f: SnowField, limit: Float = 60, until done: () -> Bool) -> B
         x += Tuning.binWidth
     }
     #expect(worst < -0.5)
-    let behind = x0 < x1 ? lo : hi, sd: Float = x0 < x1 ? -1 : 1
+    let ahead = x0 < x1 ? hi : lo, sd: Float = x0 < x1 ? 1 : -1
     var berm: Float = 0
-    for k in 0..<5 { let c = f.column(behind + sd * Float(k) * 2) - s.c0; berm = max(berm, h[c] - before[c]) }
-    #expect(berm > 0)   // the berm left behind the start
+    for k in 0..<20 { let c = f.column(ahead + sd * Float(k) * 2) - s.c0; berm = max(berm, h[c] - before[c]) }
+    #expect(berm > 0)   // plowed snow banked ahead of where it stopped
 }
 
 @Test func penguinLaunchesOffARestingBallAndLands() {
@@ -146,3 +146,32 @@ private func run(_ f: SnowField, limit: Float = 60, until done: () -> Bool) -> B
     let a = go(), b = go()
     #expect(a == b && a.0 > 0)
 }
+
+@Test func penguinSlidePlowsAShallowGrooveAndConservesSnow() {
+    let f = field()
+    let area: () -> Float = { f.pile(id: 1)!.heights.reduce(0, +) * Tuning.binWidth }
+    let flying: () -> Float = { f.debris.reduce(0) { $0 + $1.size * Tuning.depositScale * Tuning.binWidth } }
+    let before = area(), start = heights(f)
+    #expect(f.startPenguin())
+    var prev = start, maxDrop: Float = 0, sliding = false, x0: Float = 0, x1: Float = 0
+    for _ in 0..<(60 * 60) {
+        f.step(dt: 1 / 60)
+        let h = heights(f)
+        guard let p = penguins(f).first else { break }
+        if p.penguin.stage == .slide {
+            if !sliding { x0 = p.foot.x }
+            sliding = true; x1 = p.foot.x
+            for b in h.indices { maxDrop = max(maxDrop, prev[b] - h[b]) }
+        } else if sliding { break }
+        prev = h
+    }
+    #expect(sliding && abs(x1 - x0) > 40)
+    #expect(maxDrop < 3)   // eased in over a few pt of travel: no column pops
+    let c0 = f.surfaces[f.index[1]!].c0, lo = f.column(min(x0, x1) + 8) - c0, hi = f.column(max(x0, x1) - 8) - c0
+    let h = heights(f), depth = (lo...hi).map { 12 - h[$0] }
+    #expect(depth.min()! > 0.5 && depth.max()! <= Tuning.penguinGroove + 0.01)
+    run(f, limit: 10) { f.debris.isEmpty }
+    let after = area() + flying()
+    #expect(abs(after - before) < Tuning.penguinPuff + 0.03 * before)
+}
+
