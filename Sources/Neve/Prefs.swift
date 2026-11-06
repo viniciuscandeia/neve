@@ -33,6 +33,10 @@ let simConfig: SimConfig = {
     return c
 }()
 
+/// `NEVE_SCENE=demo|fight` (+ `NEVE_SEED`, default 7 / 4): a deterministic showcase scene on the main screen (NeveCore/Scene.swift, SceneStage.swift).
+let sceneKind: SceneKind? = ProcessInfo.processInfo.environment["NEVE_SCENE"].flatMap(SceneKind.init(rawValue:))
+let sceneSeed: UInt64? = sceneKind.map { UInt64(ProcessInfo.processInfo.environment["NEVE_SEED"] ?? "") ?? ($0 == .demo ? 7 : 4) }
+
 extension Intensity {
     static func saved(_ ud: UserDefaults) -> Intensity { Intensity(rawValue: ud.object(forKey: key) as? Int ?? 1) ?? .media }
 }

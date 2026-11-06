@@ -94,7 +94,7 @@ extension SnowField {
                 return
             }
         }
-        guard ambient < limit, time - director.lastStart >= EventDirector.minGap / director.speed else { return }
+        guard scene == nil, ambient < limit, time - director.lastStart >= EventDirector.minGap / director.speed else { return }
         for kind in EventDirector.kinds {
             guard let spec = EventDirector.spec(kind), canStart(kind, ambient: ambient, big: big, limit: limit) else { continue }
             let p = kind == .sleigh ? sleighChance() : director.speed / (spec.mean * (eco ? 2 : 1))   // dt = 1 s

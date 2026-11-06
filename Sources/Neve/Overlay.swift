@@ -75,7 +75,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         visibleTop = v.maxY - f.minY
         let areaScale = Float(f.width * f.height) / (1440 * 900)
         let field = SnowField(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop,
-                              flakeCount: max(120, Int(Float(Tuning.flakes) * areaScale)), config: simConfig)
+                              flakeCount: max(120, Int(Float(Tuning.flakes) * areaScale)), config: simConfig,
+                              seed: sceneSeed ?? .random(in: 0...UInt64.max))
         var buffers: [MTLBuffer] = []
         for _ in 0..<3 {
             guard let b = gpu.device.makeBuffer(length: field.capacity * MemoryLayout<Instance>.stride, options: .storageModeShared) else { return nil }
@@ -286,6 +287,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     func clear() { field.clear(); wake() }
     func stage(_ s: Scenario) { field.stage(s); wake() }
+    /// Scene mode: starts the script (after the scene windows are in the field) / seconds into its loop.
+    func beginScene(_ k: SceneKind) { field.beginScene(k); wake() }
+    var sceneTime: Float? { field.sceneTime }
 
     private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
     /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.
@@ -412,8 +416,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if !still { field.step(dt: Float(dt)) }
         Perf.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
-        let cursor = NSEvent.mouseLocation
-        let option = NSEvent.modifierFlags.contains(.option)
+        let cursor = sceneKind == nil ? NSEvent.mouseLocation : CGPoint(x: -1e5, y: -1e5)   // scenes ignore the real cursor: the same story every time
+        let option = sceneKind == nil && NSEvent.modifierFlags.contains(.option)
         let o = frame.origin
         let here = CGPoint(x: cursor.x - o.x, y: cursor.y - o.y)
         if held != nil, !option { mouseUp() }   // ⌥ released mid-drag: let go

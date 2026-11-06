@@ -44,7 +44,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var behind: Bool { flag(.behindWindows) }
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
-        OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), intensity: Intensity.saved(ud))
+        // Scene mode: fixed options (Mostrar em capturas ON, everything alive), whatever the user saved; nothing is written back.
+        if let k = sceneKind { return OverlayPrefs(economy: false, behind: false, behindLarge: false, still: false, snowman: true, walk: true, visitors: true, sleigh: true, showInCaptures: true, adaptive: false, intensity: k == .demo ? .forte : .media) }
+        return OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), intensity: Intensity.saved(ud))
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -168,6 +170,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var target: String { ud.string(forKey: "snowOn") ?? "all" }
     private var wantedScreens: [NSScreen] {
         let all = NSScreen.screens
+        if sceneKind != nil { return Array(all.prefix(1)) }
         if economy || target == "main" { return Array(all.prefix(1)) }
         if let id = Int(target), let s = all.first(where: { displayID($0) == id }) { return [s] }
         return all   // "all", or the chosen screen is unplugged
@@ -377,7 +380,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// No input for 5 min pauses rendering; input resumes it (checked here, so no Accessibility needed for keys).
     @objc private func pollTick() {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
-        if !userIdle && !ambient && since >= 300 { userIdle = true; refreshRunState() }
+        if !userIdle && !ambient && sceneKind == nil && since >= 300 { userIdle = true; refreshRunState() }
         else if userIdle && since < 2 { userIdle = false; refreshRunState() }
         if Date().timeIntervalSince(lastScreensCheck) >= 0.5 { screensChanged() }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         if !userIdle { pollWindows() }
@@ -390,6 +393,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let t0 = Perf.now()
         defer { Perf.add(.poll, t0) }
         guard let primary = NSScreen.screens.first else { return }
+        if let k = sceneKind { pollScene(k, primary: primary); return }
         var windows = readWindows(primaryHeight: primary.frame.height)
         let covering = windows.map(\.frame)
         if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
@@ -404,6 +408,31 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if fullscreenIdle != idleWatch {
             scheduleTimers()
             if !fullscreenIdle { refreshDock() }
+        }
+    }
+
+    // MARK: scene mode (NEVE_SCENE)
+    private var stage: SceneStage?, sceneTimer: Timer?, sceneBegun = false, scenePoll = 0
+
+    /// Scene mode: only the scene windows count, no Dock; a 60 Hz timer moves the windows by scene time and polls them every other tick.
+    private func pollScene(_ k: SceneKind, primary: NSScreen) {
+        if k == .demo, stage == nil {
+            stage = SceneStage(screen: primary)
+            let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let o = self.overlays.first else { return }
+                    self.stage?.place(t: o.sceneTime ?? 0)
+                    self.scenePoll += 1
+                    if self.scenePoll % 2 == 0 { self.pollWindows() }
+                }
+            }
+            RunLoop.main.add(t, forMode: .common)
+            sceneTimer = t
+        }
+        let windows = k == .demo ? readWindows(primaryHeight: primary.frame.height, scene: stage?.numbers ?? []) : []
+        for o in overlays {
+            o.update(windows: windows)
+            if !sceneBegun, k == .fight || windows.count == 3 { sceneBegun = true; o.beginScene(k) }
         }
     }
 

@@ -61,6 +61,7 @@ public final class SnowField {
     public internal(set) var director: EventDirector
     public var sleighEnabled = false     // the sleigh may fly (the app sets it from Pref.sleigh; tests opt in)
     public var calendarDay: (month: Int, day: Int) = (0, 0)   // injected by the app (tests set Dec 24): picks the sleigh frequency
+    var scene: SceneState?               // NEVE_SCENE script (Scene.swift): nil = a normal run
     var giftState = GiftState()          // gifts + confetti (Gifts.swift)
     var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
     public var optionHeld = false        // the overlay reports the ⌥ key every frame
@@ -210,6 +211,7 @@ public final class SnowField {
 
     public func step(dt: Float) {
         time += dt
+        if scene != nil { stepScene(dt: dt) }
         stepBuilder(dt: dt)
         stepDirector(dt: dt)
         if outro, outroRel < 1 {

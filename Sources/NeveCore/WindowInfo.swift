@@ -26,9 +26,11 @@ public struct RawWindow {
 }
 
 /// Keeps layer-0, visible, foreign, at-least-40x20 windows; converts bounds to AppKit coordinates. Order preserved.
-public func filterWindows(_ raw: [RawWindow], ownPID: Int, primaryHeight: CGFloat, radius: CGFloat = Tuning.defaultWindowRadius) -> [WindowInfo] {
+/// Scene mode (`NEVE_SCENE`): `scene` holds the window numbers of Neve's own scene windows; then ONLY those are kept (own pid or not),
+/// so the overlay and every other app stay out of the picture.
+public func filterWindows(_ raw: [RawWindow], ownPID: Int, primaryHeight: CGFloat, radius: CGFloat = Tuning.defaultWindowRadius, scene: Set<Int>? = nil) -> [WindowInfo] {
     raw.compactMap { w in
-        guard w.layer == 0, w.pid != ownPID, w.alpha > 0, let number = w.number, let r = w.bounds,
+        guard w.layer == 0, scene != nil || w.pid != ownPID, w.alpha > 0, let number = w.number, scene?.contains(number) ?? true, let r = w.bounds,
               r.width >= 40, r.height >= 20 else { return nil }
         return WindowInfo(number: number, frame: appKitFrame(fromCG: r, primaryHeight: primaryHeight), radius: radius)
     }
