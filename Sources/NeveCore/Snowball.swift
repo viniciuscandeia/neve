@@ -188,6 +188,16 @@ extension SnowField {
         guard let sid = balls[i].surfaceID, let si = index[sid] else { setFalling(i, .zero); return }
         let s = surfaces[si], c = column(balls[i].pos.x) - s.c0
         guard c >= 0, c < s.pile.heights.count, s.pile.visible[c] else { setFalling(i, .zero); return }
+        let need = balls[i].radius * (1 + SnowField.sink)
+        if s.pile.cap[c] - s.pile.heights[c] < need {   // too big to fit under the Dock bar / a low window: rolls to the nearest column where it fits
+            var d = 1, dir: Float = 0
+            while dir == 0, c - d >= 0 || c + d < s.pile.heights.count {
+                if c - d >= 0, s.pile.visible[c - d], s.pile.cap[c - d] - s.pile.heights[c - d] >= need { dir = -1 }
+                else if c + d < s.pile.heights.count, s.pile.visible[c + d], s.pile.cap[c + d] - s.pile.heights[c + d] >= need { dir = 1 }
+                d += 1
+            }
+            if dir != 0 { balls[i].pos.x += dir * 90 * dt; balls[i].rotation += dir * 90 * dt / balls[i].radius; ballsVersion &+= 1 }
+        }
         var sum: Float = 0, n: Float = 0
         for k in max(0, c - 2)...min(s.pile.heights.count - 1, c + 2) { sum += s.pile.heights[k]; n += 1 }
         let y = s.edgeY + s.pile.base[c] + sum / n + balls[i].radius * SnowField.sink

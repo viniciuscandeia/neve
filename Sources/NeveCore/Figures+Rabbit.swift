@@ -63,9 +63,7 @@ extension SnowField {
         for t in figures.indices {
             let w = figures[t]
             guard w.active, w.built == Snowman.stageCount, w.carrot, w.fight == nil, w.motion.rest <= 0, let sid = w.surfaceID,
-                  !visitorsGroundOnly || sid <= 0, let si = index[sid], let run = visibleRun(si: si, bin: column(w.foot.x) - surfaces[si].c0) else { continue }
-            let s = surfaces[si]
-            let lo = max(Float(s.c0 + run.lowerBound) * Tuning.binWidth, s.pile.x0), hi = min(Float(s.c0 + run.upperBound) * Tuning.binWidth, s.pile.x1)
+                  !visitorsGroundOnly || sid <= 0, let si = index[sid], let (lo, hi) = standRange(si: si, x: w.foot.x, height: 14 * snowmanScale) else { continue }
             guard hi - lo >= Tuning.minStretch else { continue }
             var side: Float = 0, best = Float.infinity
             for k in 0..<2 {
@@ -105,9 +103,8 @@ extension SnowField {
         var c = f.critter
         f.phaseT += dt
         c.stageT += dt
-        guard let sid = f.surfaceID, let si = index[sid], let run = visibleRun(si: si, bin: column(f.foot.x) - surfaces[si].c0) else { removeFigure(i); return false }
-        let s = surfaces[si]
-        let lo = max(Float(s.c0 + run.lowerBound) * Tuning.binWidth, s.pile.x0), hi = min(Float(s.c0 + run.upperBound) * Tuning.binWidth, s.pile.x1)
+        guard let sid = f.surfaceID, let si = index[sid] else { removeFigure(i); return false }
+        guard let (lo, hi) = standRange(si: si, x: f.foot.x, height: 14 * f.scale) else { removeFigure(i); return false }
         var t = figureIndex(c.target)
         if let k = t, figures[k].kind != .snowman || figures[k].phase == .collapsing || figures[k].surfaceID != sid { t = nil }
         if c.stage == .hopIn || c.stage == .sniff, t == nil || !figures[t!].carrot || figures[t!].headless {   // nothing left to steal

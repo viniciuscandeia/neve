@@ -206,7 +206,7 @@ extension SnowField {
         endFight(k)
         var away: Float = 1
         if let w = figureIndex(winner) { figures[w].motion.cheer = Tuning.cheerTime; away = figures[j].foot.x >= figures[w].foot.x ? 1 : -1 }
-        decapitate(id, away: away, range: walkRange(surface: figures[j].surfaceID ?? Tuning.groundID, x: figures[j].foot.x, half: figures[j].radii.x))
+        decapitate(id, away: away, range: walkRange(surface: figures[j].surfaceID ?? Tuning.groundID, x: figures[j].foot.x, half: figures[j].radii.x, height: Snowman.height * figures[j].scale))
     }
 
     /// The head leaves the body as a loose ball (kicked away from the winner, kept on the surface); the body stays,

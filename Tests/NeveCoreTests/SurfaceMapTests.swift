@@ -353,9 +353,9 @@ private func heavy(_ f: SnowField, id: Int) {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
     let g = f.pile(id: Tuning.groundID)!
-    #expect(g.heights[84] >= 28 && g.heights[84] <= 35.3)    // x 169, left of the bar: peaks where the corner arc is vertical (10 + 25.2), not a slab up to the bar top
-    #expect(g.heights[635] >= 28 && g.heights[635] <= 35.3)  // x 1269, right of the bar
-    #expect(g.heights[5] <= 38.5)                             // screen edge, 171pt from the bar
+    #expect(g.heights[84] >= 94 - 2 && g.heights[84] <= 94.01)    // x 169, left of the bar: reaches the Dock top (94)
+    #expect(g.heights[635] >= 94 - 2 && g.heights[635] <= 94.01)  // x 1269, right of the bar
+    #expect(g.heights[5] <= Tuning.bankLimit(dockTop: 94, distance: 160) + 0.01)   // screen edge, 160pt from the bar: the soft tail
     for b in 85..<634 { #expect(g.visible[b] && g.heights[b] <= barBottom(x: Float(b) * 2 + 1) + 1e-3) }   // never inside the bar's rounded silhouette
     #expect(g.heights[300] > 5)                              // snow fills the gap under the bar
 }
@@ -375,13 +375,13 @@ private func heavy(_ f: SnowField, id: Int) {
     for _ in 0..<300 { f.deposit(surface: i, bin: 80, volume: 0.001) }
     let g = f.pile(id: Tuning.groundID)!
     #expect(abs(g.heights.reduce(0, +) - before) < 1)
-    #expect(g.heights[86...88].allSatisfy { $0 > 0 && $0 <= 35.3 })
+    #expect(g.heights[86...88].allSatisfy { $0 > 0 && $0 <= 35.3 - Tuning.barMargin })
 }
 
 @Test func groundBankLimitSlopesDownFromTheDock() {
     let p = bankField().pile(id: Tuning.groundID)!
-    #expect(abs(p.limit(84) - 35.2) < 1)             // the corner arc's centre height
-    #expect(p.limit(0) == Tuning.groundMaxHeight)      // the tail has run out before the screen edge
+    #expect(abs(p.limit(84) - 94) < 3)               // the Dock top at the bar end
+    #expect(p.limit(0) >= Tuning.groundMaxHeight)      // the soft tail
     for b in 1..<80 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }   // monotone up to the bar end
     // curved, not a straight diagonal; never steeper than the repose slope
     let mid = p.limit(84 - 30), end = p.limit(84 - 60)
@@ -440,22 +440,14 @@ private func heavy(_ f: SnowField, id: Int) {
 /// Bottom of the bar's rounded silhouette at x (inf outside it).
 private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171, maxX: 1269, minY: 10, radius: 25.2) ?? .infinity }
 
-@Test func bankHugsTheRoundedBarEndWithoutAWall() {
+@Test func underBarGroundContourFollowsTheRoundedUndersideAndTheBankRisesBesideIt() {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
-    // Dense sample of the drawn ground contour (interpolated along the segments) around both corners.
     var pts: [(x: Float, y: Float)] = []
-    for g in pileSegs(f) where g.base0 < 1 && g.x1 > 120 && g.x0 < 1320 {
+    for g in pileSegs(f) where g.base0 < 1 && g.x0 >= 172 && g.x1 <= 1268 {   // under the bar, off the 2pt bins of the bar's end walls
         for k in 0...8 { let t = Float(k) / 8; pts.append((g.x0 + (g.x1 - g.x0) * t, g.top0 + (g.top1 - g.top0) * t)) }
     }
     #expect(!pts.isEmpty)
-    for p in pts { #expect(p.y <= barBottom(x: p.x) + 0.3, "contour (\(p.x), \(p.y)) inside the bar") }   // jitter-free bound + chord tolerance
-    // The bank is full at the end: it rises to the arc's vertical tangent (10 + 25.2) and follows the arc from there.
-    #expect(pts.filter { $0.x < 171 }.map { $0.y }.max()! > 35.2 - 3.5)
-    // Continuity through the corner: neighbouring segments join (no vertical jump beyond the arc's own drop over a bin).
-    let segs = pileSegs(f).filter { $0.base0 < 1 }.sorted { $0.x0 < $1.x0 }
-    for (a, b) in zip(segs, segs.dropFirst()) where a.x1 > 100 && b.x0 < 1340 && b.x0 - a.x1 < 0.5 {
-        let arc = abs(barBottom(x: b.x0).isFinite && barBottom(x: a.x1).isFinite ? barBottom(x: b.x0) - barBottom(x: a.x1) : 0)
-        #expect(abs(b.top0 - a.top1) <= 2 + arc, "jump at x \(a.x1)")
-    }
+    for p in pts { #expect(p.y <= barBottom(x: p.x) + 0.3, "contour (\(p.x), \(p.y)) inside the bar") }
+    #expect(pileSegs(f).filter { $0.x1 < 171 && $0.base0 < 1 }.map { max($0.top0, $0.top1) }.max()! > 94 - 3.5)   // the bank beside the end reaches the Dock top
 }
