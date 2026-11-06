@@ -264,6 +264,7 @@ extension SnowField {
         let first = debris.count
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
+        breakIcicles(ax, ay, Float(b.x), Float(b.y), r, v)
         defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write

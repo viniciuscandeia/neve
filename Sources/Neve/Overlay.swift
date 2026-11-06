@@ -475,6 +475,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             Rig.snowman(look, contrast: hc, into: &w)
         }
         field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
+        field.writeIciclePrims(&w, shift: d)
     }
 
     private func render(_ drawable: CAMetalDrawable) {

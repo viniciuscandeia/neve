@@ -13,6 +13,10 @@ public final class SnowField {
     var glints: [Flake] = []     // sparkles on pile crests (Effects.swift), kept out of `debris`
     var puffs: [Flake] = []      // dust clouds (Effects.swift)
     var glintT: Float = 0
+    var icicles: [Icicle] = []   // Icicles.swift: decoration of window ends; iceT = seconds since the last spawn scan
+    var iceT: Float = 0
+    var chain = AvaChain()       // Avalanche.swift
+    var fxRng: SplitMix64        // icicles / avalanches: kept apart from `rng` so they never perturb the other sequences
     var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints
@@ -78,6 +82,7 @@ public final class SnowField {
                 config: SimConfig = .init(), seed: UInt64 = .random(in: 0...UInt64.max)) {
         self.config = config
         rng = SplitMix64(seed: seed)
+        fxRng = SplitMix64(seed: seed ^ 0x1CE1CEA7A1A)
         self.size = SIMD2(Float(size.width), Float(size.height))
         self.origin = origin
         self.groundY = Float(groundY)
@@ -88,6 +93,7 @@ public final class SnowField {
         let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
+        icicles.reserveCapacity(Tuning.maxIciclesPerScreen)
         glints.reserveCapacity(Tuning.maxGlints); puffs.reserveCapacity(Tuning.maxPuffs); runBins.reserveCapacity(8)
         figures.reserveCapacity(Tuning.maxFigures); fights.reserveCapacity(4); shots.reserveCapacity(6); splats.reserveCapacity(Tuning.maxSplats + 1)
         flakes.reserveCapacity(pool)
@@ -206,6 +212,8 @@ public final class SnowField {
         wind = calm ? 0 : windGain * windShape()
         stepFlakes(dt: dt)
         stepPeel(dt: dt)
+        stepIce(dt: dt)
+        stepAvalanche(dt: dt)
         stepDebris(dt: dt)
         stepPuffs(dt: dt)
         stepGlints(dt: dt)

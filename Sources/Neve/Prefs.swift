@@ -20,8 +20,14 @@ struct OverlayPrefs: Equatable {
 let osWindowRadius = Tuning.windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
 
 /// NEVE_SNOWMAN_FAST=1 (demos): builds 20x faster and on a shallower pile.
-let simConfig: SimConfig = ProcessInfo.processInfo.environment["NEVE_SNOWMAN_FAST"] == "1"
-    ? SimConfig(snowmanSpeed: 20, snowmanDepth: 4) : SimConfig()
+/// NEVE_DEMO_ICE=1 (demos): icicles grow 120x faster. NEVE_DEMO_AVALANCHE=<secs>: fills the piles and starts an avalanche that often.
+let simConfig: SimConfig = {
+    let env = ProcessInfo.processInfo.environment
+    var c = env["NEVE_SNOWMAN_FAST"] == "1" ? SimConfig(snowmanSpeed: 20, snowmanDepth: 4) : SimConfig()
+    if env["NEVE_DEMO_ICE"] == "1" { c.iceSpeed = 120 }
+    c.avalancheDemo = Float(env["NEVE_DEMO_AVALANCHE"] ?? "") ?? 0
+    return c
+}()
 
 extension Intensity {
     static func saved(_ ud: UserDefaults) -> Intensity { Intensity(rawValue: ud.object(forKey: key) as? Int ?? 1) ?? .media }
