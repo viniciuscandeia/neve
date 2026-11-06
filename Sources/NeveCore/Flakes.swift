@@ -20,8 +20,9 @@ public struct Flake {
 
 extension SnowField {
     func spawn(_ kind: FlakeKind, anywhere: Bool) -> Flake {
-        let x = Float.random(in: 0...size.x, using: &rng)
-        let y = anywhere ? Float.random(in: 0...size.y, using: &rng) : size.y + Float.random(in: 0...40, using: &rng)
+        // Compact mode: new snow appears just above the live strip (behind the window); `anywhere` spans the whole screen.
+        let x = anywhere ? Float.random(in: 0...size.x, using: &rng) : Float.random(in: liveX0...max(liveX0, liveX1), using: &rng)
+        let y = anywhere ? Float.random(in: 0...size.y, using: &rng) : liveTop + Float.random(in: 0...40, using: &rng)
         let phase = Float.random(in: 0...(2 * .pi), using: &rng)
         switch kind {
         case .background:
@@ -50,7 +51,7 @@ extension SnowField {
     }
 
     func stepFlakes(dt: Float) {
-        let w = size.x
+        let x0 = liveX0 - 10, w = liveX1 - liveX0 + 20
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
         for n in 0..<(skyEnd + bgEnd) {
             let i = n < skyEnd ? n : skyCount + n - skyEnd
@@ -77,13 +78,13 @@ extension SnowField {
                     f.pos.y += (d.y * radial + d.x * swirl + pointerVel.y * 0.4 * k2) * dt
                 }
             }
-            if f.pos.x < -10 { f.pos.x += w + 20 } else if f.pos.x > w + 10 { f.pos.x -= w + 20 }
+            if f.pos.x < x0 { f.pos.x += w } else if f.pos.x > x0 + w { f.pos.x -= w }
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
                 f = spawn(.sky, anywhere: false)
             } else if f.pos.y < -f.size {
                 f = spawn(f.kind, anywhere: false)
             }
-            if !isActive(i), f.pos.y > size.y { f.kind = .dormant }   // just respawned: retire
+            if !isActive(i), f.pos.y > liveTop { f.kind = .dormant }   // just respawned: retire
             flakes[i] = f
             if f.kind != .dormant { if i < skyCount { liveSky = i + 1 } else { liveBg = i - skyCount + 1 } }
         }

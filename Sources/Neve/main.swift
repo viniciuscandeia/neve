@@ -40,7 +40,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var behind: Bool { flag(.behindWindows) }
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
-        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), showInCaptures: flag(.showInCaptures), intensity: Intensity.saved(ud))
+        OverlayPrefs(economy: economy, behind: behind, still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), showInCaptures: flag(.showInCaptures), behindLarge: flag(.behindLarge), intensity: Intensity.saved(ud))
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -215,7 +215,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             applyPrefs()
             if polling { pollWindows() }   // empties / refills the surface list
             updateStatus()
-        case .stillSnow, .snowman, .walk, .showInCaptures: applyPrefs()
+        case .stillSnow, .snowman, .walk, .showInCaptures, .behindLarge: applyPrefs()
         }
     }
 

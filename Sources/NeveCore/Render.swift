@@ -58,7 +58,7 @@ extension SnowField {
         var n = 0
         for i in 0..<(skyEnd + bgEnd) {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
-            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
+            if f.kind != .dormant { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0)); n += 1 }   // seed >= 2: background flake (shader occlusion by large windows)
         }
         for f in debris { p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed); n += 1 }
         return n

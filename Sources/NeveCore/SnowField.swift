@@ -25,6 +25,9 @@ public final class SnowField {
     var skyEnd = 0          // slots [0, skyEnd) of the sky pool / [skyCount, skyCount+bgEnd) of the background pool
     var bgEnd = 0           // may be live or spawning; everything beyond is dormant, so step/write skip it
     var intensity = Intensity.media
+    // MARK: P3-0 live region (Coverage.swift): flakes spawn / wrap inside [liveX0, liveX1], just above liveTop; limits scale with areaScale
+    var liveX0: Float = 0, liveX1: Float = 0, liveTop: Float = 0
+    var areaScale: Float = 1
     var lowPower = false
     private(set) var calm = false
     var time: Float = 0
@@ -68,6 +71,7 @@ public final class SnowField {
         self.origin = origin
         self.groundY = Float(groundY)
         self.visibleTop = Float(visibleTop)
+        liveX1 = self.size.x; liveTop = self.size.y
         numCols = max(1, Int((Float(size.width) / Tuning.binWidth).rounded(.up)))
         offsets = [Int32](repeating: 0, count: numCols + 1)
         let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
@@ -85,7 +89,7 @@ public final class SnowField {
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
     public func setIntensity(_ v: Intensity, immediate: Bool = false) {
         intensity = v
-        let m = v.multiplier / Intensity.nevasca.multiplier
+        let m = v.multiplier / Intensity.nevasca.multiplier * areaScale
         let k: Float = calm ? 0.3 : 1
         skyLimit = Int(Float(skyCount) * m * (lowPower ? 0.5 : 1) * k)
         bgLimit = Int(Float(flakes.count - skyCount) * m * k)

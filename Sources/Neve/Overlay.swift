@@ -50,6 +50,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
+    // MARK: P3-0 maximized window (Coverage.swift)
+    private let root = CALayer()                       // screen-local coordinates: bounds.origin = the live rect's origin while shrunk
+    private var cover = CompactState()
+    private var coverFraction: Float = 0, liveLocal: CGRect?   // from the last window poll
+    private var coverTime: CFTimeInterval = 0, coverCheck = false
+    private var coverPause = false                     // `covered`: nothing live, paused like a fullscreen app
+    private var coverActive = false                    // compact mode entered (until the exit ramp ends)
+    private var occStrength: Float = 0, occTarget: Float = 0   // flake occluders 0...1
+    private var occ = [SIMD4<Float>](repeating: .zero, count: 9)   // 4 rects hiding every flake, 4 hiding background flakes, strength
+    private var shrunk: CGRect?                        // live rect applied to panel + Metal layer (screen-local); nil = whole screen
 
     init?(screen: NSScreen, prefs: OverlayPrefs) {
         guard let gpu = Overlay.sharedGpu else { return nil }
@@ -96,9 +106,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         window.setFrame(f, display: false)
 
         let bounds = CGRect(origin: .zero, size: f.size)
-        let root = CALayer()
+        let host = CALayer()   // layer-hosting view: its layer geometry is ours (root moves with the live rect)
+        root.frame = bounds
+        host.addSublayer(root)
         view.frame = bounds
-        view.layer = root
+        view.layer = host
         view.wantsLayer = true
         window.contentView = view
 
@@ -113,6 +125,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         metalLayer.isOpaque = false
         metalLayer.contentsScale = scale
         metalLayer.frame = bounds
+        metalLayer.contentsGravity = .bottomLeft   // a resize never stretches the last frame
         metalLayer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
         root.addSublayer(metalLayer)
 
@@ -166,7 +179,91 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
         forcePath = true                    // re-place the piles at once, dropping any drag offset
+        measureCover(windows)               // MARK: P3-0
     }
+    // MARK: P3-0 maximized window: snow only in the visible strip
+
+    /// Windows -> coverage of the usable area, the live rect and the shader occluders (poll rate; cheap).
+    private func measureCover(_ windows: [WindowInfo]) {
+        let vis = screen.visibleFrame, o = frame.origin
+        let rects = windows.filter { $0.number != 0 && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
+        let c = coverage(of: rects, in: vis)
+        coverFraction = c.fraction
+        liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
+        func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
+        for i in 0..<8 { occ[i] = .zero }
+        for (i, r) in rects.prefix(4).enumerated() { occ[i] = box(r) }
+        if prefs.behindLarge {
+            let big = rects.filter { $0.width * $0.height >= 0.35 * vis.width * vis.height }
+            for (i, r) in big.prefix(4).enumerated() { occ[4 + i] = box(r) }
+        }
+        if !(window.isVisible && link?.isPaused == false) {   // not ticking (covered / paused): the poll drives the state machine
+            advanceCover(CACurrentMediaTime())
+            if cover.pending, !coverCheck {   // look again shortly: nobody else will
+                coverCheck = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    MainActor.assumeIsolated { self?.coverCheck = false; self?.advanceCover(CACurrentMediaTime()) }
+                }
+            }
+        }
+    }
+
+    /// Hysteresis step (per frame, or per poll while paused), then act on the state.
+    private func advanceCover(_ now: CFTimeInterval) {
+        let dt = Float(min(max(now - coverTime, 0), 0.25))
+        coverTime = now
+        let s = cover.update(fraction: coverFraction, liveHeight: liveLocal?.height ?? 0, mouseDown: NSEvent.pressedMouseButtons != 0, dt: dt)
+        if s != .normal, !coverActive { coverActive = true; occTarget = 1 }
+        if s == .normal, coverActive, occTarget != 0 {   // leaving: expand first, wake half the flakes anywhere, then fade the occluders out
+            setLiveRect(nil)
+            field.wake(fraction: 0.5)
+            occTarget = 0
+        }
+        let pause = s == .covered
+        if pause != coverPause { coverPause = pause; present() }
+        guard coverActive else { return }
+        if occStrength != occTarget {
+            occStrength = reduceMotion ? occTarget : occStrength + (occTarget > occStrength ? 1 : -1) * min(Float(dt) / 0.6, abs(occTarget - occStrength))
+            if reduceMotion { crossfade() }
+        }
+        if occTarget == 0 { if occStrength == 0 { coverActive = false }; return }
+        // Shrink once the occluders are fully in, and only when the live area is at most half the screen.
+        if occStrength >= 1, s == .compact {
+            if let r = liveLocal, r.width * r.height <= 0.5 * frame.width * frame.height { if shrunk != r { setLiveRect(r) } }
+            else if shrunk != nil { setLiveRect(nil) }
+        }
+    }
+
+    /// Reduce Motion: a quick fade instead of the 0.6s occluder ramp.
+    private func crossfade() {
+        guard window.isVisible else { return }
+        window.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.3; window.animator().alphaValue = 1 }
+    }
+
+    /// Panel, Metal layer and layer coordinates change together in one transaction; piles and the sim stay in screen-local coordinates.
+    private func setLiveRect(_ r: CGRect?) {
+        guard shrunk != r else { return }
+        shrunk = r
+        let g = r ?? CGRect(origin: .zero, size: frame.size)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.setFrame(CGRect(x: frame.minX + g.minX, y: frame.minY + g.minY, width: g.width, height: g.height), display: false)
+        root.frame = CGRect(origin: .zero, size: g.size)
+        root.bounds = g
+        metalLayer.frame = g
+        metalLayer.drawableSize = CGSize(width: g.width * scale, height: g.height * scale)
+        CATransaction.commit()
+        field.setLive(r)
+        if reduceMotion { crossfade() }
+    }
+
+    /// Window-local mouse position -> screen-local simulation coordinates.
+    private func local(_ e: NSEvent) -> CGPoint {
+        let p = view.convert(e.locationInWindow, from: nil), o = shrunk?.origin ?? .zero
+        return CGPoint(x: p.x + o.x, y: p.y + o.y)
+    }
+
     func clear() { field.clear() }
     func stage(_ s: Scenario) { field.stage(s) }
 
@@ -226,12 +323,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     /// Presents only when `run` and not under a fullscreen app. Piles are kept while paused.
     private func present() {
-        guard run && !fullscreen else {
+        guard run && !fullscreen && !coverPause else {
             guard window.isVisible else { link?.isPaused = true; return }
             // Fade out (~0.4s), then hide; the link keeps running meanwhile. Fullscreen/thermal hides are the same path.
             NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; window.animator().alphaValue = 0 }) { [weak self] in
                 MainActor.assumeIsolated {
-                    guard let self, !(self.run && !self.fullscreen) else { return }
+                    guard let self, !(self.run && !self.fullscreen && !self.coverPause) else { return }
                     self.link?.isPaused = true
                     self.window.orderOut(nil)
                 }
@@ -284,6 +381,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let now = time, resumed = lastTimestamp == 0
         let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
         lastTimestamp = now
+        advanceCover(now)   // MARK: P3-0
         if !still { field.step(dt: Float(dt)) }
         Perf.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
@@ -336,13 +434,14 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     private func mouseDown(_ e: NSEvent) {
         guard e.modifierFlags.contains(.option) || NSEvent.modifierFlags.contains(.option) else { return }
-        held = field.pickSnowball(at: e.locationInWindow) ?? field.scoop(at: e.locationInWindow)
+        let p = local(e)
+        held = field.pickSnowball(at: p) ?? field.scoop(at: p)
         lastDragTime = e.timestamp
     }
 
     private func mouseDragged(_ e: NSEvent) {
         guard let id = held else { return }
-        field.drag(id, to: e.locationInWindow, dt: Float(max(e.timestamp - lastDragTime, 1.0 / 240)))
+        field.drag(id, to: local(e), dt: Float(max(e.timestamp - lastDragTime, 1.0 / 240)))
         lastDragTime = e.timestamp
     }
 
@@ -370,6 +469,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func render(_ drawable: CAMetalDrawable) {
+        let g = shrunk ?? CGRect(origin: .zero, size: frame.size)   // MARK: P3-0
+        // A drawable made before a resize has the old size: skip it (the next one matches).
+        guard drawable.texture.width == Int((g.width * scale).rounded()), drawable.texture.height == Int((g.height * scale).rounded()) else { return }
         guard inFlight.wait(timeout: .now()) == .success else { return }   // never block the main thread
         guard let cmd = gpu.queue.makeCommandBuffer() else {
             inFlight.signal()
@@ -390,6 +492,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         pass.colorAttachments[0].texture = drawable.texture
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
+            // Shaders always work in whole-screen coordinates; the viewport slides the screen under the (smaller) drawable.
+            enc.setViewport(MTLViewport(originX: Double(-g.minX * scale), originY: Double(-(CGFloat(field.size.y) - g.maxY) * scale),
+                                        width: Double(CGFloat(field.size.x) * scale), height: Double(CGFloat(field.size.y) * scale), znear: 0, zfar: 1))
             if w.n > 0 {   // actors under the flakes
                 enc.setRenderPipelineState(gpu.prims)
                 enc.setVertexBuffer(pbuf, offset: 0, index: 0)
@@ -401,6 +506,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
+            occ[8] = SIMD4(occStrength, 0, 0, 0)
+            occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()
         }
