@@ -88,3 +88,11 @@ private func look(built: Int = 7, facing: Float = 1, lean: Float = 0) -> Snowman
     #expect(!p.contains { $0.kind == 0 && abs($0.b.x - 9.75) < 1e-4 })
     #expect(p.count == 8 + 3 + 6)   // base + middle, buttons, arms: no head / face / scarf
 }
+
+@Test func headlessEmitsNoEllipseAboveTheMiddleBall() {
+    var l = look(); l.headless = true
+    let rb: Float = 17.25, rm: Float = 12.75
+    let top = 50 + 2 * rb + 2 * rm - 1.5   // top of the middle ball
+    let p = draw { Rig.snowman(l, contrast: false, into: &$0) }
+    #expect(!p.contains { $0.kind == 0 && $0.a.y > top - 0.5 * rm })   // nothing floats up where the head was
+}
