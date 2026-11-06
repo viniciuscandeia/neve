@@ -114,7 +114,7 @@ extension SnowField {
             func jitter(_ i: Int, _ sm: Float) -> Float {
                 let rel = s.c0 + i - s.anchor, r = ((rel % 3) + 3) % 3, g = rel - r
                 let nz = Float(noise(g)) * (1 - Float(r) / 3) + Float(noise(g + 3)) * Float(r) / 3
-                return nz * min(sm * 0.08, 1.5)
+                return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5)   // the Dock bank is bigger: a little more texture
             }
             func top(_ i: Int, _ b: Int, _ e: Int) -> Float {
                 // Runs split at the Dock bar ends keep their full height there (no taper): that edge is a wall, not a pile end.

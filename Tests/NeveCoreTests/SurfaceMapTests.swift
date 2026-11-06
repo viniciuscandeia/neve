@@ -352,8 +352,8 @@ private func heavy(_ f: SnowField, id: Int) {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
     let g = f.pile(id: Tuning.groundID)!
-    #expect(g.heights[84] >= 85 && g.heights[84] <= 90)      // x 169, left of the bar
-    #expect(g.heights[634] >= 85 && g.heights[634] <= 90)    // x 1269, right of the bar
+    #expect(g.heights[84] >= 48 && g.heights[84] <= 58.6)    // x 169, left of the bar: a drift at ~65% of the bar top, not a slab up to it
+    #expect(g.heights[634] >= 48 && g.heights[634] <= 58.6)  // x 1269, right of the bar
     #expect(g.heights[5] <= 38.5)                             // screen edge, 171pt from the bar
     for b in 85..<634 { #expect(g.visible[b] && g.heights[b] <= 10 + 1e-4) }   // never inside the bar rect
     #expect(g.heights[300] > 5)                              // snow fills the gap under the bar
@@ -369,7 +369,7 @@ private func heavy(_ f: SnowField, id: Int) {
 @Test func snowBesideTheDockSpreadsUnderTheBarWithoutLoss() {
     let f = bankField()
     let i = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
-    for b in 70..<85 { f.surfaces[i].pile.heights[b] = 60 }
+    for b in 70..<85 { f.surfaces[i].pile.heights[b] = 40 }
     let before = f.pile(id: Tuning.groundID)!.heights.reduce(0, +)
     for _ in 0..<300 { f.deposit(surface: i, bin: 80, volume: 0.001) }
     let g = f.pile(id: Tuning.groundID)!
@@ -379,9 +379,14 @@ private func heavy(_ f: SnowField, id: Int) {
 
 @Test func groundBankLimitSlopesDownFromTheDock() {
     let p = bankField().pile(id: Tuning.groundID)!
-    #expect(p.limit(84) == 90)                 // min(dockTop, groundY)
-    #expect(abs(p.limit(0) - (94 - 0.35 * 171)) < 1)   // screen edge is 171pt from the bar: still on the slope
-    for b in 1..<84 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }
+    #expect(abs(p.limit(84) - 0.65 * 90) < 4)        // 65% of min(dockTop, groundY)
+    #expect(p.limit(0) == Tuning.groundMaxHeight)      // the tail has run out before the screen edge
+    for b in 1..<80 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }   // monotone up to the rounded shoulder (last 8pt)
+    #expect(p.limit(84) > p.limit(80) - 8 && p.limit(84) < p.limit(80) + 6)
+    // curved, not a straight diagonal; never steeper than the repose slope
+    let mid = p.limit(84 - 30), end = p.limit(84 - 60)
+    #expect(p.limit(84) - mid > mid - end, "convex tail")
+    for b in 1..<85 { #expect(p.limit(b) - p.limit(b - 1) <= Tuning.slope + 1e-3) }
 }
 
 @Test func groundAndDockPilesMergeIntoOneBankContourWhereTheyMeet() {
@@ -401,4 +406,33 @@ private func heavy(_ f: SnowField, id: Int) {
     heavy(f, id: Tuning.groundID)
     let n = f.update(windows: [win(0, 600, 10, 240, 84)])
     #expect(n > 0)
+}
+
+// MARK: - Stability (the bank must not reshape by itself)
+
+@Test func repeatedIdenticalUpdatesKeepTheBankIdentical() {
+    let f = bankField()
+    heavy(f, id: Tuning.groundID)
+    let h = f.pile(id: Tuning.groundID)!.heights
+    for _ in 0..<5 { f.update(windows: [win(0, 171, 10, 1098, 84)]); f.boundsDirty = true }
+    #expect(f.pile(id: Tuning.groundID)!.heights == h)
+}
+
+@Test func dockDebounceIgnoresJitterAndTransientMisses() {
+    var d = DockDebounce()
+    let r = CGRect(x: 171, y: 10, width: 1098, height: 76)
+    #expect(d.feed(r).changed && d.frame == r)
+    #expect(!d.feed(r.offsetBy(dx: 1, dy: 1.5)).changed && d.frame == r)       // jitter
+    for _ in 0..<3 { let x = d.feed(nil); #expect(!x.changed && x.retry && d.frame == r) }   // grace
+    #expect(!d.feed(r).changed)                                                  // a good read resets the count
+    for _ in 0..<3 { _ = d.feed(nil) }
+    let gone = d.feed(nil)
+    #expect(gone.changed && d.frame == nil)                                      // really gone
+    #expect(d.feed(r.insetBy(dx: -20, dy: 0)).changed)
+}
+
+@Test func noGroundContourInsideTheDockBarRect() {
+    let f = bankField()
+    heavy(f, id: Tuning.groundID)
+    for g in pileSegs(f) where g.base0 < 1 && g.x0 >= 172 && g.x1 <= 1268 { #expect(max(g.top0, g.top1) <= 10 + 1e-3) }
 }
