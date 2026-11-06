@@ -119,7 +119,7 @@ public struct Pile {
     }
 
     /// Carves a groove centred at global x `centerX`: depth * (1 - (d/halfWidth)^2) off each visible bin within halfWidth (never below 0),
-    /// and `berm` (a share, 0.15) of the carved area piled onto the bins at halfWidth ... halfWidth + 2 on both sides (capped by `limit`).
+    /// and `berm` (a share, 0.15) of the carved area piled onto the bins at halfWidth ... halfWidth + 2 on both sides, or only on the `side` (+-1) ahead of the blade (capped by `limit`).
     /// Returns the carved area (pt^2).
     @discardableResult
     mutating func carve(centerX: Float, halfWidth w: Float, depth: Float, berm: Float) -> Float {
@@ -142,6 +142,36 @@ public struct Pile {
             if d >= w, d <= w + 2 + 0.01 { heights[i] = min(heights[i] + add, max(limit(i), heights[i])) }
         }
         return removed
+    }
+
+    /// Plows a shallow trench: lowers every visible bin within `w` of `centerX` to at most `ref - depth * (1 - (d/w)^2)` (idempotent, so a
+    /// moving blade can call it every frame without digging deeper). `berm` of the removed area is banked on the bins at w ... w + 2 on both
+    /// sides (capped by `limit`); the rest, which the caller sprays as debris, is returned (pt^2). `maxStep` caps what one call takes from a bin (the rest follows next call: no pops).
+    mutating func plow(centerX: Float, halfWidth w: Float, depth: Float, ref: Float, berm: Float, side: Float = 0, maxStep: Float = .infinity) -> Float {
+        guard w > 0, depth > 0 else { return 0 }
+        let bw = Tuning.binWidth
+        let lo = max(0, Int(((centerX - w - 2) / bw).rounded(.down)) - c0), hi = min(heights.count - 1, Int(((centerX + w + 2) / bw).rounded(.up)) - c0)
+        guard lo <= hi else { return 0 }
+        func onSide(_ i: Int) -> Bool { side == 0 || (binCenter(c0 + i) - centerX) * side > 0 }   // side: +-1 banks only ahead of the blade, 0 both
+        var removed: Float = 0, edges = 0
+        for i in lo...hi where visible[i] {
+            let d = abs(binCenter(c0 + i) - centerX)
+            if d < w {
+                let dh = heights[i] - max(ref - depth * (1 - (d / w) * (d / w)), 0)
+                if dh > 0 { let c = min(dh, maxStep); heights[i] -= c; removed += c * bw }
+            } else if d <= w + 2 + 0.01, onSide(i) { edges += 1 }
+        }
+        guard removed > 0 else { return 0 }
+        guard edges > 0 else { return removed }
+        let add = berm * removed / (Float(edges) * bw)
+        var banked: Float = 0
+        for i in lo...hi where visible[i] {
+            let d = abs(binCenter(c0 + i) - centerX)
+            guard d >= w, d <= w + 2 + 0.01, onSide(i) else { continue }
+            let h = min(heights[i] + add, max(limit(i), heights[i]))
+            banked += (h - heights[i]) * bw; heights[i] = h
+        }
+        return removed - banked
     }
 
     /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.

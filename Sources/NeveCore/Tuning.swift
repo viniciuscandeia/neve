@@ -44,6 +44,9 @@ public enum Tuning {
     public static let defaultWindowRadius: CGFloat = 20   // the app passes the OS-dependent value via WindowInfo.radius
     static let calmSway: Float = 0.25       // Reduce Motion: share of the lateral flake sway kept
     static let calmDebrisFall: Float = 30   // Reduce Motion: uniform initial fall speed of knocked-off snow
+    static let penguinGroove: Float = 2.5           // belly-slide trench depth (pt, at most 35% of the pile)
+    static let penguinBerm: Float = 0.15            // share of the plowed area banked beside the trench; the rest sprays
+    static let penguinPuff: Float = 8               // plowed area (pt^2) per spray puff
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
     static let maxDebris = 1200
