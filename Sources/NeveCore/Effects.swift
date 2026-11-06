@@ -154,7 +154,7 @@ extension SnowField {
             if glints[i].delay <= 0 { glints.swapAt(i, glints.count - 1); glints.removeLast() }
             i -= 1
         }
-        glintT += dt * 0.5
+        glintT += dt * 0.5 * musicGlint
         guard glintT >= 1, !surfaces.isEmpty else { return }
         glintT -= 1
         guard glints.count < Tuning.maxGlints else { return }

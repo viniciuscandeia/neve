@@ -45,8 +45,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
         // Scene mode: fixed options (Mostrar em capturas ON, everything alive), whatever the user saved; nothing is written back.
-        if let k = sceneKind { return OverlayPrefs(economy: false, behind: false, behindLarge: false, still: false, snowman: true, walk: true, visitors: true, sleigh: true, showInCaptures: true, adaptive: false, intensity: k == .demo ? .forte : .media) }
-        return OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), intensity: Intensity.saved(ud))
+        if let k = sceneKind { return OverlayPrefs(economy: false, behind: false, behindLarge: false, still: false, snowman: true, walk: true, visitors: true, sleigh: true, showInCaptures: true, adaptive: false, music: false, intensity: k == .demo ? .forte : .media) }
+        return OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), music: flag(.music), intensity: Intensity.saved(ud))
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -62,6 +62,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
         prefSnapshot = prefValues()
+        syncMusic()
         intensitySnapshot = Intensity.saved(ud)
         // These can be posted from any thread (thermal / power state from a system queue, defaults from anywhere): the
         // selector API would call the @MainActor methods off the main thread and trap, so deliver them on the main queue.
@@ -167,7 +168,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             outroGen += 1; meltGen += 1; idleMelting = false
             if on { outroing = false; overlays.forEach { $0.intro() }; refreshRunState() }
             else { updateStatus(); runOutro { [weak self] in self?.refreshRunState() } }
-        case .economy: syncOverlays()
+        case .economy: syncOverlays(); syncMusic()
+        case .music: applyPrefs(); syncMusic()
         case .ambient: if on && (userIdle || idleMelting) { wakeFromIdle() } else { updateStatus() }
         case .behindWindows:
             applyPrefs()
@@ -175,6 +177,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             updateStatus()
         case .behindLarge, .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps: applyPrefs()
         }
+    }
+
+    /// The tap runs only while the option is on and nothing asks for calm: Reduce Motion, economy, Low Power. Off = tap destroyed.
+    private func syncMusic() {
+        let want = flag(.music) && !reduceMotion && !economy && !ProcessInfo.processInfo.isLowPowerModeEnabled && sceneKind == nil
+        if want, !MusicTap.shared.running {
+            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Sem permissão para captar o áudio (Privacidade e Segurança)." : "Requer macOS 14.2 ou mais recente.")
+        } else if !want { MusicTap.shared.stop(); if MusicTap.supported { panel.musicNote = "" } }
     }
 
     private func settingsEnv() -> SettingsEnv {
@@ -485,11 +495,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func refreshRunStateNotification() { refreshRunState() }
     @objc private func accessibilityChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        syncMusic()
         updateStatus()
     }
     @objc private func powerChanged() {
         let low = ProcessInfo.processInfo.isLowPowerModeEnabled
         for o in overlays { o.setLowPower(low) }
+        syncMusic()
     }
 }
 

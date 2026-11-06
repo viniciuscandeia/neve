@@ -431,6 +431,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         lastTimestamp = now
         advanceCover(now)   // MARK: P3-0
         frameDt = Float(dt)
+        field.music = prefs.music ? MusicTap.shared.read() : .silent
         if !still { field.step(dt: Float(dt)) }
         Perf.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.

@@ -26,6 +26,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>LSUIElement</key><true/>
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
 	<key>NSHighResolutionCapable</key><true/>
+	<key>NSAudioCaptureUsageDescription</key><string>A Neve usa o áudio que está tocando no Mac só para fazer a neve dançar no ritmo da música. Nada é gravado ou enviado.</string>
 </dict>
 </plist>
 PLIST
