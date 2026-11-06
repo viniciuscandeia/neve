@@ -24,6 +24,7 @@ public final class SnowField {
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints
     var surfaces: [Surface] = []
+    var dockTrickle = DockTrickle()   // DockSpill.swift
     var index: [Int: Int] = [:]   // surface id -> index into `surfaces`, rebuilt with them in updateSurfaces
     var offsets: [Int32]       // CSR: per column range into entries
     var entries: [Entry] = []
@@ -240,6 +241,7 @@ public final class SnowField {
         stepIce(dt: dt)
         stepAvalanche(dt: dt)
         stepDebris(dt: dt)
+        stepDockSpill(dt: dt)
         stepPuffs(dt: dt)
         stepGlints(dt: dt)
         stepDrips(dt: dt)
