@@ -57,16 +57,16 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 | **Nevar** (⌘N) | Liga e desliga a neve |
 | Quantidade (linha de ícones) | Leve, Média, Forte, Nevasca (o nome aparece no tooltip) |
 | **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
-| **Ajustes…** (⌘,) | Abre o popover de ajustes |
+| **Ajustes…** (⌘,) | Abre o popover de ajustes (⌥-clique abre a janela direto) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
-O popover **Ajustes** agrupa o resto, com efeito imediato:
+O popover **Ajustes** é uma grade de blocos, com efeito imediato: *Quantidade* (mesma linha de ícones do menu), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Neve atrás de janelas grandes*. **Mais…** abre a janela **Ajustes do Neve**, com tudo por abas:
 
-- **Onde:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* (neve só sobre o papel de parede) e *Neve atrás de janelas grandes*.
-- **Bonecos e bichos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* e *Trenó do Papai Noel* (os dois últimos ainda sem efeito).
-- **Desempenho:** *Modo econômico* (30 fps, só tela principal) e *Modo ambiente* (não pausa após 5 minutos sem uso).
-- **Acessibilidade:** *Neve parada*, só com Reduzir Movimento ativo no sistema.
-- **Sistema:** *Mostrar em capturas* e *Abrir no login*.
+- **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Neve atrás de janelas grandes*.
+- **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* e *Trenó do Papai Noel* (os dois últimos ainda sem efeito).
+- **Desempenho:** *Modo econômico* (30 fps, só tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso) e *Neve parada* (só com Reduzir Movimento).
+- **Sistema:** *Mostrar em capturas* e *Abrir no login* (não aparece em instâncias de desenvolvimento).
+- **Como brincar:** dicas.
 
 ## 🔥 Instalação
 
