@@ -79,14 +79,13 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 | Item | O que faz |
 |---|---|
 | Linha de status | Ex.: "Nevando · Média", "Pausado — app em tela cheia", "Pausado — inativo", "Desligado" |
-| **Permitir neve no Dock…** | Só aparece quando falta a permissão de Acessibilidade |
 | **Nevar** (⌘N) | Liga e desliga a neve |
-| Quantidade (linha de ícones) | Leve, Média, Forte, Nevasca (o nome aparece no tooltip) |
+| **Permitir neve no Dock…** | Só aparece quando falta a permissão de Acessibilidade |
 | **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
-| **Ajustes…** (⌘,) | Abre o popover de ajustes (⌥-clique abre a janela direto) |
+| **Ajustes** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
-O popover **Ajustes** é uma grade de blocos, com efeito imediato: *Quantidade* (mesma linha de ícones do menu), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Neve atrás de janelas grandes*. **Mais…** abre a janela **Ajustes do Neve**, com tudo por abas:
+Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar**, depois uma grade de blocos, com efeito imediato: *Quantidade* (linha de ícones), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Neve atrás de janelas grandes*. e, no rodapé, **Limpar neve**, **Ajustes** e **Sair**. **Ajustes** abre a janela **Ajustes**, com tudo por abas:
 
 - **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Neve atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
@@ -104,7 +103,7 @@ scripts/make-app.sh    # gera build/Neve.app
 ```
 
 1. Mova `build/Neve.app` para `/Applications` (necessário para o item de login funcionar de forma confiável) e abra.
-2. No menu, abra **Ajustes…** e marque **Abrir no login**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
+2. No popover, abra **Ajustes** e marque **Abrir no login**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
 
 O Neve permite uma única instância. A permissão de Acessibilidade fica associada à assinatura do app: com a identidade estável "Neve Local Signing" ela sobrevive a recompilações; com a assinatura ad-hoc (usada se a identidade não existir, e `make-app.sh` avisa) ela se perde a cada build.
 

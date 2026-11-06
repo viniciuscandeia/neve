@@ -8,19 +8,18 @@ import SwiftUI
 let neveInstance: String? = Bundle.main.object(forInfoDictionaryKey: "NeveInstance") as? String ?? ProcessInfo.processInfo.environment["NEVE_INSTANCE"]
 
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppController: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var overlays: [Overlay] = []
     private var timer: Timer?
     private var idleWatch = false   // the timer is the 1 Hz fullscreen watch
     private var screensAsleep = false
     private var sessionInactive = false
-    private let metalItem = NSMenuItem(title: "Metal indisponível", action: nil, keyEquivalent: "")
+    private let panel = PanelState()
     private var loggedMetal = false
     private var mouseDown = false
     private var userIdle = false   // no input for 5 min: rendering paused, polling kept to notice input
     private var mouseMonitor: Any?
-    private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let dock = DockWatcher()
     private let watcher = WindowWatcher()
     private var slowTimer: Timer?
@@ -28,9 +27,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The one defaults store: a per-instance suite for dev builds, so concurrent instances never share prefs.
     private let ud = neveInstance.flatMap { UserDefaults(suiteName: "io.github.viniciuscandeia.neve.dev.\($0)") } ?? .standard
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
-    private let axItem = NSMenuItem(title: "Permitir neve no Dock…", action: #selector(askAccessibility), keyEquivalent: "")
-    private let nevarItem = NSMenuItem(title: "Nevar", action: #selector(toggleEnabled), keyEquivalent: "n")
-    private let intensityControl = NSSegmentedControl()
     private var popover: NSPopover?
     private var settingsWindow: NSWindow?
     private var intensitySnapshot = Intensity.media
@@ -55,43 +51,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.symbol("snowflake", "Neve")
         if let n = neveInstance { item.button?.title = " \(n)"; item.button?.imagePosition = .imageLeft }
-        let menu = NSMenu()
-        menu.delegate = self
-        let clear = NSMenuItem(title: "Limpar neve", action: #selector(clearSnow), keyEquivalent: "k")
-        let settings = NSMenuItem(title: "Ajustes…", action: #selector(showSettings), keyEquivalent: ",")
-        let quit = NSMenuItem(title: "Sair", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        quit.image = Self.symbol("power")
-        clear.image = Self.symbol("sparkles")
-        settings.image = Self.symbol("gearshape")
-        clear.target = self
-        settings.target = self
-        nevarItem.target = self
-        nevarItem.image = Self.symbol("snowflake")
-        let symbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
-        intensityControl.segmentCount = symbols.count
-        intensityControl.trackingMode = .selectOne
-        intensityControl.segmentStyle = .automatic
-        for v in Intensity.allCases {
-            intensityControl.setImage(Self.symbol(symbols[v.rawValue], v.title), forSegment: v.rawValue)
-            intensityControl.setToolTip(v.title, forSegment: v.rawValue)
-            intensityControl.setWidth(44, forSegment: v.rawValue)
-        }
-        intensityControl.target = self
-        intensityControl.action = #selector(pickIntensity(_:))
-        intensityControl.frame = NSRect(x: 0, y: 0, width: 4 * 44, height: 24)
-        let intensityItem = NSMenuItem()
-        let holder = NSView(frame: NSRect(x: 0, y: 0, width: 4 * 44 + 28, height: 30))
-        intensityControl.frame.origin = NSPoint(x: 14, y: 3)
-        holder.addSubview(intensityControl)
-        intensityItem.view = holder
-        axItem.target = self
-        axItem.image = Self.symbol("exclamationmark.triangle")
-        axItem.isHidden = AXIsProcessTrusted()
-        metalItem.isHidden = true
-        let items: [NSMenuItem] = [statusLine, axItem, metalItem, .separator(), nevarItem, intensityItem, .separator(), clear, settings, quit]
-        for i in items { menu.addItem(i) }
+        item.button?.target = self
+        item.button?.action = #selector(togglePopover)
         updateStatus()
-        item.menu = menu
         statusItem = item
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
@@ -162,7 +124,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
         }
         overlays += made
-        metalItem.isHidden = !overlays.isEmpty || NSScreen.screens.isEmpty
+        panel.metalMissing = overlays.isEmpty && !NSScreen.screens.isEmpty
         refreshRunState()
     }
 
@@ -183,13 +145,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func prefValues() -> [Pref: Bool] { Dictionary(uniqueKeysWithValues: Pref.allCases.map { ($0, flag($0)) }) }
 
-    /// Diffs the Bool prefs against the last snapshot and reacts to each change; called by the menu and by the defaults observer (the popover writes straight to defaults).
+    /// Diffs the Bool prefs against the last snapshot and reacts to each change; called by the defaults observer (the popover writes straight to defaults).
     @objc private func syncPrefs() {
         let new = prefValues()
         let changed = changedPrefs(old: prefSnapshot, new: new)
         prefSnapshot = new
         changed.forEach(prefChanged)
-        let level = Intensity.saved(ud)   // not a Pref: set by the menu row, the popover tiles
+        let level = Intensity.saved(ud)   // not a Pref: set by the popover tiles
         if level != intensitySnapshot { intensitySnapshot = level; applyPrefs(); updateStatus() }
     }
 
@@ -211,11 +173,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func toggleEnabled() {
-        ud.set(!enabled, forKey: Pref.enabled.rawValue)
-        syncPrefs()
-    }
-
     private func settingsEnv() -> SettingsEnv {
         var rows: [(title: String, id: String)] = []
         if NSScreen.screens.count > 1 { rows = NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
@@ -223,39 +180,40 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return SettingsEnv(store: ud, screens: rows, reduceMotion: reduceMotion, isDev: neveInstance != nil,
                            target: Binding(get: { cur }, set: { [weak self] in self?.setTarget($0) }),
                            login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
-                           openWindow: { [weak self] in self?.showSettingsWindow() })
+                           openWindow: { [weak self] in self?.showSettingsWindow() },
+                           panel: panel, askAccessibility: { [weak self] in self?.askAccessibility() },
+                           clear: { [weak self] in self?.clearSnow(); self?.popover?.performClose(nil) },
+                           quit: { NSApp.terminate(nil) })
     }
 
-    /// ⌘, : the quick popover; ⌥-click on the item opens the full window.
-    @objc private func showSettings() {
+    /// Status-item click: the popover (⌥-click opens the full window directly).
+    @objc private func togglePopover() {
         if NSEvent.modifierFlags.contains(.option) { return showSettingsWindow() }
         guard let button = statusItem?.button else { return }
-        statusItem?.menu?.cancelTracking()
+        if popover?.isShown == true { return popover!.performClose(nil) }
+        updateStatus()
         let host = NSHostingController(rootView: QuickSettingsView(env: settingsEnv()))
         host.sizingOptions = .preferredContentSize
         let pop = popover ?? NSPopover()
         pop.behavior = .transient
         pop.contentViewController = host
         popover = pop
-        // after the menu has closed
-        DispatchQueue.main.async {
-            pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            NSApp.activate()
-        }
+        pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate()
     }
 
-    /// The single "Ajustes do Neve" window (rebuilt on each open so the screen list is fresh).
+    /// The single "Ajustes" window (rebuilt on each open so the screen list is fresh).
     private func showSettingsWindow() {
         popover?.performClose(nil)
         if settingsWindow == nil {
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            w.title = "Ajustes do Neve"
+            w.title = "Ajustes"
             w.isReleasedWhenClosed = false
             w.center()
             settingsWindow = w
         }
         settingsWindow?.contentViewController = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
-        // after the popover / menu has finished closing, or the activation is lost
+        // after the popover has finished closing, or the activation is lost
         DispatchQueue.main.async { [weak self] in
             NSApp.activate()
             self?.settingsWindow?.makeKeyAndOrderFront(nil)
@@ -309,7 +267,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return i
     }
 
-    /// Read-only summary derived from the existing pause reasons; refreshed when the menu opens.
+    /// Read-only summary derived from the existing pause reasons; refreshed live while the popover is open.
     private var statusText: String {
         let level = Intensity.saved(ud)
         if !enabled { return "Desligado" }
@@ -326,7 +284,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStatus() {
-        statusLine.attributedTitle = NSAttributedString(string: "❄ Neve — " + statusText, attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.menuFont(ofSize: 0)])
+        panel.status = statusText
         let paused = !enabled || !polling || userIdle || fullscreenIdle
         let slash = Self.symbol("snowflake.slash", "Neve — desligada")
         let (img, alpha) = !enabled
@@ -334,13 +292,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : (Self.symbol("snowflake", paused ? "Neve — pausada" : "Neve"), paused ? 0.85 : 1)
         statusItem?.button?.image = img
         statusItem?.button?.alphaValue = alpha
-        axItem.isHidden = AXIsProcessTrusted()
-    }
-
-    func menuWillOpen(_ menu: NSMenu) {
-        nevarItem.state = enabled ? .on : .off
-        intensityControl.selectedSegment = Intensity.saved(ud).rawValue
-        updateStatus()
+        panel.axMissing = !AXIsProcessTrusted()
     }
 
     private func refreshRunState() {
@@ -441,15 +393,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func pickIntensity(_ sender: NSSegmentedControl) {
-        guard let v = Intensity(rawValue: sender.selectedSegment) else { return }
-        ud.set(v.rawValue, forKey: Intensity.key)   // the defaults observer (syncPrefs) applies it once
-        statusItem?.menu?.cancelTracking()
-    }
-
     /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on Dock AX events, app launch/quit, screen changes, every 30s.
     @objc private func refreshDock() {
-        axItem.isHidden = AXIsProcessTrusted()
+        panel.axMissing = !AXIsProcessTrusted()
         if watcher.active != (polling && AXIsProcessTrusted()) { scheduleTimers() }   // trust granted / revoked
         guard polling else { return }
         dock.refresh { [weak self] in self?.screensChanged(); self?.pollWindows() }   // the Dock moving can change visibleFrame
