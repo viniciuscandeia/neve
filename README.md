@@ -48,6 +48,10 @@ App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Met
 | 🖥️ **Janela maximizada** | Com uma janela cobrindo quase tudo, a neve cai só na faixa visível (até o Dock) e o custo cai muito; ao desmaximizar, os montes escondidos voltam. |
 | 🎞️ **Quadros adaptativos** | 60 fps quando algo rápido acontece, 30 fps quando a nevada está calma (opção ligada por padrão). |
 | ⏸️ **Neve parada** | Com Reduzir Movimento, a neve fica parada e o app dorme quando nada muda. |
+| 🌱 **Primeira neve** | Numa janela limpa, os primeiros flocos derretem ao tocar e só deixam pontinhos soltos; a camada contínua se forma aos poucos (~1 min na Média). |
+| 🏂 **Neve escorrendo do Dock** | Quando a ponta do Dock enche, torrões escorregam pela lateral curva da barra e engrossam o monte do pé da tela até os dois se unirem. |
+| 💧 **Derretimento** | Após 5 min sem uso, montes, bonecos e estalactites derretem em ~12 s, com gotas que incham, pingam e respingam; ao voltar, a neve recomeça caindo do topo. |
+| 🎵 **Neve dança com a música** | Opcional (macOS 14.2+): batidas viram rajadas de vento, o volume faz os flocos balançarem mais e o grave faz a crista brilhar. Desligado por padrão. |
 
 ### 🐇 Visitantes e eventos
 
@@ -129,6 +133,8 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 
 </details>
 
+<p align="center"><img src="docs/melt.gif" width="720" alt="Neve derretendo depois de 5 minutos sem uso: o boneco murcha, os montes baixam e gotas pingam"></p>
+
 ## ☕ Desempenho e energia
 
 - Renderização com `CAMetalDisplayLink` e Metal instanciado: todos os flocos em uma única draw call.
@@ -141,6 +147,7 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 
 - Apenas os limites (bounds) das janelas são lidos. Não exige Gravação de Tela.
 - A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (Dock na parte inferior da tela). Sem ela, todo o resto funciona.
+- *Neve dança com a música* pede a permissão de Gravação de Áudio do Sistema: o áudio é analisado na hora (volume, grave e batidas), nada é gravado nem sai do Mac. Desligar a opção encerra a captura.
 - Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Mostrar em capturas** para incluí-la.
 
 ## ♿ Acessibilidade
@@ -166,7 +173,7 @@ Tests/run.sh             # testes (Swift Testing)
 
 `NEVE_SCENARIO=heavy` (variável de ambiente) monta um cenário pesado e determinístico (Nevasca, pilhas cheias, bonecos brigando) a cada 20 s, para comparar desempenho.
 
-`NEVE_IDLE_SECS=<segundos>` encurta os 5 min de inatividade (padrão 300): passado o tempo, a neve derrete (~5 s; 0,6 s com Reduzir movimento) e só então a renderização pausa; voltar a usar o Mac durante ou depois do derretimento recomeça a neve caindo do topo da tela.
+`NEVE_IDLE_SECS=<segundos>` encurta os 5 min de inatividade (padrão 300): passado o tempo, a neve derrete (~12 s; 0,6 s com Reduzir movimento) e só então a renderização pausa; voltar a usar o Mac durante ou depois do derretimento recomeça a neve caindo do topo da tela.
 
 ### Cenas determinísticas (`NEVE_SCENE`)
 
