@@ -412,6 +412,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: scene mode (NEVE_SCENE)
+    private let launched = Date()   // NEVE_SCENE_WAIT=<secs>: the script starts that long after launch (time to start a recording)
     private var stage: SceneStage?, sceneTimer: Timer?, sceneBegun = false, scenePoll = 0
 
     /// Scene mode: only the scene windows count, no Dock; a 60 Hz timer moves the windows by scene time and polls them every other tick.
@@ -432,7 +433,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let windows = k == .demo ? readWindows(primaryHeight: primary.frame.height, scene: stage?.numbers ?? []) : []
         for o in overlays {
             o.update(windows: windows)
-            if !sceneBegun, k == .fight || windows.count == 3 { sceneBegun = true; o.beginScene(k) }
+            if !sceneBegun, Date().timeIntervalSince(launched) >= (Double(ProcessInfo.processInfo.environment["NEVE_SCENE_WAIT"] ?? "") ?? 0), k == .fight || windows.count == 3 {
+                sceneBegun = true; o.beginScene(k)
+                // NEVE_SCENE_MARK=file: unix time of scene second 0, to line a screen recording up with the script
+                if let m = ProcessInfo.processInfo.environment["NEVE_SCENE_MARK"] { try? "\(Date().timeIntervalSince1970)".write(toFile: m, atomically: true, encoding: .utf8) }
+            }
         }
     }
 

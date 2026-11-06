@@ -6,15 +6,25 @@ import NeveCore
 @MainActor
 final class SceneStage {
     private var windows: [NSWindow] = []
-    private let backdrop: NSWindow
+    private let backdrop: NSWindow, strip: NSWindow
     private let area: CGRect
     /// Window numbers of the scene windows (the only ones the overlay sees in scene mode).
     var numbers: Set<Int> { Set(windows.map { $0.windowNumber }) }
 
     init(screen: NSScreen) {
         area = screen.visibleFrame
+        // The backdrop covers the visible area; a strip at the Dock's level continues it down over the Dock, so no app icons show.
+        let full = CGRect(x: screen.frame.minX, y: screen.frame.minY, width: screen.frame.width, height: area.maxY - screen.frame.minY)
+        let dockH = area.minY - full.minY
         backdrop = NSWindow(contentRect: area, styleMask: .borderless, backing: .buffered, defer: false)
-        backdrop.contentView = Backdrop(frame: CGRect(origin: .zero, size: area.size))
+        backdrop.contentView = Backdrop(frame: CGRect(origin: .zero, size: area.size), full: CGRect(x: 0, y: -dockH, width: area.width, height: full.height))
+        let low = CGRect(x: full.minX, y: full.minY, width: full.width, height: dockH)
+        strip = NSWindow(contentRect: low, styleMask: .borderless, backing: .buffered, defer: false)
+        strip.contentView = Backdrop(frame: CGRect(origin: .zero, size: low.size), full: CGRect(x: 0, y: 0, width: full.width, height: full.height))
+        strip.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)))
+        strip.isReleasedWhenClosed = false; strip.ignoresMouseEvents = true; strip.hasShadow = false
+        strip.collectionBehavior = [.stationary, .ignoresCycle, .canJoinAllSpaces]
+        strip.orderFrontRegardless()
         backdrop.isReleasedWhenClosed = false; backdrop.ignoresMouseEvents = true; backdrop.hasShadow = false
         backdrop.collectionBehavior = [.stationary, .ignoresCycle]
         backdrop.orderFrontRegardless()
@@ -36,13 +46,16 @@ final class SceneStage {
         for (win, w) in zip(windows, DemoScene.windows(in: area, t: t)) where win.frame != w.frame { win.setFrame(w.frame, display: true) }
     }
 
-    func close() { windows.forEach { $0.close() }; backdrop.close() }
+    func close() { windows.forEach { $0.close() }; backdrop.close(); strip.close() }
 }
 
 /// A calm winter-dusk backdrop.
 private final class Backdrop: NSView {
+    let full: CGRect   // the gradient spans this rect (in this view's coordinates), so the strip and the backdrop match
+    init(frame: NSRect, full: CGRect) { self.full = full; super.init(frame: frame) }
+    required init?(coder: NSCoder) { nil }
     override func draw(_ dirtyRect: NSRect) {
-        NSGradient(colors: [NSColor(red: 0.18, green: 0.26, blue: 0.40, alpha: 1), NSColor(red: 0.45, green: 0.58, blue: 0.74, alpha: 1)])?.draw(in: bounds, angle: 90)
+        NSGradient(colors: [NSColor(red: 0.18, green: 0.26, blue: 0.40, alpha: 1), NSColor(red: 0.45, green: 0.58, blue: 0.74, alpha: 1)])?.draw(in: full, angle: 90)
     }
 }
 
