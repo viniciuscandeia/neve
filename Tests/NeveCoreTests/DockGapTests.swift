@@ -137,3 +137,19 @@ private func bankedField() -> SnowField {
         #expect(segs.contains { min($0.x0, $0.x1) == min(bankX, dockX) && max($0.x0, $0.x1) == max(bankX, dockX) && $0.base0 + $0.base1 < 200 && $0.top0 >= 92 })
     }
 }
+
+@Test func groundIsOneChainThroughEachDockEndAndTheBridgeIsABodyNotAnEdge() {
+    let f = bankedField()
+    let segs = pileSegs(f).sorted { $0.x0 < $1.x0 }
+    let ground = segs.filter { $0.base0 == 0 && $0.base1 == 0 && $0.dragged & 2 == 0 }   // ground chain: base on the screen bottom, not the bank-flagged bridges
+    let bridges = segs.filter { $0.dragged & 2 != 0 && ($0.base0 == 0 || $0.base1 == 0) }   // bank-flagged bodies standing in for the ground slice at each bar end
+    for (a, b) in zip(ground, ground.dropFirst()) where a.x1 > 100 && b.x0 < 1340 {
+        if a.x1 != b.x0 { #expect(bridges.contains { $0.x0 <= a.x1 && $0.x1 >= b.x0 }, "hole in the ground chain at \(a.x1)...\(b.x0)"); continue }   // the only holes are exactly covered by a bridge
+        #expect(a.x1 == b.x0, "ground chain overlaps or leaves a gap at \(a.x1) / \(b.x0)")   // no duplicated columns, no hairline gap
+        #expect(abs(b.top0 - a.top1) <= 2, "top jumps \(a.top1) -> \(b.top0) at \(a.x1)")
+        // Within a column the top moves at most 2pt, except the one cliff column at each bar end, whose low side is the bar underside arc.
+        if abs(a.top1 - a.top0) > 6 { #expect(a.x0 == 169 || a.x0 == 1267, "unexpected cliff at \(a.x0)"); #expect(min(a.top0, a.top1) <= 25.2 + 10) }   // (the bank itself climbs at the 0.7 repose step: < 6pt per bin pair)
+    }
+    // Bridges (bank-flagged, ground-based) are bodies with no slanted base edge: a steep one cast a dark skirt across the bank.
+    #expect(bridges.count == 2 && bridges.allSatisfy { $0.base0 == 0 && $0.base1 == 0 })
+}

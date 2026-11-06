@@ -103,9 +103,9 @@ extension SnowField {
         pileEnds.removeAll(keepingCapacity: true)
         let bw = Tuning.binWidth
         var n = 0
-        func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool) {
+        func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool, bank: Bool = false) {   // bank: shades like the ground bank (AO measured from the ground, not from this piece's own base)
             guard n < capacity else { return }
-            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: drag ? 1 : 0)
+            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0))
             n += 1
         }
         // Ground bank height beside each end of the Dock bar: the Dock pile's rounded corners are filled up to it, so bank and Dock top are one contour.
@@ -114,6 +114,8 @@ extension SnowField {
             let g = surfaces[gi].pile.shown, d = surfaces[di].pile
             if g.count == numCols { bankL = column(d.x0 - bw); bankR = column(d.x1 + bw); fillL = g[bankL]; fillR = g[bankR] }
         }
+        // The ground slice between the bank column and the Dock end is replaced by the bridge body below (one fill, no doubled halo / crest); held back until we know a bridge exists.
+        var held: [(side: Int, seg: PileSeg)] = [], bridged = [false, false]
         for s in surfaces {
             let h = s.pile.shown, vis = s.pile.visible, base = s.pile.base
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
@@ -159,7 +161,12 @@ extension SnowField {
                     if lo < hi {
                         for i in (lo + 1)...hi {
                             let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
-                            put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag)
+                            let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
+                            if side >= 0 {
+                                held.append((side, PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0)))
+                            } else {
+                                put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil))
+                            }
                             prev = cur
                         }
                     }
@@ -180,9 +187,10 @@ extension SnowField {
         }
         // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock.
         for d in pileEnds where d.id == 0 {
-            if fillL > 0 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, d.first.b, d.drag) }
-            if fillR > 0 { put(d.last.x, d.last.t, d.last.b, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag) }
+            if fillL > 0 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridged[0] = true }
+            if fillR > 0 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridged[1] = true }
         }
+        for h in held where !bridged[h.side] { guard n < capacity else { break }; p[n] = h.seg; n += 1 }   // no bridge came: keep the plain ground slice
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {
             for a in pileEnds where a.id == l.left {
