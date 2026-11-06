@@ -215,12 +215,26 @@ final class AppController: NSObject, NSApplicationDelegate {
             w.isReleasedWhenClosed = false
             w.center()
             settingsWindow = w
+            // In-process window: AXObserver skips our own pid, so refresh the snow surfaces from NSWindow events.
+            for n in [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.willCloseNotification,
+                      NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
+                NotificationCenter.default.addObserver(self, selector: #selector(settingsWindowChanged), name: n, object: w)
+            }
         }
         settingsWindow?.contentViewController = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
         // after the popover has finished closing, or the activation is lost
         DispatchQueue.main.async { [weak self] in
             NSApp.activate()
             self?.settingsWindow?.makeKeyAndOrderFront(nil)
+            self?.settingsWindowChanged()
+        }
+    }
+
+    /// Coalesced through the window watcher's rate limit; the async hop lets a closing window leave the on-screen list first.
+    @objc private func settingsWindowChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.polling, !self.userIdle else { return }
+            self.pollWindows()
         }
     }
 
@@ -377,7 +391,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         defer { Perf.add(.poll, t0) }
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
-        var windows = readWindows(primaryHeight: primary.frame.height)
+        var windows = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber)))
         let covering = windows.map(\.frame)
         if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
         else if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows

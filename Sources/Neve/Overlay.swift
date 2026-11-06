@@ -22,6 +22,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let field: SnowField
     private let gpu: Gpu
     private let window: NSWindow
+    var windowNumber: Int { window.windowNumber }
     private let view = InteractView()
     private var held: Int?                // snowball being dragged
     private var lastDragTime: CFTimeInterval = 0

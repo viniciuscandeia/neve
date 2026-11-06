@@ -66,8 +66,8 @@ func demoRun(_ f: SnowField, to t: Float, peak: ((SnowField) -> Void)? = nil) {
     let raw = [RawWindow(number: 10, pid: 5, layer: 0, bounds: CGRect(x: 0, y: 0, width: 300, height: 200)),   // Neve's own scene window
                RawWindow(number: 11, pid: 5, layer: 0, bounds: CGRect(x: 0, y: 0, width: 1512, height: 900)),   // Neve's overlay
                RawWindow(number: 12, pid: 99, layer: 0, bounds: CGRect(x: 0, y: 0, width: 300, height: 200))]   // someone else's app
-    #expect(filterWindows(raw, ownPID: 5, primaryHeight: 900).map(\.number) == [12])
-    #expect(filterWindows(raw, ownPID: 5, primaryHeight: 900, scene: [10]).map(\.number) == [10])
+    #expect(filterWindows(raw, exclude: [11], primaryHeight: 900).map(\.number) == [10, 12])   // own Ajustes window (10) kept, overlay (11) dropped
+    #expect(filterWindows(raw, exclude: [11], primaryHeight: 900, scene: [10]).map(\.number) == [10])
 }
 
 func fightField(seed: UInt64 = 4) -> SnowField {

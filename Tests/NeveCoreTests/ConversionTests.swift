@@ -32,12 +32,12 @@ private func raw(_ n: Int, pid: Int = 500, layer: Int? = 0, alpha: Double = 1,
     RawWindow(number: n, pid: pid, layer: layer, alpha: alpha, bounds: bounds)
 }
 
-private func numbers(_ w: [RawWindow], own: Int = 999) -> [Int] {
-    filterWindows(w, ownPID: own, primaryHeight: 900).map(\.number)
+private func numbers(_ w: [RawWindow], exclude: Set<Int> = []) -> [Int] {
+    filterWindows(w, exclude: exclude, primaryHeight: 900).map(\.number)
 }
 
 @Test func filterKeepsNormalWindowsInOrderAndConvertsFrames() {
-    let out = filterWindows([raw(7, CGRect(x: 100, y: 50, width: 300, height: 200)), raw(3)], ownPID: 999, primaryHeight: 900)
+    let out = filterWindows([raw(7, CGRect(x: 100, y: 50, width: 300, height: 200)), raw(3)], primaryHeight: 900)
     #expect(out.map(\.number) == [7, 3])
     #expect(out[0].frame == CGRect(x: 100, y: 650, width: 300, height: 200))
 }
@@ -51,7 +51,8 @@ private func numbers(_ w: [RawWindow], own: Int = 999) -> [Int] {
 }
 
 @Test func filterDropsOwnProcessWindows() {
-    #expect(numbers([raw(1, pid: 999), raw(2, pid: 998)], own: 999) == [2])
+    #expect(numbers([raw(1, pid: 999), raw(2, pid: 998)], exclude: [2]) == [1])   // pid no longer matters; only excluded window numbers drop
+    #expect(numbers([raw(1, pid: 999), raw(2, pid: 998)]) == [1, 2])
 }
 
 @Test func filterEnforcesMinimumSize() {
