@@ -153,3 +153,20 @@ private func bankedField() -> SnowField {
     // Bridges (bank-flagged, ground-based) are bodies with no slanted base edge: a steep one cast a dark skirt across the bank.
     #expect(bridges.count == 2 && bridges.allSatisfy { $0.base0 == 0 && $0.base1 == 0 })
 }
+
+// The snow over each rounded bar corner is a smooth shoulder: no flat block with a right angle where bank meets Dock pile.
+@Test func outlineOverEachBarCornerIsASmoothShoulder() {
+    let segs = pileSegs(bankedField())
+    func env(_ x: Float) -> Float? {
+        var m: Float?
+        for g in segs where x >= g.x0 && x <= g.x1 { let y = g.top0 + (g.top1 - g.top0) * (x - g.x0) / max(g.x1 - g.x0, 1e-3); m = max(m ?? y, y) }
+        return m
+    }
+    for (name, xs) in [("left", Array(stride(from: Float(150), through: 215, by: 2))), ("right", Array(stride(from: Float(1290), through: 1225, by: -2)))] {
+        let ys = xs.compactMap(env)
+        #expect(ys.count == xs.count, "\(name): hole in the outline")
+        for k in 1..<(ys.count - 1) { #expect(abs(ys[k + 1] - 2 * ys[k] + ys[k - 1]) <= 2, "\(name): kink at \(xs[k]): \(ys[k - 1]) \(ys[k]) \(ys[k + 1])") }
+        // Never a flat-topped block across the corner: the top keeps climbing from the bank to the Dock snow.
+        #expect(ys[ys.count - 1] - ys[xs.firstIndex { abs($0 - (name == "left" ? 172 : 1268)) < 1 }!] >= 8, "\(name): flat block over the corner")
+    }
+}

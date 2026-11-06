@@ -131,11 +131,18 @@ extension SnowField {
                 let fine = 0.3 * Float(noise(rel &* 7 &+ 1013)) * min(sm / 4, 1)   // extra 1.5pt octave, stable per column
                 return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5) + fine   // the Dock bank is bigger: a little more texture
             }
-            /// Dock pile, on its rounded corner: the bank's height beside the bar end when it is above the arc (fills the notch up to the bank).
+            // Dock pile, on its rounded corner: the bank's height beside the bar end eases (smoothstep) into the Dock snow level over the corner's width,
+            // a rounded shoulder instead of a flat block; wherever the arc is higher than that curve the plain pile on the arc shows.
+            var cornL = 0, cornR = 0
+            if s.id == 0 { while cornL < cnt && base[cornL] < -0.01 { cornL += 1 }; while cornR < cnt && base[cnt - 1 - cornR] < -0.01 { cornR += 1 } }
             func fill(_ i: Int) -> Float? {
                 guard s.id == 0, base[i] < -0.01 else { return nil }
-                let f = x(i) < (s.pile.x0 + s.pile.x1) / 2 ? fillL : fillR
-                return f > edge + base[i] + 0.15 ? f : nil
+                let left = x(i) < (s.pile.x0 + s.pile.x1) / 2
+                let f = left ? fillL : fillR
+                let u = left ? Float(i + 1) / Float(cornL + 1) : Float(cnt - i) / Float(cornR + 1), w = u * u * (3 - 2 * u)
+                let inner = left ? min(cornL, cnt - 1) : max(cnt - 1 - cornR, 0)
+                let v = f + (edge + h[inner] - f) * w
+                return v > edge + base[i] + 0.15 && f > 0 ? v : nil
             }
             func top(_ i: Int, _ b: Int, _ e: Int) -> Float {
                 // Walls (a hidden neighbour) and supported ends hold their full height: no taper there.
