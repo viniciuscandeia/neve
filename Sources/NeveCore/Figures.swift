@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public enum FigureKind: UInt8 { case snowman }   // future: rabbit, penguin, robin, sleigh
+public enum FigureKind: UInt8, Sendable { case snowman, rabbit }   // future: penguin, robin, sleigh (one `Figures+<Kind>.swift` + a Rig entry + an EventDirector spec)
 public enum Phase: UInt8 { case building, idle, walking, fighting, cheering, collapsing, hidden }
 /// Where a figure stands: on a surface at x (a window top, the Dock bar, the ground), or in the air.
 public enum Attachment: Equatable { case surface(id: Int, x: Float), air }
@@ -35,10 +35,12 @@ public struct Figure {
     public internal(set) var headless = false                   // lost its head: stands there, arms drooped
     public internal(set) var headTilt: Float = 0                // radians the head is turned (a re-stacked flying head straightens out)
     public internal(set) var droop: Float = 0                   // 0...1 arms hanging (eases to 1 once headless)
+    public internal(set) var carrot = true                      // the snowman still has its nose (a rabbit may steal it)
+    var critter = Critter()                                     // visitor / theft bookkeeping (Figures+Rabbit.swift)
     var motion = Motion()
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
-    var active: Bool { phase != .hidden && phase != .collapsing && phase != .building && !headless && stageAge >= 0.3 }
+    var active: Bool { kind == .snowman && phase != .hidden && phase != .collapsing && phase != .building && !headless && stageAge >= 0.3 }
     public var surfaceID: Int? { if case .surface(let id, _) = at { return id }; return nil }
 
     init(id: Int, kind: FigureKind, foot: SIMD2<Float>, radii: SIMD3<Float>, fromBalls: Bool) {
@@ -56,7 +58,8 @@ extension SnowField {
     static let stackOverlap: Float = 1.5   // stacked balls sink into each other this much
     static let sink: Float = 0.8           // the bottom ball rests this share of its radius above the pile top
 
-    public var canSpawnFigure: Bool { figures.count < Tuning.maxFigures }
+    public var canSpawnFigure: Bool { snowmanCount < Tuning.maxFigures }   // visitors (rabbit...) have their own cap in the EventDirector
+    var snowmanCount: Int { var n = 0; for f in figures where f.kind == .snowman { n += 1 }; return n }
 
     func figureIndex(_ id: Int) -> Int? { figures.firstIndex { $0.id == id } }
 
@@ -64,12 +67,15 @@ extension SnowField {
     public func look(of f: Figure) -> SnowmanLook {
         let t = min(f.stageAge / 0.3, 1)
         return SnowmanLook(foot: SIMD2(f.foot.x, f.foot.y - (1 - SnowField.sink) * f.radii.x), radii: f.radii, facing: f.facing, pose: f.pose,
-                           built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop, headTilt: f.headTilt)
+                           built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop, headTilt: f.headTilt, carrot: f.carrot)
     }
 
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
     func anchors(of f: Figure) -> Anchors {
         switch f.kind {
+        case .rabbit:
+            let p = SIMD2(f.foot.x, f.foot.y + f.pose.hop)
+            return Anchors(base: p, body: p, head: p, arm: p, ground: f.foot.y)
         case .snowman:
             let r = f.radii
             let y0 = f.foot.y + f.pose.hop + SnowField.sink * r.x
@@ -127,7 +133,7 @@ extension SnowField {
     /// bottom ball drops with that velocity (the stack falls together). Returns the bottom and top ball ids.
     @discardableResult
     public func demote(_ id: Int, falling v: SIMD2<Float>? = nil) -> (bottom: Int, top: Int)? {
-        guard let j = figureIndex(id), figures[j].built == Snowman.stageCount, figures[j].phase != .collapsing else { return nil }
+        guard let j = figureIndex(id), figures[j].kind == .snowman, figures[j].built == Snowman.stageCount, figures[j].phase != .collapsing else { return nil }
         let f = figures[j], a = anchors(of: f), sid = f.surfaceID
         var parent: Int?, bottom = 0, top = 0
         for k in 0..<ballCount(f) {
@@ -153,6 +159,7 @@ extension SnowField {
     /// accessories for 0.4 s first (and starts the rebuild cooldown); a user-built one is gone at once.
     public func shatter(_ id: Int, velocity v: SIMD2<Float> = .zero) {
         guard let j = figureIndex(id), figures[j].phase != .collapsing else { return }
+        if figures[j].kind != .snowman { removeFigure(j); return }
         let f = figures[j], a = anchors(of: f)
         if !silent {
             for k in 0..<ballCount(f) {
@@ -178,12 +185,13 @@ extension SnowField {
     /// Drops figure `j` from the world; a fight it was in ends (the other one rests).
     func removeFigure(_ j: Int) {
         endFights(of: figures[j].id)
+        if figures[j].kind != .snowman { director.ended(figures[j].kind, at: time) }
         figures.remove(at: j)
         figuresVersion &+= 1
     }
 
     /// Figures a user can grab: stacks they built, and any body that lost its head.
-    func pickable(_ f: Figure) -> Bool { (f.fromBalls || f.headless) && f.built == Snowman.stageCount && f.phase != .collapsing && f.phase != .hidden }
+    func pickable(_ f: Figure) -> Bool { f.kind == .snowman && (f.fromBalls || f.headless) && f.built == Snowman.stageCount && f.phase != .collapsing && f.phase != .hidden }
 
     /// Index of the nearest pickable figure whose topmost ball is within `slack` of `q`, with its squared distance.
     func figureTop(at q: SIMD2<Float>, slack: Float) -> (Int, Float)? {
@@ -225,6 +233,7 @@ extension SnowField {
     func stepFigures(dt: Float) {
         guard !figures.isEmpty || !fights.isEmpty || !shots.isEmpty else { return }
         let animate = walkEnabled && !calm
+        if !animate { clearCritters() }
         if !animate, !fights.isEmpty || !shots.isEmpty { fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true) }
         var i = 0
         while i < figures.count {
@@ -232,18 +241,20 @@ extension SnowField {
             guard stepFigure(i, dt, animate: animate) else { continue }
             let f = figures[i]
             if f.foot != before.foot || f.pose != before.pose || f.facing != before.facing || f.phase != before.phase || f.built != before.built
-                || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
+                || f.kind == .rabbit || f.carrot != before.carrot || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
             i += 1
         }
         if animate {
             startFights()
             stepFights(dt)
             stepShots(dt)
+            stepCarrots(dt)
         }
     }
 
     /// False when the figure was removed (the next one now has its index).
     private func stepFigure(_ i: Int, _ dt: Float, animate: Bool) -> Bool {
+        if figures[i].kind == .rabbit { return stepRabbit(i, dt) }
         var f = figures[i]
         f.phaseT += dt
         if f.phase == .collapsing {
@@ -266,9 +277,10 @@ extension SnowField {
         f.droop += dd > 0 ? min(dd, dt / 0.6) : max(dd, -dt / 0.3)   // arms fall over 0.6 s, rise over 0.3 s
         if f.headTilt != 0 { f.headTilt *= exp(-16 * dt); if abs(f.headTilt) < 0.03 { f.headTilt = 0 } }
         if !f.fromBalls { advanceBuild(&f, si: si, dt: dt) }
+        stepCarrot(&f, dt)
         var moving = false
         if animate, visible, f.built == Snowman.stageCount, f.stageAge >= 0.3, !f.headless {
-            moving = walkStep(&f, sid: sid, dt: dt)
+            moving = f.critter.fetchX != nil ? fetchStep(&f, dt) : walkStep(&f, sid: sid, dt: dt)
         } else if f.motion.gait != 0 || f.motion.cheer > 0 || f.pose != Pose() {
             f.motion = Motion(speed: f.motion.speed, nextIdle: f.motion.nextIdle, rest: f.motion.rest)   // standing still: rest pose
             f.pose = Pose()
@@ -303,7 +315,7 @@ extension SnowField {
     }
 
     private func knockOff(_ i: Int, _ v: SIMD2<Float>) {
-        if figures[i].fromBalls { demote(figures[i].id, falling: v) } else { shatter(figures[i].id, velocity: v) }
+        if figures[i].kind == .rabbit { removeFigure(i) } else if figures[i].fromBalls { demote(figures[i].id, falling: v) } else { shatter(figures[i].id, velocity: v) }
     }
 
     /// The snowman switch went off: the auto snowman vanishes (no debris).

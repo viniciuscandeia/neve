@@ -140,6 +140,7 @@ extension SnowField {
         addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: scale))
         spray(at: s.to, reflected: refl, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
         if onBody, let j, figures[j].fight != nil { registerHit(s.target, head: s.head) }
+        if onBody, let j, figures[j].kind == .rabbit { rabbitHit(j) }
     }
 
     private func addSplat(_ p: Splat) {

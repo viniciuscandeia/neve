@@ -99,7 +99,7 @@ extension SnowField {
         var i = figures.count - 1
         while i >= 0 {
             defer { i -= 1 }
-            guard i < figures.count, figures[i].phase != .collapsing, figures[i].phase != .hidden else { continue }
+            guard i < figures.count, figures[i].kind == .snowman, figures[i].phase != .collapsing, figures[i].phase != .hidden else { continue }
             let f = figures[i], a = anchors(of: f)
             for k in 0..<ballCount(f) {
                 let (c, rad) = circle(a, f, k)
