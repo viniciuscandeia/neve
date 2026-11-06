@@ -75,7 +75,7 @@ extension SnowField {
         director.acc += dt
         guard director.acc >= 1 else { return }
         director.acc -= 1
-        guard visitorsEnabled || sleighEnabled, walkEnabled, !calm, !quiet else { director.queue.removeAll(keepingCapacity: true); return }
+        guard visitorsEnabled || sleighEnabled, walkEnabled, !calm, !quiet, !melting else { director.queue.removeAll(keepingCapacity: true); return }
         let eco = economy || lowPower
         if config.penguinDemo, !visitorsGroundOnly, stepPenguinDemo() { return }
         let limit = eco ? 1 : EventDirector.maxAmbient
