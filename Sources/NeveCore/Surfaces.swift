@@ -234,6 +234,7 @@ extension SnowField {
             }
             if !pending { surfaces[si].pile.peel = [] }
         }
+        _ = flushRuns()   // peeled bins leave as slabs, like every other release
     }
 
     /// Takes `fraction` of the pile off as debris, preferring the tops and the window ends.
