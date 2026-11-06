@@ -49,11 +49,27 @@ public struct Flutter: Equatable {
 
 extension SnowField {
     /// Where a figure may stand: the visible stretch of its surface around x, kept clear of ends, corners and covered columns.
-    func walkRange(surface sid: Int, x: Float, half: Float) -> (Float, Float)? {
-        guard let si = index[sid], let run = visibleRun(si: si, bin: column(x) - surfaces[si].c0) else { return nil }
-        let s = surfaces[si]
-        let lo = max(Float(s.c0 + run.lowerBound) * Tuning.binWidth, s.pile.x0), hi = min(Float(s.c0 + run.upperBound) * Tuning.binWidth, s.pile.x1)
+    func walkRange(surface sid: Int, x: Float, half: Float, height: Float = 0) -> (Float, Float)? {
+        guard let si = index[sid], let (lo, hi) = standRange(si: si, x: x, height: height) else { return nil }
         return (lo + half + 8, hi - half - 8)
+    }
+
+    /// The visible stretch around x (or the nearest one when x is not in it) whose columns leave `height` points free
+    /// above the snow: nothing under the Dock bar or a floating window that is too low. nil when there is none.
+    func standRange(si: Int, x: Float, height: Float) -> (Float, Float)? {
+        let s = surfaces[si], p = s.pile, c = column(x) - s.c0
+        guard let run = visibleRun(si: si, bin: c) else { return nil }
+        var best: Range<Int>?, bestD = Int.max, b = run.lowerBound
+        while b < run.upperBound {
+            guard p.cap[b] - p.heights[b] >= height else { b += 1; continue }
+            var e = b
+            while e < run.upperBound, p.cap[e] - p.heights[e] >= height { e += 1 }
+            let d = c < b ? b - c : c >= e ? c - e + 1 : 0
+            if d < bestD { best = b..<e; bestD = d }
+            b = e
+        }
+        guard let r = best else { return nil }
+        return (max(Float(s.c0 + r.lowerBound) * Tuning.binWidth, p.x0), min(Float(s.c0 + r.upperBound) * Tuning.binWidth, p.x1))
     }
 
     /// Whether there is snow (mean height over +-3 columns >= 1.5) under x on the surface.
@@ -75,19 +91,20 @@ extension SnowField {
         m.squash = max(0, m.squash - dt)
         m.headHit = max(0, m.headHit - dt)
         var moving = false, jump: Float = 0
-        let range = walkRange(surface: sid, x: f.foot.x, half: half)
+        let range = walkRange(surface: sid, x: f.foot.x, half: half, height: Snowman.height * scale)
+        let outside = range.map { f.foot.x < $0.0 || f.foot.x > $0.1 } ?? false   // in a column too low for it: walks out, bare ground allowed
         // Steps x by `dx`, never past the stretch ends (and the auto snowman never onto bare ground).
         func shift(_ dx: Float) {
             guard let (lo, hi) = range, hi > lo + 4 else { return }
             var nx = f.foot.x + dx
             if f.foot.x <= hi && f.foot.x >= lo { nx = min(max(nx, lo), hi) }
-            if auto && !snowUnder(sid, nx) { return }
+            if auto && !outside && !snowUnder(sid, nx) { return }
             f.foot.x = nx
         }
         if m.cheer > 0 {
             m.cheer = max(0, m.cheer - dt)
             jump = abs(sin(m.cheer * 2 * .pi * 1.5)) * 7 * scale * min(1, m.cheer)
-        } else if f.fight == nil, m.idle <= 0, let (lo, hi) = range, hi > lo + 4 {
+        } else if f.fight == nil, m.idle <= 0 || outside, let (lo, hi) = range, hi > lo + 4 {
             m.nextIdle -= dt
             if m.nextIdle <= 0 {
                 m.idle = Float.random(in: 1.5...4, using: &rng); m.nextIdle = Float.random(in: 8...18, using: &rng)
@@ -103,7 +120,7 @@ extension SnowField {
                 for o in figures where o.id != f.id && o.surfaceID == sid && o.active {
                     if abs(nx - o.foot.x) < half + o.radii.x + 6 && abs(nx - o.foot.x) < abs(f.foot.x - o.foot.x) { blocked = true; break }
                 }
-                if blocked || (auto && !snowUnder(sid, nx)) { f.facing = -f.facing } else {
+                if blocked || (auto && !outside && !snowUnder(sid, nx)) { f.facing = -f.facing } else {
                     shift(v * dt)
                     if f.foot.x >= hi && f.facing > 0 { f.foot.x = hi; f.facing = -1 } else if f.foot.x <= lo && f.facing < 0 { f.foot.x = lo; f.facing = 1 }
                 }

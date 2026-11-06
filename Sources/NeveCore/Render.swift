@@ -104,6 +104,12 @@ extension SnowField {
             p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: drag ? 1 : 0)
             n += 1
         }
+        // Ground bank height beside each end of the Dock bar: the Dock pile's rounded corners are filled up to it, so bank and Dock top are one contour.
+        var fillL: Float = 0, fillR: Float = 0
+        if let gi = index[Tuning.groundID], let di = index[0] {
+            let g = surfaces[gi].pile.shown, d = surfaces[di].pile
+            if g.count == numCols { fillL = g[column(d.x0 - bw)]; fillR = g[column(d.x1 + bw)] }
+        }
         for s in surfaces {
             let h = s.pile.shown, vis = s.pile.visible, base = s.pile.base
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
@@ -116,11 +122,19 @@ extension SnowField {
                 let nz = Float(noise(g)) * (1 - Float(r) / 3) + Float(noise(g + 3)) * Float(r) / 3
                 return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5)   // the Dock bank is bigger: a little more texture
             }
+            /// Dock pile, on its rounded corner: the bank's height beside the bar end when it is above the arc (fills the notch up to the bank).
+            func fill(_ i: Int) -> Float? {
+                guard s.id == 0, base[i] < -0.01 else { return nil }
+                let f = x(i) < (s.pile.x0 + s.pile.x1) / 2 ? fillL : fillR
+                return f > edge + base[i] + 0.15 ? f : nil
+            }
             func top(_ i: Int, _ b: Int, _ e: Int) -> Float {
                 // Walls (a hidden neighbour) and supported ends hold their full height: no taper there.
-                let l = i > b ? h[i - 1] : (b > 0 || s.pile.supportL ? h[i] : 0), r = i < e - 1 ? h[i + 1] : (e < cnt || s.pile.supportR ? h[i] : 0)
+                // A ground column beside a Dock bar end ignores the (much lower) under-bar neighbour: the bank keeps its full height up to the bar.
+                func nb(_ j: Int) -> Float { s.id == Tuning.groundID && s.pile.cap[j] < h[i] ? h[i] : h[j] }
+                let l = i > b ? nb(i - 1) : (b > 0 || s.pile.supportL ? h[i] : 0), r = i < e - 1 ? nb(i + 1) : (e < cnt || s.pile.supportR ? h[i] : 0)
                 let sm = (l + 2 * h[i] + r) / 4
-                return min(edge + base[i] + sm + jitter(i, sm), ceiling(i))
+                return min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
             }
             var b = 0
             while b < cnt {
@@ -128,8 +142,8 @@ extension SnowField {
                 var e = b
                 while e < cnt && vis[e] { e += 1 }
                 var lo = b, hi = e - 1
-                while lo <= hi && h[lo] <= 0.15 { lo += 1 }
-                while hi >= lo && h[hi] <= 0.15 { hi -= 1 }
+                while lo <= hi && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
+                while hi >= lo && h[hi] <= 0.15 && fill(hi) == nil { hi -= 1 }
                 if lo <= hi {
                     lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
                     var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
@@ -155,6 +169,11 @@ extension SnowField {
                     put(d.last.x, d.last.t, d.last.b, g.first.x, g.first.t, g.first.b, d.drag)
                 }
             }
+        }
+        // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock.
+        for d in pileEnds where d.id == 0 {
+            if fillL > 0, abs(d.first.t - fillL) <= 0.5 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, d.first.b, d.drag) }
+            if fillR > 0, abs(d.last.t - fillR) <= 0.5 { put(d.last.x, d.last.t, d.last.b, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag) }
         }
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {

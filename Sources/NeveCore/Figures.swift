@@ -295,7 +295,8 @@ extension SnowField {
             f.pose = Pose()
         }
         f.at = .surface(id: sid, x: f.foot.x)
-        let phase: Phase = !visible ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering
+        let c2 = column(f.foot.x) - s.c0, fits = !visible || c2 < 0 || c2 >= s.pile.cap.count || s.pile.cap[c2] - s.pile.heights[c2] >= Snowman.height * f.scale   // after walking: still under the Dock bar / a low window
+        let phase: Phase = !visible || !fits ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering
             : f.fight != nil ? .fighting : moving ? .walking : .idle
         if phase != f.phase { f.phase = phase; f.phaseT = 0 }
         figures[i] = f

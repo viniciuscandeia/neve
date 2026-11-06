@@ -48,9 +48,7 @@ extension SnowField {
     }
 
     private func penguinRun(si: Int, x: Float) -> (lo: Float, hi: Float)? {
-        guard let run = visibleRun(si: si, bin: column(x) - surfaces[si].c0) else { return nil }
-        let s = surfaces[si]
-        return (max(Float(s.c0 + run.lowerBound) * Tuning.binWidth, s.pile.x0), min(Float(s.c0 + run.upperBound) * Tuning.binWidth, s.pile.x1))
+        standRange(si: si, x: x, height: 22 * snowmanScale).map { (lo: $0.0, hi: $0.1) }
     }
 
     /// Starts a visit on the first window top with a visible run >= 200pt whose mean height is >= 3 (window-only: never the ground / Dock).

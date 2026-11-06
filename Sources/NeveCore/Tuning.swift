@@ -11,11 +11,10 @@ public enum Tuning {
     static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
     static let groundID = -1
     static let bankSlope: Float = 0.35      // repose slope (pt per pt) of the ground snowbank rising toward a bottom Dock bar
-    static let bankPeak: Float = 0.65       // share of the Dock top the bank reaches at the bar end (drifted, not a slab up to the bar top); never above the corner's centre height
     static let bankCurve: Float = 1.6       // exponent of the profile: steep at the bar, long soft tail (ease-out)
     /// Height limit of the ground bank at `distance` pt from a Dock bar end: curved, monotone, never steeper than the repose slope.
-    static func bankLimit(dockTop: Float, peakCap: Float = .infinity, distance d: Float) -> Float {
-        let peak = max(min(dockTop * bankPeak, peakCap), groundMaxHeight), rise = peak - groundMaxHeight
+    static func bankLimit(dockTop: Float, distance d: Float) -> Float {
+        let peak = max(dockTop, groundMaxHeight), rise = peak - groundMaxHeight   // reaches the Dock top at the bar end; Render fills the corner notch so there is no wall
         let width = bankCurve * rise / bankSlope, u = min(d / max(width, 1), 1)
         return groundMaxHeight + rise * pow(1 - u, bankCurve)
     }
@@ -25,6 +24,8 @@ public enum Tuning {
         let r = max(min(radius, (maxX - minX) / 2), 0), dx = max(minX + r - x, x - (maxX - r), 0)
         return max(minY, 0) + r - (max(r * r - dx * dx, 0)).squareRoot()
     }
+    public static let dockGlassPad: Float = 4   // pt the Dock bar's bottom is assumed to hang below the AX list's bottom edge (calibration knob)
+    static let barMargin: Float = 1         // ground snow stays this far below the bar's underside
     static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
     static let maxDrift: Float = 24         // snow banked against a front window reaches its top up to this step (and no higher)
     static let driftFar: Float = 120        // step beyond which the drift is only a small ramp

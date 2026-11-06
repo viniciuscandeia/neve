@@ -97,7 +97,8 @@ private func queryDockBar() -> DockQuery {
         var p = CGPoint.zero, s = CGSize.zero
         guard AXValueGetValue(pos as! AXValue, .cgPoint, &p), AXValueGetValue(size as! AXValue, .cgSize, &s),
               s.width > s.height * 1.5 else { return q }
-        q.rect = CGRect(x: p.x, y: p.y + 8, width: s.width, height: s.height - 8)   // AX list includes ~8pt of transparent margin above the glass
+        // AX list includes ~8pt of transparent margin above the glass; the bottom edge is pushed down by Tuning.dockGlassPad (unmeasured calibration: snow under the bar must stay in the visible gap)
+        q.rect = CGRect(x: p.x, y: p.y + 8, width: s.width, height: s.height - 8 + CGFloat(Tuning.dockGlassPad))
         return q
     }
     return q

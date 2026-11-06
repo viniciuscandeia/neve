@@ -56,12 +56,13 @@ extension SnowField {
     /// The widest visible run of ground columns, kept `snowmanClearance` away from its ends: (ground surface, lo x, hi x, mid x).
     func groundStretch() -> (g: Surface, lo: Float, hi: Float, mid: Float)? {
         guard let gi = index[Tuning.groundID] else { return nil }
-        let g = surfaces[gi], n = g.pile.heights.count, clear = Int((Tuning.snowmanClearance / Tuning.binWidth).rounded(.up))
+        let g = surfaces[gi], n = g.pile.heights.count, room = Snowman.height * snowmanScale, clear = Int((Tuning.snowmanClearance / Tuning.binWidth).rounded(.up))
         var best = (0, 0), b = 0
         while b < n {
-            guard g.pile.visible[b] else { b += 1; continue }
+            func ok(_ i: Int) -> Bool { g.pile.visible[i] && g.pile.cap[i] >= room }   // not under the Dock bar / a low window
+            guard ok(b) else { b += 1; continue }
             var e = b
-            while e < n && g.pile.visible[e] { e += 1 }
+            while e < n && ok(e) { e += 1 }
             if e - b > best.1 - best.0 { best = (b, e) }
             b = e
         }
