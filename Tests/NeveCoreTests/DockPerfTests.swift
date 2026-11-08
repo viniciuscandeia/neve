@@ -39,4 +39,47 @@ private func cpuMs() -> Double { Double(clock()) / Double(CLOCKS_PER_SEC) * 1000
     for _ in 0..<n { g.step(dt: 1 / 60) }
     #expect(f.dockCur == f.dockTarget && n < 600)
     #expect(f.surfaces.filter { $0.id > 0 }.map(\.pile.heights) == g.surfaces.filter { $0.id > 0 }.map(\.pile.heights))
+    expectMatchesFullRebuild(f)
+}
+
+/// After an identical snapshot, a full rebuild must leave every surface's visible / cap / runs / cover exactly as the incremental animation did.
+private func expectMatchesFullRebuild(_ f: SnowField, sourceLocation: SourceLocation = #_sourceLocation) {
+    f.update(windows: f.lastWindows)
+    let have = f.surfaces
+    f.updateSurfaces(windows: f.effective(f.lastWindows))
+    #expect(f.surfaces.map(\.id) == have.map(\.id), sourceLocation: sourceLocation)
+    for (a, b) in zip(have, f.surfaces) {
+        #expect(a.pile.visible == b.pile.visible, "visible of \(a.id)", sourceLocation: sourceLocation)
+        #expect(a.pile.cap == b.pile.cap, "cap of \(a.id)", sourceLocation: sourceLocation)
+        #expect(a.runs == b.runs, "runs of \(a.id)", sourceLocation: sourceLocation)
+        #expect(a.cover == b.cover, "cover of \(a.id)", sourceLocation: sourceLocation)
+    }
+}
+
+private func animate(_ windows: [WindowInfo], from: WindowInfo, to: WindowInfo) -> SnowField {
+    let f = SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: 0, seed: 5)
+    f.update(windows: [from] + windows)
+    f.update(windows: [to] + windows)
+    var n = 0
+    while f.dockCur != f.dockTarget, n < 2000 { f.step(dt: 0.05); n += 1 }   // 40 pt per step: wider than the bar's rounded corner, so an overlapping step really hides bins
+    return f
+}
+
+/// The Dock shrinks off a low window (top 92 < Dock top 94): once it leaves the current and target frames, the window must still match a rebuild.
+@Test func dockRetractionOverLowWindowMatchesFullRebuild() {
+    for (a, b) in [(bar(300, 1000), bar(500, 1000)), (bar(500, 1000), bar(300, 1000)), (bar(300, 1000), bar(700, 1000))] {
+        expectMatchesFullRebuild(animate([win(1, 360, 40, 40, 52)], from: a, to: b))
+    }
+}
+
+/// A tall window whose foot sits behind the Dock: its frost / icicle clip (`cover`) follows the Dock as it widens or shrinks beneath it.
+@Test func dockBeneathTallWindowUpdatesCover() {
+    let tall = win(1, 350, 90, 300, 200)
+    for (a, b) in [(bar(700, 1000), bar(300, 1000)), (bar(300, 1000), bar(700, 1000)), (bar(450, 1000), bar(300, 1000)), (bar(300, 1000), bar(500, 1000))] {
+        let f = animate([tall], from: a, to: b)
+        expectMatchesFullRebuild(f)
+        let si = f.index[1]!
+        #expect(f.covered(si, SIMD2(400, 92)) == (b.frame.minX < 400))
+        #expect(f.covered(si, SIMD2(640, 92)) == (b.frame.minX < 640))
+    }
 }
