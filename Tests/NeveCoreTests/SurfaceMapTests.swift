@@ -340,7 +340,13 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
 private func bankField() -> SnowField {
     let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
     f.update(windows: [dockBar])
+    fillBankLevel(f)   // a fully grown bank (the level rises with snowfall: see DockPushTests)
     return f
+}
+/// Jumps the ground bank's ramp level to its maximum: a level shelf flush with the Dock top across the gap.
+func fillBankLevel(_ f: SnowField) {
+    f.bankLevel = (1000, 1000)
+    if let i = f.surfaces.firstIndex(where: { $0.id == Tuning.groundID }), let d = f.surfaces.first(where: { $0.id == 0 }) { f.surfaces[i].pile.maxes = f.bankMaxes([d.frame]) }
 }
 private let dockBar = WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: 25.2)   // the app's 0.3 * height
 
@@ -355,7 +361,7 @@ private func heavy(_ f: SnowField, id: Int) {
     let g = f.pile(id: Tuning.groundID)!
     #expect(g.heights[84] >= 94 - 2 && g.heights[84] <= 94.01)    // x 169, left of the bar: reaches the Dock top (94)
     #expect(g.heights[635] >= 94 - 2 && g.heights[635] <= 94.01)  // x 1269, right of the bar
-    #expect(g.heights[5] <= Tuning.bankLimit(dockTop: 94, distance: 160) + 0.01)   // screen edge, 160pt from the bar: the soft tail
+    #expect(g.heights[5] <= 94.01)   // screen edge, 160pt from the bar: the shelf is flush with the Dock top
     for b in 85..<634 { #expect(g.visible[b] && g.heights[b] <= barBottom(x: Float(b) * 2 + 1) + 1e-3) }   // never inside the bar's rounded silhouette
     #expect(g.heights[300] > 5)                              // snow fills the gap under the bar
 }
@@ -383,9 +389,7 @@ private func heavy(_ f: SnowField, id: Int) {
     #expect(abs(p.limit(84) - 94) < 3)               // the Dock top at the bar end
     #expect(p.limit(0) >= Tuning.groundMaxHeight)      // the soft tail
     for b in 1..<80 { #expect(p.limit(b - 1) <= p.limit(b) + 1e-4) }   // monotone up to the bar end
-    // curved, not a straight diagonal; never steeper than the repose slope
-    let mid = p.limit(84 - 30), end = p.limit(84 - 60)
-    #expect(p.limit(84) - mid > mid - end, "convex tail")
+    #expect(abs(p.limit(0) - 94) < 0.01)               // grown bank: a level shelf across the 171pt gap, flush with the Dock top
     for b in 1..<85 { #expect(p.limit(b) - p.limit(b - 1) <= Tuning.slope + 1e-3) }
 }
 
@@ -404,7 +408,8 @@ private func heavy(_ f: SnowField, id: Int) {
 @Test func dockShrinkingShedsGroundSnowAsDebrisNotSilently() {
     let f = bankField()
     heavy(f, id: Tuning.groundID)
-    let n = f.update(windows: [win(0, 600, 10, 240, 84)])
+    var n = f.update(windows: [win(0, 600, 10, 240, 84)])   // the ends travel there at Tuning.dockSpeed: the shed happens along the way
+    for _ in 0..<60 { f.step(dt: 1 / 60); n += f.debris.count }
     #expect(n > 0)
 }
 
@@ -450,4 +455,11 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     #expect(!pts.isEmpty)
     for p in pts { #expect(p.y <= barBottom(x: p.x) + 0.3, "contour (\(p.x), \(p.y)) inside the bar") }
     #expect(pileSegs(f).filter { $0.x1 < 171 && $0.base0 < 1 }.map { max($0.top0, $0.top1) }.max()! > 94 - 3.5)   // the bank beside the end reaches the Dock top
+}
+
+@Test func dockGlassMapsFromTheAXListFrame() {
+    // Measured: AX list y 806..890 (CG), visible glass y 811..895 on a 900pt screen -> AppKit y 5..89, snow base (maxY) 89.
+    let ax = CGRect(x: 171, y: 806, width: 1098, height: 84)
+    let g = appKitFrame(fromCG: Tuning.dockGlass(fromAX: ax), primaryHeight: 900)
+    #expect(g == CGRect(x: 171, y: 5, width: 1098, height: 84))
 }

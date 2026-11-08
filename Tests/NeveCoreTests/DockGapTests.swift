@@ -79,18 +79,19 @@ private func insideBar(_ x: Float, _ y: Float, inset m: Float = 2.1) -> Bool {
 private func bankedField() -> SnowField {
     let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
     f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: CGFloat(rr))])
+    fillBankLevel(f)   // fully grown bank (the ramp level rises with snowfall, see DockPushTests)
     for i in f.surfaces.indices where f.surfaces[i].id <= 0 {
         for _ in 0..<400 { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: 4) } }
     }
     return f
 }
 
-@Test func bankReachesTheBarTopBesideItsEndAndDropsAtTheReposeSlopeAway() {
+@Test func bankReachesTheBarTopBesideItsEndAsAFlushShelf() {
     let f = bankedField()
     let g = f.pile(id: Tuning.groundID)!
     #expect(g.heights[84] >= 92 && g.heights[635] >= 92)   // columns adjacent to the bar ends
     for b in 1..<84 { #expect(abs(g.heights[b] - g.heights[b - 1]) <= Tuning.slope * Tuning.binWidth + 0.01) }
-    #expect(g.heights[84] - g.heights[84 - 60] >= 20)      // a real bank, not a lip
+    #expect(g.heights[84 - 60] >= 90)                      // the grown bank is a level shelf flush with the Dock top across the 171pt gap
 }
 
 @Test func noContourPointInsideTheBarSilhouetteAndOneChainOverTheTop() {
@@ -177,7 +178,8 @@ private func bankedField() -> SnowField {
     put(500, 400)
     let d = f.index[0]!
     for b in f.surfaces[d].pile.heights.indices { f.deposit(surface: d, bin: b, volume: 3) }
-    put(450, 500)   // an item was added: the bar grew on both sides
+    put(450, 500)   // an item was added: the bar grew on both sides (the sim moves the ends at Tuning.dockSpeed; let it arrive)
+    for _ in 0..<30 { f.step(dt: 1 / 60) }
     let s = f.surfaces[f.index[0]!]
     #expect(s.frame.minX == 450 && s.frame.maxX == 950)
     #expect(s.pile.x0 == 450 && s.pile.x1 == 950)
