@@ -50,6 +50,7 @@ public final class SnowField {
     var areaScale: Float = 1
     var lowPower = false
     private(set) var calm = false
+    var groundWinKey: [CGRect] = [], groundWinCeil: [Float] = [], groundWinHidden: [Bool] = []   // buildGround cache (non-Dock windows)
     /// "Neve parada": `step` is never called, so nothing can animate: the Dock jumps to its target at once.
     public var frozen = false { didSet { if frozen, !oldValue, dockCur != dockTarget { dockCur = dockTarget; boundsDirty = true } } }
     var time: Float = 0

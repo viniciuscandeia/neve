@@ -27,16 +27,25 @@ extension SnowField {
             dockSlump = Tuning.dockSlumpTime
             let keep = pollDt
             pollDt = dt
-            _ = updateSurfaces(windows: effective(lastWindows))
+            let w = effective(lastWindows)
+            _ = updateSurfaces(windows: w, only: dockIsolated(w) ? [0, Tuning.groundID] : nil)   // the bar and the ground are all that moves
             pollDt = keep
         }
         guard dockSlump > 0, let c = dockCur, let g = index[Tuning.groundID] else { return }
         dockSlump -= dt
         for x in [c.minX, c.maxX] {   // the bank relaxes (via deposit's local relax) around both ends: berm spreads, freed span fills
             let b = column(Float(x - origin.x))
-            for _ in 0..<3 { for o in stride(from: -64, through: 64, by: 8) { _ = surfaces[g].pile.deposit(bin: min(max(b + o, 0), numCols - 1), volume: 0) } }
+            for _ in 0..<3 { for o in stride(from: -64, through: 64, by: 8) { if surfaces[g].pile.deposit(bin: min(max(b + o, 0), numCols - 1), volume: 0) { pilesDirty = true } } }   // dirty only on a real change
         }
-        pilesDirty = true
+    }
+
+    /// No window behind the Dock in the list (so none it can hide or roof over) lies within its horizontal reach, old or new, at or below its top:
+    /// then only the Dock and the ground surfaces depend on its frame.
+    func dockIsolated(_ w: [WindowInfo]) -> Bool {
+        guard let k = w.firstIndex(where: { $0.number == 0 }), let t = dockTarget else { return false }
+        let c = w[k].frame, lo = min(c.minX, t.minX), hi = max(c.maxX, t.maxX)
+        for j in (k + 1)..<w.count where w[j].frame.maxX > lo && w[j].frame.minX < hi && w[j].frame.maxY < c.maxY + 2 { return false }
+        return true
     }
 
     /// Banks `volume` (summed height) on the ground from column `b0` outward (`dir` +-1): chunks go in through `Pile.deposit` (spread + relax, capped
