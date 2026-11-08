@@ -21,7 +21,7 @@ final class DockWatcher {
         guard AXObserverCreate(pid, dockCallback, &obs) == .success, let obs else { return }
         let me = Unmanaged.passUnretained(self).toOpaque()
         var ok = false
-        for n in [kAXResizedNotification, kAXMovedNotification, kAXUIElementDestroyedNotification] {
+        for n in [kAXResizedNotification, kAXMovedNotification, kAXUIElementDestroyedNotification, kAXCreatedNotification, kAXLayoutChangedNotification] {
             if AXObserverAddNotification(obs, list, n as CFString, me) == .success { ok = true }
         }
         guard ok else { return }   // retried by the next refresh
@@ -40,6 +40,19 @@ final class DockWatcher {
     fileprivate func axEvent(destroyed: Bool) {
         if destroyed { stop() }   // re-attached by the next refresh
         onChange?()
+        settleSoon()
+    }
+
+    /// The Dock posts its AX events while the add/remove animation is still running (and none when it ends), so the read just taken can be mid-animation.
+    /// A trailing re-query 0.5s after the last event / change picks up the final frame; it repeats until a read finds nothing new.
+    private var settleTask: Task<Void, Never>?
+    private func settleSoon() {
+        settleTask?.cancel()
+        settleTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.onChange?()
+        }
     }
 
     /// Async refresh off the main thread (AX reads can block); `done` runs on main only if the frame changed.
@@ -64,7 +77,7 @@ final class DockWatcher {
                     } else { stop() }
                     let new = q.rect.flatMap { r in NSScreen.screens.first.map { appKitFrame(fromCG: r, primaryHeight: $0.frame.height) } }
                     let r = steady.feed(new)
-                    if r.changed { done() }
+                    if r.changed { done(); settleSoon() }   // changed: read again once the animation has settled
                     if r.retry { Task { try? await Task.sleep(for: .seconds(1)); refresh(done: done) } }
                 }
                 if dirty || gen != generation { dirty = false; refresh(done: done) }

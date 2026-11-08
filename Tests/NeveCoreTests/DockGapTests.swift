@@ -170,3 +170,19 @@ private func bankedField() -> SnowField {
         #expect(ys[ys.count - 1] - ys[xs.firstIndex { abs($0 - (name == "left" ? 172 : 1268)) < 1 }!] >= 8, "\(name): flat block over the corner")
     }
 }
+
+@Test func dockSurfaceFollowsAWidenedFrame() {
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 0, visibleTop: 880, flakeCount: 0, seed: 5)
+    func put(_ x: CGFloat, _ w: CGFloat) { f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: x, y: 10, width: w, height: 80), radius: 20)]) }
+    put(500, 400)
+    let d = f.index[0]!
+    for b in f.surfaces[d].pile.heights.indices { f.deposit(surface: d, bin: b, volume: 3) }
+    put(450, 500)   // an item was added: the bar grew on both sides
+    let s = f.surfaces[f.index[0]!]
+    #expect(s.frame.minX == 450 && s.frame.maxX == 950)
+    #expect(s.pile.x0 == 450 && s.pile.x1 == 950)
+    for b in s.pile.heights.indices { #expect(binCenter(s.c0 + b) >= 450 && binCenter(s.c0 + b) <= 950) }
+    #expect(s.c0 * Int(Tuning.binWidth) <= 452 && (s.c0 + s.pile.heights.count) * Int(Tuning.binWidth) >= 948)   // columns cover the new ends
+    let old = s.pile.heights.indices.filter { binCenter(s.c0 + $0) >= 510 && binCenter(s.c0 + $0) <= 890 }
+    #expect(old.allSatisfy { s.pile.heights[$0] > 0 })   // the pile over the old span is carried
+}
