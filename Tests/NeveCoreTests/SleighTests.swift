@@ -14,13 +14,33 @@ private func field(day: (Int, Int) = (12, 24), speed: Float = 1, seed: UInt64 = 
 
 private func sleighs(_ f: SnowField) -> [Figure] { f.figures.filter { $0.kind == .sleigh } }
 
-/// Simulated starts over `hours` (dt 0.25 s).
-private func starts(_ f: SnowField, hours: Float) -> Int {
-    for _ in 0..<Int(hours * 3600 * 4) { f.step(dt: 0.25) }
+/// Director-only clock: ticks `stepDirector` once per simulated second with a hand-advanced `time` (the director's own 1 Hz cadence) and
+/// ends each sleigh after a 14 s crossing, so cooldown, caps and the Poisson roll run exactly as in `step` without simulating the world.
+/// `onStart` gets the sim time of every start. The real crossing is covered by the 1/60 s integration tests below.
+private func starts(_ f: SnowField, hours: Float, onStart: (Float) -> Void = { _ in }) -> Int {
+    var seen = 0, endAt = Float.infinity
+    for _ in 0..<Int(hours * 3600) {
+        f.time += 1
+        f.stepDirector(dt: 1)
+        #expect(f.figures.filter { $0.kind == .sleigh }.count <= 1)   // a big event never overlaps itself
+        if f.director.started != seen { seen = f.director.started; endAt = f.time + 14; onStart(f.time) }
+        if f.time >= endAt, let j = f.figures.firstIndex(where: { $0.kind == .sleigh }) { f.removeFigure(j); endAt = .infinity }
+    }
     return f.director.started
 }
 
-// MARK: Frequency and eligibility
+// MARK: Cadence (direct)
+
+@Test func sleighIntervalAndChanceFollowTheCalendar() {
+    for (day, total) in [((12, 24), 600), ((12, 25), 600), ((12, 10), 2700), ((7, 15), 10800)] as [((Int, Int), Float)] {
+        let f = field(day: day)
+        let cd = min(1200, total * 0.2)
+        #expect(f.sleighInterval.mean == total - cd && f.sleighInterval.cooldown == cd)
+        #expect(f.sleighChance() == 1 / (total - cd) && f.director.sleighCooldown == cd)
+    }
+    let fast = field(day: (12, 24), speed: 30)
+    #expect(fast.sleighChance() == Float(30) / 480)
+}
 
 @Test func sleighOnDec24ComesAboutEveryTenMinutes() {
     let n = starts(field(day: (12, 24)), hours: 6)   // 36 expected
@@ -50,13 +70,9 @@ private func starts(_ f: SnowField, hours: Float) -> Int {
 
 @Test func sleighKeepsTheCooldownAndIsABigEvent() {
     let f = field(seed: 4)
-    var last: [Float] = [], seen = 0, most = 0
-    for _ in 0..<(3 * 3600 * 4) {
-        f.step(dt: 0.25)
-        most = max(most, sleighs(f).count)
-        if f.director.started != seen { seen = f.director.started; last.append(f.time) }
-    }
-    #expect(most <= 1 && last.count >= 5)
+    var last: [Float] = []
+    _ = starts(f, hours: 3) { last.append($0) }
+    #expect(last.count >= 5)
     #expect(zip(last, last.dropFirst()).allSatisfy { $1 - $0 >= 120 })   // Dec 24: cooldown of 2 min inside the 10 min interval
 }
 
