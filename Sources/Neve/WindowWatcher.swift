@@ -22,8 +22,7 @@ final class WindowWatcher {
     /// AX acquisition (create, subscribe, enumerate windows) can block for the messaging timeout per call on a hung app:
     /// it runs here, never on main. Only the run-loop source install and the publish happen on main.
     private static let axQueue = DispatchQueue(label: "io.github.viniciuscandeia.neve.axattach", qos: .utility)
-    private var inflight: [pid_t: Int] = [:]   // pid -> ticket; a result whose ticket is gone (detach / deactivate) is discarded
-    private var ticket = 0
+    private let gate = AttachGate()   // tickets + generation: deactivation drops queued work and sleeping retries
 
     func setActive(_ on: Bool) {
         guard on != active else { return }
@@ -35,7 +34,7 @@ final class WindowWatcher {
             for app in NSWorkspace.shared.runningApplications { attach(app) }   // non-blocking: the serial queue works through them
         } else {
             ws.removeObserver(self)
-            inflight.removeAll()
+            gate.cancelAll()
             for pid in Array(observers.keys) { detach(pid) }
         }
     }
@@ -49,25 +48,26 @@ final class WindowWatcher {
         mark()
     }
 
-    private func attach(_ app: NSRunningApplication, attempt: Int = 1) {
+    private func attach(_ app: NSRunningApplication, attempt: Int = 1, generation: Int? = nil) {
         let pid = app.processIdentifier
-        guard active, app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil, (attempt > 1 || inflight[pid] == nil) else { return }
-        ticket += 1
-        let mine = ticket
-        inflight[pid] = mine
+        let gen = generation ?? gate.generation
+        guard active, app.activationPolicy == .regular, pid != getpid(),
+              let mine = gate.begin(pid: pid, generation: gen, hasObserver: observers[pid] != nil) else { return }
         let me = Unmanaged.passUnretained(self).toOpaque()
         nonisolated(unsafe) let ref = me
+        let gate = self.gate
         Self.axQueue.async {
+            guard gate.isCurrent(pid: pid, ticket: mine, generation: gen) else { return }   // cancelled while queued
             let r = Self.acquire(pid: pid, refcon: ref)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard self.inflight[pid] == mine else { return }   // detached or deactivated meanwhile: the observer is dropped
-                    self.inflight[pid] = nil
-                    if let obs = r.observer, self.active, !app.isTerminated {
+                    guard gate.finish(pid: pid, ticket: mine) else { return }   // detached or deactivated meanwhile: the observer is dropped
+                    if r.outcome == .complete, let obs = r.observer, self.active, !app.isTerminated {
                         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
                         self.observers[pid] = obs
-                    } else if r.observer == nil, !app.isTerminated, let d = AttachRetry.delay(afterFailedAttempt: attempt) {
-                        Task { try? await Task.sleep(for: .seconds(d)); self.attach(app, attempt: attempt + 1) }
+                    } else if r.outcome == .transient, !app.isTerminated, let d = AttachRetry.delay(afterFailedAttempt: attempt) {
+                        // partial attach: the observer is discarded and the whole acquisition retried (only if still the same generation)
+                        Task { try? await Task.sleep(for: .seconds(d)); self.attach(app, attempt: attempt + 1, generation: gen) }
                     }
                 }
             }
@@ -76,26 +76,36 @@ final class WindowWatcher {
 
     /// Off-main. `.cannotComplete` (hung / not ready app) bails at once instead of paying a timeout per remaining call.
     private nonisolated static func acquire(pid: pid_t, refcon: UnsafeMutableRawPointer) -> Acquired {
+        func step(_ e: AXError) -> AXStep { e == .success ? .ok : e == .cannotComplete ? .transient : .unsupported }
         var obs: AXObserver?
         let err = AXObserverCreate(pid, windowCallback, &obs)
-        guard err == .success, let obs else { log.info("skip pid \(pid) (create: \(err.rawValue))"); return Acquired() }
+        guard err == .success, let obs else {
+            log.info("skip pid \(pid) (create: \(err.rawValue))")
+            return Acquired(observer: nil, outcome: err == .cannotComplete ? .transient : .incompatible)
+        }
         let el = AXUIElementCreateApplication(pid)   // the global AX messaging timeout (set at startup) bounds every call
-        var ok = 0
+        var steps: [AXStep] = []
         for n in appEvents {
-            let e = AXObserverAddNotification(obs, el, n as CFString, refcon)
-            if e == .success { ok += 1 } else if e == .cannotComplete { break }
+            steps.append(step(AXObserverAddNotification(obs, el, n as CFString, refcon)))
+            if steps.last == .transient { break }
         }
-        guard ok > 0 else { log.info("skip pid \(pid) (no notifications)"); return Acquired() }
-        var v: CFTypeRef?
-        let w = AXUIElementCopyAttributeValue(el, kAXWindowsAttribute as CFString, &v)
-        if w == .success, let ws = v as? [AXUIElement] {
-            for win in ws where AXObserverAddNotification(obs, win, kAXUIElementDestroyedNotification as CFString, refcon) == .cannotComplete { break }
+        if !steps.contains(.transient) {
+            var v: CFTypeRef?
+            let w = AXUIElementCopyAttributeValue(el, kAXWindowsAttribute as CFString, &v)
+            if w == .success, let ws = v as? [AXUIElement] {
+                for win in ws {
+                    let s = step(AXObserverAddNotification(obs, win, kAXUIElementDestroyedNotification as CFString, refcon))
+                    if s == .transient { steps.append(s); break }
+                }
+            } else if w == .cannotComplete { steps.append(.transient) }
         }
-        return Acquired(observer: obs)
+        let outcome = AttachRetry.classify(steps)
+        if outcome != .complete { log.info("pid \(pid) attach \(String(describing: outcome))") }
+        return Acquired(observer: outcome == .complete ? obs : nil, outcome: outcome)
     }
 
     private func detach(_ pid: pid_t) {
-        inflight[pid] = nil
+        gate.cancel(pid: pid)
         guard let o = observers.removeValue(forKey: pid) else { return }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(o), .commonModes)
     }
@@ -128,7 +138,7 @@ final class WindowWatcher {
 }
 
 /// @unchecked: an AXObserver is a CF handle used by one thread at a time (built on the AX queue, then handed to main).
-private struct Acquired: @unchecked Sendable { var observer: AXObserver? }
+private struct Acquired: @unchecked Sendable { var observer: AXObserver?; var outcome: AttachOutcome }
 
 /// Runs on the main run loop (sources are added to CFRunLoopGetMain), so main-actor isolation holds.
 private let windowCallback: AXObserverCallback = { _, element, notification, refcon in

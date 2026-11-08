@@ -185,7 +185,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Não foi possível captar o áudio. Confira Privacidade e Segurança e a saída de som." : "Requer macOS 14.2 ou mais recente.")
         } else if !want {
             MusicTap.shared.stop()
-            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? "Pausada no modo econômico." : "" }
+            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? (economy ? "Pausada no modo econômico." : "Pausada pelo Modo de Baixo Consumo do macOS.") : "" }
         }
     }
 
