@@ -212,8 +212,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         pop.behavior = .transient
         pop.contentViewController = host
         popover = pop
-        pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // Accessory app: activate first and make the popover window key, else SwiftUI renders switches inactive (grey).
         NSApp.activate()
+        pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        pop.contentViewController?.view.window?.makeKey()
     }
 
     /// The single "Ajustes" window (rebuilt on each open so the screen list is fresh).
