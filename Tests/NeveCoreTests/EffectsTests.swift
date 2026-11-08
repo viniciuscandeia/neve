@@ -188,3 +188,18 @@ private func vanish(calm: Bool = false) -> (f: SnowField, vol: Float) {
     #expect(f.debris.contains { $0.shape != 2 && $0.vol > 0 })   // some crumbs/powder came off
     #expect(abs(f.debris.reduce(0) { $0 + $1.vol } - vol) < 0.01)
 }
+
+@Test func staleSpaceWindowTakesNoHeavyImpactBeforeTheNextSnapshot() {
+    func run(stale: Bool) -> Float {
+        let f = makeField(seed: 5)
+        f.update(windows: [win(1, 300, 300, 400, 200)])
+        let i = f.surfaces.firstIndex { $0.id == 1 }!
+        f.dropPiles()
+        if stale { f.markStale() }
+        f.debris.append(Flake(pos: [Float(f.surfaces[i].c0 + 100) * 2 + 1, 504], vx: 0, fall: 500, phase: 0, amp: 0, freq: 0, size: 16, alpha: 1, kind: .debris, vol: 20, shape: 2))
+        f.step(dt: 1 / 60)
+        return f.surfaces[i].pile.heights.reduce(0, +)
+    }
+    #expect(run(stale: false) > 0)   // control: the same fragment does dig in when the list is fresh
+    #expect(run(stale: true) == 0)
+}

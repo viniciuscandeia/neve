@@ -3,8 +3,11 @@ import Foundation
 
 extension SnowField {
     /// One flake lands on a surface (also the test entry point for building piles without simulating snowfall).
+    /// Whether snow may land on / hit surface `s`: after a Space switch (`windowsStale`) window surfaces are not trusted until the next snapshot. The ground and the Dock stay.
+    func landable(_ s: Int) -> Bool { !(windowsStale && surfaces[s].id > 0) }
+
     func deposit(surface: Int, bin: Int, volume: Float, powder: Bool = false) {
-        if windowsStale, surfaces[surface].id > 0 { return }   // after a Space switch the window list is not trusted yet
+        guard landable(surface) else { return }
         if surfaces[surface].pile.deposit(bin: bin, volume: volume, powder: powder) { pilesDirty = true }
         if surfaces[surface].pile.spillL > 2 || surfaces[surface].pile.spillR > 2 { spill(surface) }
     }
