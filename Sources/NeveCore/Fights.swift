@@ -43,7 +43,7 @@ extension Tuning {
 }
 
 extension SnowField {
-    private func free(_ f: Figure) -> Bool { f.active && f.fight == nil && f.motion.cheer <= 0 && f.motion.rest <= 0 && f.motion.wobble <= 0 }
+    private func free(_ f: Figure) -> Bool { f.active && f.fight == nil && f.motion.cheer <= 0 && f.motion.rest <= 0 && f.motion.wobble <= 0 && f.motion.xfer == nil }
 
     func startFights() {
         guard fights.count < Tuning.maxFights else { return }
