@@ -84,7 +84,7 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 |---|---|
 | Linha de status | Ex.: "Nevando · Média", "Pausado — app em tela cheia", "Pausado — inativo", "Desligado" |
 | **Nevar** (⌘N) | Liga e desliga a neve |
-| **Permitir neve no Dock…** | Só aparece quando falta a permissão de Acessibilidade |
+| **Permitir Acessibilidade…** | Só aparece quando falta a permissão de Acessibilidade (opcional: neve no Dock e acompanhamento mais rápido das janelas) |
 | **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
 | **Ajustes** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto) |
 | **Sair** (⌘Q) | Encerra o Neve |
@@ -138,15 +138,15 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 ## ☕ Desempenho e energia
 
 - Renderização com `CAMetalDisplayLink` e Metal instanciado: todos os flocos em uma única draw call.
-- Física sobre um pool fixo de structs, sem alocação por frame; as pilhas só são redesenhadas quando mudam.
-- Acompanhamento de janelas guiado por eventos de Acessibilidade, com poll leve apenas como rede de segurança.
+- Física sobre um pool fixo de structs, sem alocação por frame no pool de partículas; as pilhas só são redesenhadas quando mudam.
+- Acompanhamento de janelas guiado por eventos de Acessibilidade (com rajadas curtas de leitura durante transições e arrastos), com poll leve como rede de segurança.
 - A animação **pausa** sob apps em tela cheia, com o Mac em estado térmico alto, após 5 minutos sem uso (a menos que o Modo ambiente esteja ligado) e com as telas em repouso ou a sessão bloqueada.
 - Modo de Baixo Consumo do sistema: 30 fps e menos flocos. Modo econômico: 30 fps e só a tela principal.
 
 ## 🔒 Privacidade
 
 - Apenas os limites (bounds) das janelas são lidos. Não exige Gravação de Tela.
-- A permissão de Acessibilidade é opcional e só serve para a neve acumular no Dock (Dock na parte inferior da tela). Sem ela, todo o resto funciona.
+- A permissão de Acessibilidade é opcional e serve para dois ganhos: a neve acumular no Dock (Dock na parte inferior da tela) e o acompanhamento de janelas guiado por eventos, mais rápido que o poll. Sem ela, todo o resto funciona (as janelas são lidas por poll). Não exige Gravação de Tela.
 - *Neve dança com a música* pede a permissão de Gravação de Áudio do Sistema: o áudio é analisado na hora (volume, grave e batidas), nada é gravado nem sai do Mac. Desligar a opção encerra a captura.
 - Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Mostrar em capturas** para incluí-la.
 
@@ -188,7 +188,7 @@ As demais variáveis de demonstração (`NEVE_DEMO_*`, `NEVE_SNOWMAN_FAST`, `NEV
 
 **Regra: nunca use `pkill`/`pgrep` por nome (`pkill -x Neve` etc.).** Isso derruba o app do usuário e as execuções de outros agentes. Guarde o pid do que você mesmo lançou e mate só ele.
 
-- **Bundle de dev:** `NEVE_DEV=<nome> scripts/make-app.sh` (ou `--dev <nome>`) gera `build/Neve-<nome>.app` com bundle id `io.github.viniciuscandeia.neve.dev`, executável `Neve-dev-<nome>` e `NeveInstance=<nome>` no Info.plist (assinado com a mesma identidade). Sem `NEVE_DEV` o build é o do usuário, como antes. A instância de dev (Info.plist ou env `NEVE_INSTANCE`) não trava por instância única, mostra o nome ao lado do ícone na barra de menus, não tem "Abrir no login" e grava as preferências só no suite `io.github.viniciuscandeia.neve.dev.<nome>` (nunca no domínio do usuário). A permissão de Acessibilidade vale por bundle id: sem ela, só a neve no Dock não aparece.
+- **Bundle de dev:** `NEVE_DEV=<nome> scripts/make-app.sh` (ou `--dev <nome>`) gera `build/Neve-<nome>.app` com bundle id `io.github.viniciuscandeia.neve.dev`, executável `Neve-dev-<nome>` e `NeveInstance=<nome>` no Info.plist (assinado com a mesma identidade). Sem `NEVE_DEV` o build é o do usuário, como antes. A instância de dev (Info.plist ou env `NEVE_INSTANCE`) não trava por instância única, mostra o nome ao lado do ícone na barra de menus, não tem "Abrir no login" e grava as preferências só no suite `io.github.viniciuscandeia.neve.dev.<nome>` (nunca no domínio do usuário). A permissão de Acessibilidade vale por bundle id: sem ela, a neve no Dock não aparece e as janelas são acompanhadas por poll.
 - **`scripts/agent-run.sh [--screen] [--name N] [--defaults k=v ...] -- <comando...>`:** compila o bundle de dev (nome padrão = hash do diretório do worktree), abre a própria instância, exporta `NEVE_PID`, `NEVE_APP` e `NEVE_DEFAULTS_SUITE`, roda o comando e, ao sair, encerra só esse pid. Com `--screen` pega o lock da tela e mantém `caffeinate -dimsu` durante a execução. Use `--screen` em tudo que depende da tela (capturas, medições).
 - **`scripts/dev-lock.sh acquire <dono> [timeout=600] | release <dono> | status`:** lock da tela em `/tmp/neve-screen.lock` (`mkdir` atômico, com dono e pid), espera até o timeout e quebra locks cujo pid morreu. Pode ser carregado com `source` (`neve_lock_acquire`, `neve_lock_release`, `neve_lock_status`). Pelo CLI o pid guardado é o do shell chamador (`NEVE_LOCK_PID` o substitui); em shells de uma chamada só, prefira `agent-run.sh --screen`.
 - **`scripts/perf.sh [heavy|media|max] [segundos=60] [--drag] [--runs N=3] [--bin CAMINHO]`:** mede CPU e wakeups ociosos do Neve e a CPU do WindowServer (via `top`) com janelas do Finder abertas (`max` = janela maximizada; `--drag` arrasta uma janela). Roda a própria instância de dev (ou `--bin`), com defaults no suite dela, segura o lock da tela durante todo o teste e mata só o próprio pid. Se o Neve do usuário estiver aberto, avisa que a CPU do WindowServer o inclui (ele não é fechado). Com `NEVE_PERF=1` (sempre ligado no script) também mostra o log de fases.
