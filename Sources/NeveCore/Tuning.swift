@@ -66,6 +66,7 @@ public enum Tuning {
     static let dripRate: Float = 5          // new droplets per second while melting
     static let heavyFall: Float = 350       // impact speed and carried volume that dig a crater (Effects.swift)
     static let heavyVol: Float = 6
+    static let rippleSpeed: Float = 900     // pt/s: a vanished pile lets go chunk by chunk along this front (Effects.swift)
     static let puffLife: Float = 0.6
     static let glintLife: Float = 0.6
     public static let snowmanDepth: Float = 14              // average pile height over the stretch that triggers a build (SimConfig default)

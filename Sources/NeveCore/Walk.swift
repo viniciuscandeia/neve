@@ -14,6 +14,9 @@ extension Tuning {
     static let windLean: Float = 9.2               // pt of head offset into a full gust (~12 degrees)
     static let shotWind: Float = 45                // pt/s a full gust moves a snowball in flight
     static let headAim: Float = 0.65               // share of throws aimed at the head
+    static let stepMax: Float = 10                 // pt: highest step a snowman hops between ground and Dock
+    static let stepGap: Float = 8                  // pt: widest horizontal gap between the two stretches
+    static let hopTime: Float = 0.45               // s
     static let throwGap: Float = 1.1               // s between throws (plus up to 0.4 random)
     /// Chance that a throw from `d` points away hits: 0.8 up to 80pt, falling linearly to 0.35 at 250pt.
     public static func hitChance(distance d: Float) -> Float { 0.8 - 0.45 * min(max((d - 80) / 170, 0), 1) }
@@ -78,6 +81,42 @@ extension SnowField {
         return m >= 1.5
     }
 
+    /// A hop onto the neighbouring surface past the end of `f`'s stretch in direction `dir`, when the two stretches nearly
+    /// touch and the snow tops differ by at most `stepMax`. Only ground <-> Dock. The auto snowman needs snow where it lands.
+    func transfer(_ f: Figure, sid: Int, dir: Float, auto: Bool) -> Xfer? {
+        let to = sid == Tuning.groundID ? 0 : sid == 0 ? Tuning.groundID : nil
+        guard let to, let si = index[sid], let ti = index[to] else { return nil }
+        let h = Snowman.height * f.scale, half = f.radii.x
+        guard let cur = standRange(si: si, x: f.foot.x, height: h) else { return nil }
+        let probe = dir > 0 ? cur.1 + 4 : cur.0 - 4
+        guard let tgt = standRange(si: ti, x: probe, height: h), let (lo, hi) = walkRange(surface: to, x: probe, half: half, height: h), hi > lo + 4 else { return nil }
+        let gap = dir > 0 ? tgt.0 - cur.1 : cur.0 - tgt.1
+        let x = dir > 0 ? lo : hi
+        guard abs(gap) <= Tuning.stepGap, !auto || snowUnder(to, x), let m = meanHeight(si: ti, col: column(x), span: 3) else { return nil }
+        let t = surfaces[ti], c = column(x) - t.c0
+        guard t.pile.visible[c] else { return nil }
+        let y = t.edgeY + t.pile.base[c] + m
+        guard abs(y - f.foot.y) <= Tuning.stepMax else { return nil }
+        for o in figures where o.id != f.id && o.surfaceID == to && abs(o.foot.x - x) < half + o.radii.x + 6 { return nil }
+        return Xfer(sid: to, from: f.foot, to: SIMD2(x, y))
+    }
+
+    /// Advances a hop: a flat arc, squash on landing. Returns the new surface id once it has landed.
+    func hopStep(_ f: inout Figure, _ dt: Float) -> Int? {
+        guard var x = f.motion.xfer else { return nil }
+        x.t = min(1, x.t + dt / Tuning.hopTime)
+        let u = x.t, e = u * u * (3 - 2 * u)
+        f.foot = x.from + (x.to - x.from) * e
+        f.pose.hop = 4 * u * (1 - u) * (6 + max(x.to.y - x.from.y, 0)) * f.scale
+        if u < 1 { f.motion.xfer = x; return nil }
+        f.motion.xfer = nil
+        f.motion.squash = Tuning.squashTime
+        guard index[x.sid] != nil else { f.foot = x.from; return nil }
+        f.foot = x.to
+        f.at = .surface(id: x.sid, x: x.to.x)
+        return x.sid
+    }
+
     /// -1...1: how hard the wind blows sideways. Zero below a dead zone, so only Nevasca gusts count (Leve / Media peak at 8).
     var gust: Float { if let o = gustOverride { return o }; return (wind < 0 ? -1 : 1) * min(1, max(0, abs(wind) - 20) / 80) }
 
@@ -123,7 +162,13 @@ extension SnowField {
                 }
                 if blocked || (auto && !outside && !snowUnder(sid, nx)) { f.facing = -f.facing } else {
                     shift(v * dt)
-                    if f.foot.x >= hi && f.facing > 0 { f.foot.x = hi; f.facing = -1 } else if f.foot.x <= lo && f.facing < 0 { f.foot.x = lo; f.facing = 1 }
+                    if f.foot.x >= hi && f.facing > 0 {
+                        f.foot.x = hi
+                        if let x = transfer(f, sid: sid, dir: 1, auto: auto) { m.xfer = x } else { f.facing = -1 }
+                    } else if f.foot.x <= lo && f.facing < 0 {
+                        f.foot.x = lo
+                        if let x = transfer(f, sid: sid, dir: -1, auto: auto) { m.xfer = x } else { f.facing = 1 }
+                    }
                 }
             }
         } else {

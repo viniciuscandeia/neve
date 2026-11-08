@@ -35,3 +35,24 @@ public func filterWindows(_ raw: [RawWindow], exclude: Set<Int> = [], primaryHei
         return WindowInfo(number: number, frame: appKitFrame(fromCG: r, primaryHeight: primaryHeight), radius: radius)
     }
 }
+
+/// Show-desktop ("click wallpaper") slides windows off the screen edge, leaving a sliver that CGWindowList still reports on-screen.
+/// True when less than `minVisible` of the frame's area lies on any screen: such a window counts as gone, so its pile falls.
+public func mostlyOffscreen(_ frame: CGRect, screens: [CGRect], minVisible: CGFloat = 0.3) -> Bool {
+    let area = frame.width * frame.height
+    guard area > 0, !screens.isEmpty else { return false }
+    let seen = screens.reduce(CGFloat(0)) { acc, s in
+        let i = frame.intersection(s)
+        return i.isNull ? acc : acc + i.width * i.height
+    }
+    return seen / area < minVisible
+}
+
+/// Bounded fast-poll window: `trigger` on a click / Space change; the caller polls every `interval` while `active`.
+public struct BurstPoll: Sendable {
+    public static let interval = 0.05, duration = 1.0
+    public private(set) var until = -Double.infinity
+    public init() {}
+    public mutating func trigger(now: Double) { until = now + Self.duration }
+    public func active(now: Double) -> Bool { now < until }
+}

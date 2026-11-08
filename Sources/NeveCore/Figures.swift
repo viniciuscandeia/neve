@@ -13,7 +13,11 @@ struct Motion {
     var idle: Float = 0, nextIdle: Float = 6, rest: Float = 0
     var wobble: Float = 0, cheer: Float = 0     // seconds of hit wobble / celebration left
     var squash: Float = 0, headHit: Float = 0   // seconds of hit squash (0.12) / head jitter (0.7) left
+    var xfer: Xfer?                              // hop between two surfaces in progress (Walk.swift)
 }
+
+/// A hop from one surface to the adjacent one (ground <-> Dock): `from` / `to` are foot positions, t runs 0...1.
+struct Xfer { var sid: Int, from: SIMD2<Float>, to: SIMD2<Float>, t: Float = 0 }
 
 /// One actor on a surface. Data-oriented: one struct, `kind` picks the behaviour in a `switch`.
 public struct Figure {
@@ -273,10 +277,10 @@ extension SnowField {
             figures[i] = f
             return true
         }
-        guard let sid = f.surfaceID, let si = index[sid], let avg = meanHeight(si: si, col: column(f.foot.x), span: 3) else {
+        guard var sid = f.surfaceID, let si = index[sid], let avg = meanHeight(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) else {
             return lose(i)   // its surface is gone
         }
-        let s = surfaces[si], c = column(f.foot.x) - s.c0
+        let s = surfaces[si], c = column(f.motion.xfer?.from.x ?? f.foot.x) - s.c0
         let visible = s.pile.visible[c]
         if visible {
             if !f.fromBalls, avg < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
@@ -288,15 +292,17 @@ extension SnowField {
         if f.headTilt != 0 { f.headTilt *= exp(-16 * dt); if abs(f.headTilt) < 0.03 { f.headTilt = 0 } }
         if !f.fromBalls { advanceBuild(&f, si: si, dt: dt) }
         stepCarrot(&f, dt)
-        var moving = false
+        var moving = false, landed = false
         if animate, visible, f.built == Snowman.stageCount, f.stageAge >= 0.3, !f.headless {
-            moving = f.critter.fetchX != nil ? fetchStep(&f, dt) : walkStep(&f, sid: sid, dt: dt)
+            if f.motion.xfer != nil { moving = true; if let to = hopStep(&f, dt) { sid = to; landed = true } }
+            else { moving = f.critter.fetchX != nil ? fetchStep(&f, dt) : walkStep(&f, sid: sid, dt: dt) }
         } else if f.motion.gait != 0 || f.motion.cheer > 0 || f.pose != Pose() {
+            if let x = f.motion.xfer { f.foot = x.from }   // interrupted mid-hop: back where it took off
             f.motion = Motion(speed: f.motion.speed, nextIdle: f.motion.nextIdle, rest: f.motion.rest)   // standing still: rest pose
             f.pose = Pose()
         }
         f.at = .surface(id: sid, x: f.foot.x)
-        let c2 = column(f.foot.x) - s.c0, fits = !visible || c2 < 0 || c2 >= s.pile.cap.count || s.pile.cap[c2] - s.pile.heights[c2] >= Snowman.height * f.scale   // after walking: still under the Dock bar / a low window
+        let c2 = column(f.foot.x) - s.c0, fits = landed || f.motion.xfer != nil || !visible || c2 < 0 || c2 >= s.pile.cap.count || s.pile.cap[c2] - s.pile.heights[c2] >= Snowman.height * f.scale   // after walking: still under the Dock bar / a low window
         let phase: Phase = !visible || !fits ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering
             : f.fight != nil ? .fighting : moving ? .walking : .idle
         if phase != f.phase { f.phase = phase; f.phaseT = 0 }

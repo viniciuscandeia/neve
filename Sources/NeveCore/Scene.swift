@@ -13,6 +13,7 @@ struct SceneState {
     var t: Float = 0
     var fired = Set<Int>()           // events already run in this loop
     var user = 0                     // the user snowman that loses its head
+    var vanished: Int?               // NEVE_DEMO_VANISH: window number treated as gone
     var carry: Int?, carryFrom = SIMD2<Float>.zero   // the head being put back
     var rabbitPlaced = false
     var carryT0: Float = 0
@@ -117,6 +118,11 @@ extension SnowField {
         if fire(8, at: 17.9) { fillAroundRobin() }
         if fire(9, at: 19.8), let r = figures.first(where: { $0.kind == .robin && !$0.robin.flying }) { shotLand = (r.foot + SIMD2(0, 4), time) }   // a miss lands next to it
         if fire(10, at: 22) { request(.sleigh, after: 0) }
+        // NEVE_DEMO_VANISH=<s>: at that scene time the top window's pile (filled to its limit) falls as if the window had been minimised (visual checks).
+        if let at = Float(ProcessInfo.processInfo.environment["NEVE_DEMO_VANISH"] ?? ""), fire(11, at: at), let si = topWindow {
+            fillPiles(1)
+            scene!.vanished = surfaces[si].id; boundsDirty = true   // the next surface update drops its pile
+        }
     }
 
     /// Two body hits (wobble), then the head hit that pops it: forced to be the third, so the pop time never depends on the throws before it.
