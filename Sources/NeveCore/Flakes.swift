@@ -22,6 +22,7 @@ public struct Flake {
     var vol: Float = 0      // carried snow (area, pt^2): deposited where it lands; 0 = legacy size-based deposit
     var delay: Float = 0    // slab: seconds aloft; puff / glint: seconds of life left
     var shape: UInt8 = 0
+    var wv: Float = 0       // sky/background: lateral speed from the wind field, relaxing toward it (inertia grows with size)
 }
 
 extension SnowField {
@@ -33,18 +34,22 @@ extension SnowField {
         switch kind {
         case .background:
             let s = Float.random(in: 1.5...3.5, using: &rng)
-            return Flake(pos: [x, y], vx: Tuning.wind * 0.6 * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 25...50, using: &rng),
-                         phase: phase, amp: Float.random(in: 5...15, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
+            return Flake(pos: [x, y], vx: Tuning.wind * 0.6 * Float.random(in: 0.7...1.3, using: &rng), fall: 18 + s * 9 + Float.random(in: 0...8, using: &rng),   // terminal speed grows with size
+                         phase: phase, amp: Float.random(in: 5...15, using: &rng) * swayAmp(s), freq: Float.random(in: 0.8...2, using: &rng) * swayFreq(s),
                          size: s, alpha: max(0.35, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .background,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         default:
             let s = Float.random(in: 2.5...7, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
-                         phase: phase, amp: Float.random(in: 8...25, using: &rng), freq: Float.random(in: 0.8...2, using: &rng),
+                         phase: phase, amp: Float.random(in: 8...25, using: &rng) * swayAmp(s), freq: Float.random(in: 0.8...2, using: &rng) * swayFreq(s),
                          size: s, alpha: min(1, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .sky,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         }
     }
+
+    /// Bigger flakes sway wider and slower.
+    func swayAmp(_ s: Float) -> Float { 0.7 + 0.04 * s }
+    func swayFreq(_ s: Float) -> Float { 1.6 / (1 + 0.12 * s) }
 
     /// Bigger = nearer = more opaque: 0.5 at 1.5pt up to 1 at 7pt.
     func depthAlpha(_ s: Float) -> Float { 0.5 + 0.5 * (s - 1.5) / 5.5 }
@@ -73,7 +78,12 @@ extension SnowField {
             f.fade = quiet ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
             if quiet, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             f.phase += f.freq * dt
-            f.pos.x += (f.vx + wind * f.vx / Tuning.wind + f.amp * (calm ? Tuning.calmSway : 1) * musicSway * cos(f.phase)) * dt
+            // Wind: a gust field varying across the screen and in time; flakes relax toward it (heavier = slower to respond).
+            let gust = 1 + 0.5 * sin(f.pos.x * 0.005 + time * 0.35)
+            f.wv += (wind * gust * f.vx / Tuning.wind - f.wv) * min(1, dt / (0.4 + 0.25 * f.size))
+            // Sway: two incommensurate sines (flutter) instead of one.
+            let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)
+            f.pos.x += (f.vx + f.wv + 0.69 * f.amp * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(2 * f.phase))   // vertical flutter, a bit more for big flakes
             if let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
