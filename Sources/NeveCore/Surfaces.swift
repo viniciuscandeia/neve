@@ -40,7 +40,7 @@ extension SnowField {
         }
         boundsDirty = false
         lastWindows = windows
-        return updateSurfaces(windows: windows)
+        return updateSurfaces(windows: effective(windows))
     }
 
     func windowDt(_ id: Int) -> Float { stamps[id].map { Float(min(max(clock - $0, 1.0 / 240), 0.5)) } ?? pollDt }
@@ -69,6 +69,7 @@ extension SnowField {
 
         seams = computeSeams(rects: rects, windows: windows)
         let before = surfaces
+        dockPrev = before.first { $0.id == 0 }?.frame
         var old = before
         var built: [Surface] = []
         var spawned = 0
@@ -106,14 +107,7 @@ extension SnowField {
         // A floating bottom Dock bar (top inside the Dock strip): the bank beside it rises to its top, sloping down with distance.
         let docks = rects.indices.filter { windows[$0].number == 0 && rects[$0].minY >= -1 && rects[$0].maxY > 1 && rects[$0].minY < CGFloat(groundY) && rects[$0].width > rects[$0].height }.map { rects[$0] }
         if !docks.isEmpty {
-            pile.maxes = (0..<numCols).map { b in
-                let x = Float(b) + 0.5, cx = x * bw
-                var m = Tuning.groundMaxHeight
-                for r in docks {   // the bank reaches the bar's top at its end and hugs it: Render fills the rounded corner above it
-                    m = max(m, Tuning.bankLimit(dockTop: Float(r.maxY), distance: max(Float(r.minX) - cx, cx - Float(r.maxX), 0)))
-                }
-                return m
-            }
+            pile.maxes = bankMaxes(docks)
         }
         for b in 0..<numCols {
             let x = CGFloat((Float(b) + 0.5) * bw)
@@ -134,10 +128,27 @@ extension SnowField {
         }
         if let k = old.firstIndex(where: { $0.id == Tuning.groundID }) {
             let prev = old.swapRemove(k)
+            let nd = docks.first, pd = dockPrev
+            var push: (l: Float, r: Float) = (0, 0)
             for b in 0..<numCols {   // a lowered limit (Dock shrank / moved) sheds the excess as debris; hidden columns keep their snow
                 let keep = pile.visible[b] ? min(prev.pile.heights[b], pile.limit(b)) : prev.pile.heights[b], over = prev.pile.heights[b] - keep   // hidden snow stays as it was
-                if over > 0.5 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero) }
                 pile.heights[b] = keep
+                let x = (Float(b) + 0.5) * bw
+                // swept by a Dock end (or under the old end's rounded corner, which the end has since left behind): the blade pushes it ahead
+                var left = false, swept = false
+                if over > 0, let nd, let pd {
+                    left = Float(nd.minX) < Float(pd.minX) - 0.01 && x >= Float(nd.minX) && x < Float(pd.minX) + Tuning.dockPushReach
+                    swept = left || (Float(nd.maxX) > Float(pd.maxX) + 0.01 && x < Float(nd.maxX) && x >= Float(pd.maxX) - Tuning.dockPushReach)
+                }
+                if swept {
+                    let kick = calm || over * Tuning.dockKick <= 0.5 ? 0 : over * Tuning.dockKick
+                    if kick > 0 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: kick, velocity: SIMD2(left ? -Tuning.dockSpeed : Tuning.dockSpeed, 0) * 0.5) }
+                    if left { push.l += over - kick } else { push.r += over - kick }
+                } else if over > 0.5 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero) }
+            }
+            if let nd {
+                if push.l > 0 { spawned += berm(&pile, from: Int((Float(nd.minX) * invBin - 0.5).rounded(.down)), dir: -1, volume: push.l) }
+                if push.r > 0 { spawned += berm(&pile, from: Int((Float(nd.maxX) * invBin - 0.5).rounded(.up)), dir: 1, volume: push.r) }
             }
         }
         return Surface(id: Tuning.groundID, frame: frame, edgeY: 0, c0: 0, anchor: 0, pile: pile)
@@ -185,7 +196,7 @@ extension SnowField {
                     guard pile.visible[b] else { pile.heights[b] = h; continue }
                     let keep = min(h, pile.limit(b))
                     pile.heights[b] = keep
-                    if !prev.pile.visible[k] { spawned += shedBin(col: c0 + b, edgeY: edgeY + pile.base[b], from: keep, amount: h - keep, velocity: .zero) }   // uncovered: the excess falls
+                    if !prev.pile.visible[k] || id == 0 { spawned += shedBin(col: c0 + b, edgeY: edgeY + pile.base[b], from: keep, amount: h - keep, velocity: .zero) }   // uncovered (or the Dock's new rounded end): the excess falls
                 }
             }
             if id == 0 {   // Dock bar resizes when apps come and go: keep snow by global column

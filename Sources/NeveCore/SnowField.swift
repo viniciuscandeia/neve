@@ -32,6 +32,9 @@ public final class SnowField {
     var offsets: [Int32]       // CSR: per column range into entries
     var entries: [Entry] = []
     var lastWindows: [WindowInfo] = []
+    var dockTarget: CGRect?, dockCur: CGRect?, dockPrev: CGRect?   // DockPush.swift: read frame, animated frame, frame before this rebuild
+    var dockSlump: Float = 0
+    var bankLevel: (l: Float, r: Float) = (Tuning.groundMaxHeight, Tuning.groundMaxHeight), bankT: Float = 0   // ground bank ramp level per Dock side, DockPush.swift
     /// Window moved (same size) in the last poll: the overlay may slide its pile layer with the mouse until the next poll.
     public internal(set) var draggingID: Int?
     let numCols: Int
@@ -217,7 +220,7 @@ public final class SnowField {
     /// Something moves fast enough to want the full frame rate (adaptive fps): drag, shots, fights, avalanche-sized debris,
     /// a ball in hand or in the air, a gust, intro / outro. Steady gentle snowfall is not.
     public var isBusy: Bool {
-        draggingID != nil || !shots.isEmpty || !fights.isEmpty || debris.count > 6 || (introDur > 0 && introT < introDur)
+        draggingID != nil || dockCur != dockTarget || dockSlump > 0 || !shots.isEmpty || !fights.isEmpty || debris.count > 6 || (introDur > 0 && introT < introDur)
             || (outro && outroRel < 1) || figures.contains { $0.kind != .snowman } || abs(gust) > 0.15 || balls.contains { $0.state != .resting }
     }
     /// The pile buffer written last is still the current picture (no version change, no easing left).
@@ -248,6 +251,8 @@ public final class SnowField {
         stepIce(dt: dt)
         stepAvalanche(dt: dt)
         stepDebris(dt: dt)
+        stepDock(dt: dt)
+        stepBank(dt: dt)
         stepDockSpill(dt: dt)
         stepPuffs(dt: dt)
         stepGlints(dt: dt)

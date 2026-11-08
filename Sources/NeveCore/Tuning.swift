@@ -11,20 +11,28 @@ public enum Tuning {
     static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
     static let groundID = -1
     static let bankSlope: Float = 0.35      // repose slope (pt per pt) of the ground snowbank rising toward a bottom Dock bar
-    static let bankCurve: Float = 1.6       // exponent of the profile: steep at the bar, long soft tail (ease-out)
-    /// Height limit of the ground bank at `distance` pt from a Dock bar end: curved, monotone, never steeper than the repose slope.
-    static func bankLimit(dockTop: Float, distance d: Float) -> Float {
-        let peak = max(dockTop, groundMaxHeight), rise = peak - groundMaxHeight   // reaches the Dock top at the bar end; Render fills the corner notch so there is no wall
-        let width = bankCurve * rise / bankSlope, u = min(d / max(width, 1), 1)
-        return groundMaxHeight + rise * pow(1 - u, bankCurve)
+    static let bankShelf: Float = 400       // widest level shelf the bank may grow beside a Dock end; beyond it the ground falls away at the repose slope
+    /// Height limit of the ground bank at `distance` pt from a Dock bar end: a repose-slope ramp that starts at `level` at the bar, floored at the open ground
+    /// limit and capped at the Dock top (a shelf flush with it). `level` rises as the bank fills (SnowField.stepBank), so the ramp grows into a shelf.
+    static func bankLimit(dockTop: Float, distance d: Float, level: Float) -> Float {
+        min(max(level - bankSlope * d, groundMaxHeight), max(dockTop, groundMaxHeight))
     }
+    /// The `level` at which the shelf is complete: flush with the Dock top across the gap (up to `bankShelf`).
+    static func bankLevelMax(dockTop: Float, gap: Float) -> Float { max(dockTop, groundMaxHeight) + bankSlope * min(gap, bankShelf) }
     /// Underside of a floating Dock bar's rounded rect at `x` (nil outside it): minY along the flat, rising along the corner arcs.
     static func barUnderside(x: Float, minX: Float, maxX: Float, minY: Float, radius: Float) -> Float? {
         guard x >= minX, x < maxX else { return nil }
         let r = max(min(radius, (maxX - minX) / 2), 0), dx = max(minX + r - x, x - (maxX - r), 0)
         return max(minY, 0) + r - (max(r * r - dx * dx, 0)).squareRoot()
     }
-    public static let dockGlassPad: Float = 4   // pt the Dock bar's bottom is assumed to hang below the AX list's bottom edge (calibration knob)
+    /// The visible Dock glass sits this many pt below the AX list's frame (CG coordinates, y down), same size. Measured on macOS 26 by capturing the
+    /// Dock window alone: AX list y 806..890, opaque glass y 811..895. Calibration knob if a later macOS moves it.
+    public static let dockGlassOffset: CGFloat = 5
+    public static func dockGlass(fromAX r: CGRect) -> CGRect { r.offsetBy(dx: 0, dy: dockGlassOffset) }
+    static let dockSpeed: Float = 800       // pt/s: the sim moves each Dock end toward the read frame at most this fast (a visible plow)
+    static let dockSlumpTime: Float = 3   // s the bank keeps relaxing near the Dock ends after one moved
+    static let dockPushReach: Float = 40    // pt behind a moving Dock end still counted as swept (the old rounded corner)
+    static let dockKick: Float = 0.25       // share of plowed snow thrown up as debris (none in calm mode)
     static let barMargin: Float = 1         // ground snow stays this far below the bar's underside
     static let minHeadroom: Float = 18      // a window top needs this much free space below the menu bar to carry snow
     static let maxDrift: Float = 24         // snow banked against a front window reaches its top up to this step (and no higher)
