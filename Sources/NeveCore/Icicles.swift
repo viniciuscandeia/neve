@@ -49,9 +49,9 @@ extension SnowField {
             }
             if c.fade < 1 { c.fade = min(1, c.fade + dt * 0.7) }   // Reduce Motion stalactites fade in
             let r = surfaces[si].radius
-            c.len = min(c.maxLen, c.len + dt * c.grow * config.iceSpeed * (intensity == .nevasca ? 2 : 1))
             let w = Float(fr.width), d = max(r - c.dx, c.dx - (w - r), 0)
             c.x = Float(fr.minX) + c.dx; c.y = Float(fr.minY) + r - (r * r - d * d).squareRoot() + 0.5   // top tucked into the frost lip
+            if !covered(si, SIMD2(c.x, c.y)) { c.len = min(c.maxLen, c.len + dt * c.grow * config.iceSpeed * (intensity == .nevasca ? 2 : 1)) }   // anchor hidden by a front window: no growth
             icicles[i] = c
             i -= 1
         }
@@ -104,6 +104,7 @@ extension SnowField {
         writeFrostPrims(&w, contrast: contrast, shift: shift)
         let edge = Rig.a(contrast ? Rig.shadowHC : SIMD4(0.45, 0.62, 0.85, 1), 0.7)
         for c in icicles {
+            if let si = index[c.win], covered(si, SIMD2(c.x, c.y)) || covered(si, SIMD2(c.tilt + c.x, c.y - c.len)) { continue }   // hidden by a window in front
             let p = SIMD2(c.x, c.y) + shift(c.win), a = c.fade, hw = c.width / 2
             let tip = p + SIMD2(c.tilt, -c.len)
             w.triangle(p + SIMD2(-hw - 0.5, 0.5), p + SIMD2(hw + 0.5, 0.5), tip + SIMD2(0, -0.8), color: Rig.a(edge, a))

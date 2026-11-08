@@ -81,31 +81,58 @@ extension SnowField {
         }
     }
 
+    func covered(_ si: Int, _ p: SIMD2<Float>) -> Bool {
+        for r in surfaces[si].cover where p.x >= Float(r.minX) && p.x <= Float(r.maxX) && p.y >= Float(r.minY) && p.y <= Float(r.maxY) { return true }
+        return false
+    }
+
+    /// Calls `emit` for the parts of segment a->b not inside any of `cover[k...]` (Liang-Barsky per rect, allocation-free recursion).
+    func clipSegment(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ cover: [CGRect], _ k: Int, _ emit: (SIMD2<Float>, SIMD2<Float>) -> Void) {
+        var k = k
+        while k < cover.count {
+            let r = cover[k]; k += 1
+            var t0: Float = 0, t1: Float = 1, ok = true
+            let d = b - a
+            for (p, q) in [(-d.x, a.x - Float(r.minX)), (d.x, Float(r.maxX) - a.x), (-d.y, a.y - Float(r.minY)), (d.y, Float(r.maxY) - a.y)] {
+                if p == 0 { if q < 0 { ok = false } }
+                else if p < 0 { t0 = max(t0, q / p) } else { t1 = min(t1, q / p) }
+            }
+            guard ok, t0 < t1 else { continue }
+            if t0 > 0 { clipSegment(a, a + d * t0, cover, k, emit) }
+            if t1 < 1 { clipSegment(a + d * t1, b, cover, k, emit) }
+            return
+        }
+        emit(a, b)
+    }
+
     /// Frost lip: a pale blue-white line 0.8pt under the bottom edge and its rounded corners, plus a faint haze at each lower corner.
     func writeFrostPrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
         let col = SIMD3<Float>(0.85, 0.93, 1.0), sc = Rig.a(contrast ? Rig.shadowHC : Rig.shadow, 0.25)
         // Frost capsule with a faint shadow capsule 0.8 pt below it, so the lip reads on light backgrounds.
-        func lip(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ al: Float, _ w: inout PrimWriter) {
-            w.capsule(from: a + SIMD2(0, -0.8), to: b + SIMD2(0, -0.8), width: 1.8, color: Rig.a(sc, al))
-            w.capsule(from: a, to: b, width: 1.8, color: SIMD4(col, 0.75 * al))
+        func lip(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ al: Float, _ w: inout PrimWriter, _ cover: [CGRect], _ sh: SIMD2<Float>) {
+            clipSegment(a, b, cover, 0) { a, b in   // a, b unshifted (window-local); drawn shifted
+                w.capsule(from: a + sh + SIMD2(0, -0.8), to: b + sh + SIMD2(0, -0.8), width: 1.8, color: Rig.a(sc, al))
+                w.capsule(from: a + sh, to: b + sh, width: 1.8, color: SIMD4(col, 0.75 * al))
+            }
         }
         for s in iceWin where s.frost > 0.01 {
             guard let si = index[s.id] else { continue }
             let fr = surfaces[si].frame, r = surfaces[si].radius, R = r + 0.8, sh = shift(s.id), a = s.frost
-            let x0 = Float(fr.minX), x1 = Float(fr.maxX), y0 = Float(fr.minY)
+            let x0 = Float(fr.minX), x1 = Float(fr.maxX), y0 = Float(fr.minY), cv = surfaces[si].cover
             for left in [true, false] {
                 let cx = left ? x0 + r : x1 - r, cy = y0 + r, sg: Float = left ? -1 : 1
                 var prev = SIMD2(cx, cy - R)
                 for k in 1...3 {   // from the bottom point round to the side
                     let t = Float.pi / 2 * Float(k) / 3
                     let q = SIMD2(cx + sg * R * sin(t), cy - R * cos(t))
-                    lip(prev + sh, q + sh, a, &w)
+                    lip(prev, q, a, &w, cv, sh)
                     prev = q
                 }
                 let m = Float.pi / 4
-                w.ellipse(center: SIMD2(cx + sg * (R + 2) * sin(m), cy - (R + 2) * cos(m)) + sh, radii: SIMD2(5, 4), color: SIMD4(col, 0.16 * a), soft: 3)
+                let hz = SIMD2(cx + sg * (R + 2) * sin(m), cy - (R + 2) * cos(m))
+                if !covered(si, hz) { w.ellipse(center: hz + sh, radii: SIMD2(5, 4), color: SIMD4(col, 0.16 * a), soft: 3) }
             }
-            lip(SIMD2(x0 + r, y0 - 0.8) + sh, SIMD2(x1 - r, y0 - 0.8) + sh, a, &w)
+            lip(SIMD2(x0 + r, y0 - 0.8), SIMD2(x1 - r, y0 - 0.8), a, &w, cv, sh)
         }
     }
 }

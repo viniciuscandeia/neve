@@ -10,6 +10,7 @@ struct Surface {
     var pile: Pile
     var vel: SIMD2<Float> = .zero   // window velocity (pt/s) at the last poll that moved it
     var radius: Float = 0           // window corner radius (clamped to the frame), for ice hung along the silhouette
+    var cover: [CGRect] = []        // windows in front that overlap this frame (local coords): clip the frost lip and icicles
     var runs: [Range<Int>] = []     // visible stretches of the pile (local bins), set when the surfaces are built
 }
 

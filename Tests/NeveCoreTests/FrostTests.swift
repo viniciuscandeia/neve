@@ -113,3 +113,31 @@ private func oneWindow(seed: UInt64 = 1, config: SimConfig = .init()) -> SnowFie
     advance(f, 190, fps: 4)
     #expect(count() > before)
 }
+
+@Test func frostAndIciclesAreClippedByFrontWindow() {
+    let f = oneWindow()
+    advance(f, 200, fps: 4)
+    f.intensity = .nevasca
+    #expect(f.iceWin.first?.frozen == true)
+    // front window (id 2, earlier in the list = in front) covers the middle of the bottom edge
+    f.update(windows: [win(2, 380, 350, 140, 120), win(1, 300, 400, 300, 150)])
+    let front = CGRect(x: 380, y: 350, width: 140, height: 120)
+    var buf = [Prim](repeating: Prim(), count: 512)
+    let n = buf.withUnsafeMutableBufferPointer { b -> Int in
+        var w = PrimWriter(b.baseAddress!, capacity: 512)
+        f.writeIciclePrims(&w, shift: { _ in .zero })
+        return w.n
+    }
+    #expect(n > 0)
+    var left = false, right = false
+    for q in buf[0..<n] where q.kind != 0 {   // capsule / triangle anchor points: none inside the front window
+        for p in [q.a, q.b] {
+            #expect(!(CGFloat(p.x) > front.minX && CGFloat(p.x) < front.maxX && CGFloat(p.y) > front.minY && CGFloat(p.y) < front.maxY))
+            if p.x < 380 { left = true }
+            if p.x > 520 { right = true }
+        }
+    }
+    #expect(left && right)
+    // icicles anchored under the front window stop growing
+    for c in f.icicles where c.x > 380 && c.x < 520 { #expect(f.covered(f.index[1]!, SIMD2(c.x, c.y))) }
+}
