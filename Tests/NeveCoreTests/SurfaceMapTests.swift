@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import NeveCore
 
@@ -350,9 +351,25 @@ func fillBankLevel(_ f: SnowField) {
 }
 private let dockBar = WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: 25.2)   // the app's 0.3 * height
 
+/// Piles a surface up to its limit (400 rounds of deposits over every bin: ~300k relaxations, slow in a debug build). The result depends only on
+/// the pile it starts from, so it is computed once per distinct starting pile and process and copied into later fields.
 private func heavy(_ f: SnowField, id: Int) {
     let i = f.surfaces.firstIndex { $0.id == id }!
+    let p = f.surfaces[i].pile
+    var h = Hasher()
+    h.combine(p.heights); h.combine(p.visible); h.combine(p.base); h.combine(p.cap); h.combine(p.maxes); h.combine(p.boost)
+    h.combine(p.c0); h.combine(p.x0); h.combine(p.x1); h.combine(p.maxHeight); h.combine(p.supportL); h.combine(p.supportR)
+    let key = h.finalize()
+    if let done = heavyCache.get(key) { f.surfaces[i].pile = done; f.pilesDirty = true; return }
     for _ in 0..<400 { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: 4) } }
+    heavyCache.set(key, f.surfaces[i].pile)
+}
+private let heavyCache = HeavyCache()
+private final class HeavyCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var piles: [Int: Pile] = [:]
+    func get(_ k: Int) -> Pile? { lock.lock(); defer { lock.unlock() }; return piles[k] }
+    func set(_ k: Int, _ p: Pile) { lock.lock(); piles[k] = p; lock.unlock() }
 }
 
 @Test func groundBankRisesToDockTopNextToTheBarAndFillsUnderIt() {

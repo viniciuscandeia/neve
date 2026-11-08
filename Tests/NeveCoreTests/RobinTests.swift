@@ -108,8 +108,7 @@ private func fill(_ f: SnowField) {
     _ = stand(f, x: 450, on: 1)
     advance(f, 0.5)
     var seen = false, most = 0
-    for _ in 0..<(20 * 60 * 20) {
-        f.step(dt: 1 / 20)
+    directorRun(f, seconds: 20 * 60) {
         if robin(f) != nil { seen = true }
         most = max(most, f.figures.filter { $0.kind != .snowman }.count)
     }

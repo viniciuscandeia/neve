@@ -118,13 +118,13 @@ private func playOut(_ f: SnowField, limit: Float = 90, each: () -> Void = {}) {
 
 // MARK: Director
 
-private func startTimes(_ f: SnowField, minutes: Float, fps: Float = 20) -> (starts: [Float], maxAmbient: Int, rabbitStarts: [Float]) {
+private func startTimes(_ f: SnowField, minutes: Float, full: Bool = false) -> (starts: [Float], maxAmbient: Int, rabbitStarts: [Float]) {
     var starts: [Float] = [], last = 0, most = 0
-    for _ in 0..<Int(minutes * 60 * fps) {
-        f.step(dt: 1 / fps)
+    func tick() {
         most = max(most, f.figures.filter { $0.kind != .snowman }.count)
         if f.director.started != last { last = f.director.started; starts.append(f.time) }
     }
+    if full { for _ in 0..<Int(minutes * 60 * 20) { f.step(dt: 1 / 20); tick() } } else { directorRun(f, seconds: Int(minutes * 60), each: tick) }
     return (starts, most, starts)
 }
 
@@ -166,10 +166,7 @@ private func startTimes(_ f: SnowField, minutes: Float, fps: Float = 20) -> (sta
         home(f, x: 400, on: 1); home(f, x: 800)
         if compact { f.areaScale = 0.4 } else if ground { f.groundOnlyActors = true }
         var seen = Set<Int>()
-        for _ in 0..<(20 * 60 * 20) {
-            f.step(dt: 1 / 20)
-            for r in rabbits(f) { if let s = r.surfaceID { seen.insert(s) } }
-        }
+        directorRun(f, seconds: 20 * 60) { for r in rabbits(f) { if let s = r.surfaceID { seen.insert(s) } } }
         return seen
     }
     #expect(surfaces(ground: false, compact: false).contains(1))   // normally the window top gets visits too
@@ -217,7 +214,7 @@ private func startTimes(_ f: SnowField, minutes: Float, fps: Float = 20) -> (sta
     func run() -> (Int, Int, Float, Int) {
         let f = field(speed: 30, seed: 11)
         home(f, x: 300)
-        _ = startTimes(f, minutes: 5)
+        _ = startTimes(f, minutes: 2, full: true)   // full world steps: determinism of the whole visit, not just the roll
         return (f.director.started, f.figures.count, f.figures.reduce(0) { $0 + $1.foot.x }, f.carrots.count)
     }
     let a = run(), b = run()

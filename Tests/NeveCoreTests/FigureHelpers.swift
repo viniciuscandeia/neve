@@ -35,3 +35,17 @@ func standAuto(_ f: SnowField, x: Float, on sid: Int = Tuning.groundID, built: I
 func fig(_ f: SnowField, _ id: Int) -> Figure { f.figures.first { $0.id == id }! }
 func ball(_ f: SnowField, _ id: Int) -> Snowball { f.balls.first { $0.id == id }! }
 func advance(_ f: SnowField, _ seconds: Float, fps: Float = 60) { for _ in 0..<Int(seconds * fps) { f.step(dt: 1 / fps) } }
+
+/// Director-only clock for cadence tests: ticks `stepDirector` once per simulated second (its own 1 Hz cadence) with a hand-advanced `time`,
+/// and ends every visitor `visit` seconds after it appeared. Gaps, cooldowns, caps and the Poisson roll run exactly as in `step`, without
+/// simulating the world 20 times a second. `each` runs after every tick. Visits themselves are covered by the per-kind integration tests.
+func directorRun(_ f: SnowField, seconds: Int, visit: Float = 40, each: () -> Void = {}) {
+    var born: [Int: Float] = [:]
+    for _ in 0..<seconds {
+        f.time += 1
+        f.stepDirector(dt: 1)
+        for g in f.figures where g.kind != .snowman && born[g.id] == nil { born[g.id] = f.time }
+        while let j = f.figures.firstIndex(where: { $0.kind != .snowman && f.time - (born[$0.id] ?? f.time) >= visit }) { f.removeFigure(j) }
+        each()
+    }
+}

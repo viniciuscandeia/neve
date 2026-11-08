@@ -76,13 +76,23 @@ private func insideBar(_ x: Float, _ y: Float, inset m: Float = 2.1) -> Bool {
     let cx = min(max(x, x0 + r), x1 - r), cy = min(max(y, y0 + r), y1 - r)
     return (x - cx) * (x - cx) + (y - cy) * (y - cy) < r * r
 }
-private func bankedField() -> SnowField {
+private func makeBankedField(grow: Bool) -> SnowField {
     let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
     f.update(windows: [WindowInfo(number: 0, frame: CGRect(x: 171, y: 10, width: 1098, height: 84), radius: CGFloat(rr))])
     fillBankLevel(f)   // fully grown bank (the ramp level rises with snowfall, see DockPushTests)
-    for i in f.surfaces.indices where f.surfaces[i].id <= 0 {
-        for _ in 0..<400 { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: 4) } }
+    if grow {
+        for i in f.surfaces.indices where f.surfaces[i].id <= 0 {
+            for _ in 0..<400 { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: 4) } }
+        }
     }
+    return f
+}
+/// The grown piles are deterministic and slow to build (288k deposits in a debug build), so grow them once per process and hand every test a copy.
+nonisolated(unsafe) private let grownBankSurfaces = makeBankedField(grow: true).surfaces
+private func bankedField() -> SnowField {
+    let f = makeBankedField(grow: false)
+    f.surfaces = grownBankSurfaces
+    f.pilesDirty = true
     return f
 }
 
