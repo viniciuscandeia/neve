@@ -77,12 +77,19 @@ extension SnowField {
         var built: [Surface] = []
         var spawned = 0
         moved = nil
+        // Reused surfaces keep their piles, but `cover` (what the Dock hides of a window's foot) follows the Dock: refresh it where the Dock was, is or is going.
+        var reach = rects.indices.first { windows[$0].number == 0 }.map { rects[$0] }
+        if only != nil { for r in [dockPrev, dockTarget?.offsetBy(dx: -ox, dy: -oy)] { if let r { reach = reach.map { $0.union(r) } ?? r } } }
         for (i, r) in rects.enumerated() {
             let id = windows[i].number, edge = Float(r.maxY)
             // Dock bar (id 0) sits below the visible frame's bottom; hidden/offscreen Dock has minY < 0.
             let lowOk = id == 0 ? r.minY >= -1 : edge > groundY
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
-            if let only, !only.contains(id), let k = old.firstIndex(where: { $0.id == id }) { built.append(old.swapRemove(k)); continue }
+            if let only, !only.contains(id), let k = old.firstIndex(where: { $0.id == id }) {
+                var s = old.swapRemove(k)
+                if let reach, r.intersects(reach) { s.cover = rects[0..<i].filter { $0.intersects(s.frame) } }
+                built.append(s); continue
+            }
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
             spawned += flushRuns()   // runs never span two surfaces
         }

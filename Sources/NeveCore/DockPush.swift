@@ -24,11 +24,12 @@ extension SnowField {
             func toward(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + min(max(b - a, -m), m) }
             let l = toward(c.minX, t.minX), r = max(toward(c.maxX, t.maxX), l + 1)
             dockCur = CGRect(x: l, y: c.minY, width: r - l, height: c.height)
+            let prevDock = c   // the frame the surfaces were last built for: windows it touched hold values that frame produced
             dockSlump = Tuning.dockSlumpTime
             let keep = pollDt
             pollDt = dt
             let w = effective(lastWindows)
-            _ = updateSurfaces(windows: w, only: dockIsolated(w) ? [0, Tuning.groundID] : nil)   // the bar and the ground are all that moves
+            _ = updateSurfaces(windows: w, only: dockIsolated(w, prev: prevDock) ? [0, Tuning.groundID] : nil)   // the bar and the ground are all that moves
             pollDt = keep
         }
         guard dockSlump > 0, let c = dockCur, let g = index[Tuning.groundID] else { return }
@@ -41,9 +42,9 @@ extension SnowField {
 
     /// No window behind the Dock in the list (so none it can hide or roof over) lies within its horizontal reach, old or new, at or below its top:
     /// then only the Dock and the ground surfaces depend on its frame.
-    func dockIsolated(_ w: [WindowInfo]) -> Bool {
+    func dockIsolated(_ w: [WindowInfo], prev p: CGRect) -> Bool {
         guard let k = w.firstIndex(where: { $0.number == 0 }), let t = dockTarget else { return false }
-        let c = w[k].frame, lo = min(c.minX, t.minX), hi = max(c.maxX, t.maxX)
+        let c = w[k].frame, lo = min(c.minX, t.minX, p.minX), hi = max(c.maxX, t.maxX, p.maxX)
         for j in (k + 1)..<w.count where w[j].frame.maxX > lo && w[j].frame.minX < hi && w[j].frame.maxY < c.maxY + 2 { return false }
         return true
     }
