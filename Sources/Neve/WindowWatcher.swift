@@ -9,6 +9,7 @@ import os
 final class WindowWatcher {
     private(set) var active = false
     var onChange: (@MainActor () -> Void)?
+    var onAppear: (@MainActor () -> Void)?   // a window was created / focused / shown: it animates in, so the caller bursts polls
     private var observers: [pid_t: AXObserver] = [:]
     private var pending = false
     private var lastFire = Date.distantPast
@@ -91,6 +92,7 @@ final class WindowWatcher {
                 _ = AXObserverAddNotification(o, element, kAXUIElementDestroyedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())
             }
         }
+        if name == kAXWindowCreatedNotification || name == kAXFocusedWindowChangedNotification || name == kAXApplicationShownNotification { onAppear?() }
         mark()
     }
 

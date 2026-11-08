@@ -84,11 +84,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.mouseDown = e.type == .leftMouseDown
+                if e.type == .leftMouseDown { self.burst() }   // click on the wallpaper = show-desktop: the Dock moves the windows, no AX event
                 if !self.watcher.active { self.scheduleTimers() }   // only the polling rate depends on the button; events do not
                 if !self.mouseDown && self.polling { self.pollWindows() }
             }
         }
         dock.onChange = { [weak self] in self?.refreshDock() }
+        watcher.onAppear = { [weak self] in self?.burst() }
+        ws.addObserver(self, selector: #selector(appActivated), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        ws.addObserver(self, selector: #selector(appActivated), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         watcher.onChange = { [weak self] in
             guard let self, self.polling, !self.userIdle else { return }
             self.pollWindows()
@@ -404,6 +408,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
         var windows = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber)))
+        let screenFrames = NSScreen.screens.map(\.frame)
+        windows.removeAll { mostlyOffscreen($0.frame, screens: screenFrames) }   // show-desktop leaves a sliver on-screen: treat as gone
         let covering = windows.map(\.frame)
         if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
         else if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
@@ -486,7 +492,26 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// Switching Spaces hides every window at once: drop piles silently instead of an avalanche.
-    @objc private func spaceChanged() { for o in overlays { o.dropPiles() } }
+    @objc private func spaceChanged() { for o in overlays { o.dropPiles() }; burst() }
+
+    @objc private func appActivated() { burst() }
+
+    /// ~1s of 50ms polls after a click / Space change; self-stops, never continuous.
+    private var burstState = BurstPoll(), burstTimer: Timer?
+    private func burst() {
+        guard polling else { return }
+        burstState.trigger(now: CACurrentMediaTime())
+        guard burstTimer == nil else { return }
+        let t = Timer(timeInterval: BurstPoll.interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.burstState.active(now: CACurrentMediaTime()), self.polling, !self.userIdle else { self?.burstTimer?.invalidate(); self?.burstTimer = nil; return }
+                self.pollWindows()
+            }
+        }
+        t.tolerance = 0.01
+        RunLoop.main.add(t, forMode: .common)
+        burstTimer = t
+    }
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
     @objc private func powerOff() { shuttingDown = true }

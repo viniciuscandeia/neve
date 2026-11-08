@@ -65,3 +65,23 @@ private func numbers(_ w: [RawWindow], exclude: Set<Int> = []) -> [Int] {
     let noNumber = RawWindow(number: nil, pid: 1, layer: 0, bounds: CGRect(x: 0, y: 0, width: 100, height: 100))
     #expect(numbers([noNumber, raw(2, nil), raw(3)]) == [3])
 }
+
+@Test func offscreenClassification() {
+    let s = [CGRect(x: 0, y: 0, width: 1440, height: 900)]
+    #expect(!mostlyOffscreen(CGRect(x: 100, y: 100, width: 400, height: 300), screens: s))
+    #expect(!mostlyOffscreen(CGRect(x: -100, y: 100, width: 400, height: 300), screens: s))      // 75% visible: dragged partly off
+    #expect(mostlyOffscreen(CGRect(x: 1400, y: 100, width: 400, height: 300), screens: s))        // 40px sliver: show-desktop
+    #expect(mostlyOffscreen(CGRect(x: 3000, y: 0, width: 400, height: 300), screens: s))
+    #expect(!mostlyOffscreen(CGRect(x: 1300, y: 0, width: 400, height: 300), screens: s + [CGRect(x: 1440, y: 0, width: 1000, height: 900)]))  // spans two screens
+    #expect(!mostlyOffscreen(CGRect(x: 5000, y: 0, width: 10, height: 10), screens: []))
+}
+
+@Test func burstPollIsBounded() {
+    var b = BurstPoll()
+    #expect(!b.active(now: 0))
+    b.trigger(now: 10)
+    #expect(b.active(now: 10.5))
+    #expect(!b.active(now: 11.01))
+    b.trigger(now: 10.9)   // retrigger extends, never accumulates
+    #expect(b.active(now: 11.8) && !b.active(now: 11.91))
+}
