@@ -168,3 +168,73 @@ extension SnowField {
         }
     }
 }
+
+/// Intact falling blocks (`Flake.amp` > 0, shape 2): a vanished window's pile drops as a few slabs that break only on impact.
+extension SnowField {
+    /// Cuts pile bins [b0, b1) into ~40-80pt slabs (thickness = mean pile height). Thin or tiny runs fall as plain dots. Returns the debris made.
+    func dropBlocks(_ s: Surface, from b0: Int, to b1: Int, velocity v: SIMD2<Float>) -> Int {
+        let bw = Tuning.binWidth
+        let parts = max(1, Int((Float(b1 - b0) * bw / 60).rounded()))
+        let vx0 = v.x * 0.5 + (calm ? 0 : Float.random(in: -10...10, using: &rng))   // shared: the blocks leave together
+        let fall0 = (calm ? Tuning.calmDebrisFall : Float.random(in: 5...20, using: &rng)) - v.y * 0.5
+        var n = 0
+        for p in 0..<parts {
+            let a = b0 + (b1 - b0) * p / parts, e = b0 + (b1 - b0) * (p + 1) / parts
+            guard e > a else { continue }
+            var sum: Float = 0, base: Float = 0
+            for k in a..<e { sum += s.pile.heights[k]; base += s.pile.base[k] }
+            let cnt = Float(e - a), width = cnt * bw, mean = sum / cnt
+            if width < 8 || mean < 3 {
+                for k in a..<e { n += shedBin(col: s.c0 + k, edgeY: s.edgeY + s.pile.base[k], from: 0, amount: s.pile.heights[k], velocity: v) }
+                n += flushRuns()
+                continue
+            }
+            let tilt: Float = calm ? 0 : Float.random(in: -0.07...0.07, using: &rng)
+            let spin: Float = calm ? 0 : Float.random(in: -0.15...0.15, using: &rng)
+            let jx: Float = calm ? 0 : Float.random(in: -2...2, using: &rng), jf: Float = calm ? 0 : Float.random(in: -4...4, using: &rng)   // tiny desync
+            guard put(Flake(pos: [(Float(s.c0 + a) + cnt / 2) * bw, s.edgeY + base / cnt + mean / 2], vx: vx0 + jx, fall: max(fall0 + jf, 0), phase: 0, amp: 1, freq: 0,
+                            size: width, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, rot: tilt, spin: spin, vol: sum * bw, shape: 2)) else { return n }
+            n += 1
+        }
+        if n > 0 { pilesDirty = true }
+        return n
+    }
+
+    /// Top of the surface the block's lower edge crossed this step (probing left, centre, right), or nil. Nothing is hit while `quiet`.
+    func slabHit(_ f: Flake, prevY: Float) -> Float? {
+        guard !quiet else { return nil }
+        let half = f.vol / f.size / 2
+        var best: Float?
+        for dx in [Float(-0.4), 0, 0.4] as [Float] {
+            let c = column(f.pos.x + dx * f.size)
+            for k in Int(offsets[c])..<Int(offsets[c + 1]) {
+                let e = entries[k], top = e.edgeY + surfaces[Int(e.surface)].pile.heights[c - surfaces[Int(e.surface)].c0]
+                if prevY - half >= e.edgeY, top > f.pos.y - half, top > (best ?? -.infinity) { best = top }
+            }
+        }
+        return best
+    }
+
+    /// Impact: the block shatters across its width into clumps (carrying its whole volume, which lands as usual) and a few puffs.
+    func breakSlab(_ f: Flake, top: Float) {
+        let k = min(max(Int(f.size / 9), 3), 8), vol = f.vol / Float(k)
+        for j in 0..<k {
+            let u = (Float(j) + Float.random(in: 0.2...0.8, using: &rng)) / Float(k) - 0.5   // -0.5...0.5 across the block
+            let fall = -Float.random(in: calm ? 15...40 : 50...130, using: &rng)
+            _ = put(Flake(pos: [f.pos.x + u * f.size, top + 1.5], vx: f.vx * 0.5 + u * Float.random(in: 30...80, using: &rng), fall: fall, phase: 0.12, amp: 0, freq: 0,
+                          size: min(max(vol.squareRoot() * 0.9, 3), 9), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1,
+                          spin: Float.random(in: -3...3, using: &rng), vol: vol, shape: 1))
+        }
+        guard !calm else { return }
+        for _ in 0..<(Int(f.size / 20) + 1) { addPuff(x: f.pos.x + Float.random(in: -0.5...0.5, using: &rng) * f.size, y: top + 3) }
+    }
+
+    /// A little powder shakes off a falling block (~5 flakes/s); it carries its volume out of the block.
+    func trailPowder(_ f: inout Flake, dt: Float) {
+        guard !calm, f.vol > 40, Float.random(in: 0..<1, using: &rng) < 5 * dt else { return }
+        let side: Float = Bool.random(using: &rng) ? 0.5 : -0.5, t = f.vol / f.size
+        guard put(Flake(pos: [f.pos.x + side * f.size, f.pos.y + Float.random(in: -t / 2...t / 2, using: &rng)], vx: f.vx + side * 12, fall: f.fall * 0.9, phase: 0, amp: 0, freq: 0,
+                        size: Float.random(in: 2.2...3.2, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, vol: 0.8)) else { return }
+        f.vol -= 0.8
+    }
+}
