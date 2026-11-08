@@ -75,8 +75,8 @@ extension SnowField {
             let env = sin(.pi * min(max(1 - f.delay / Tuning.glintLife, 0), 1))   // 0 -> 1 -> 0
             p[n] = Instance(pos: f.pos + [0, 1.5], size: f.size * (0.6 + 0.4 * env), alpha: env, seed: f.seed, rot: .pi / 4 + f.seed * 0.5, kind: 4); n += 1   // 1.5pt above the crest
         }
-        for f in debris {   // intact block slab: thickness (quarter-points) rides in kind's upper bits so the shader draws a long, thick, pile-shaped block
-            let k = f.amp > 0 ? 2 | UInt32(min(max(f.vol / f.size, 1), 4000) * 4) << 8 : UInt32(f.shape)
+        for f in debris {   // falling chunk: its packed profile rides in kind's upper 24 bits (the shader draws the crest and the broken edges from it)
+            let k = f.amp > 0 && f.prof > 0 ? 2 | f.prof << 8 : UInt32(f.shape)
             p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed, rot: f.rot, kind: k); n += 1
         }
         return n

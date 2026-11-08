@@ -43,16 +43,17 @@ let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
 struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop
-struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; };
+struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
     Instance i = inst[iid];
-    float c = cos(i.rot), sn = sin(i.rot);
     uint k = i.kind & 255u;
-    float aspect = (i.kind >> 8) > 0u ? min(float(i.kind >> 8) * 0.25 / i.size, 1.5) : 0.45;   // intact block: thickness in kind's upper bits (quarter-points); else 0.45
-    float2 l = corner * i.size * 0.5 * float2(1.0, k == 2 ? aspect : 1.0);
+    uint pr = i.kind >> 8;   // falling chunk: packed profile (thickness in half-points + 3 height fractions), see Flake.pack
+    float aspect = pr > 0u ? min(float(pr & 511u) * 0.5 / i.size, 3.0) : 0.45;
+    float2 l = corner * i.size * 0.5 * float2(1.0, k == 2 ? aspect : 1.0) * (pr > 0u ? 1.15 : 1.0);   // chunks: a margin for the soft, irregular edge
+    float c = cos(i.rot), sn = sin(i.rot);
     float2 p = i.pos + float2(c * l.x - sn * l.y, sn * l.x + c * l.y);
     VOut o;
     o.position = float4(p / viewSize * 2.0 - 1.0, 0.0, 1.0);
@@ -64,6 +65,7 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.kind = float(k);
     o.rot = i.rot;
     o.aspect = aspect;
+    o.prof = float(pr);
     return o;
 }
 // White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
@@ -108,17 +110,26 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
             a = 1.0 - smoothstep(1.0 - max(0.18, 1.5 * fwidth(d)), 1.0, d);
             c = mix(body, shadow, 0.35 * (1.0 - smoothstep(-0.3, 0.2, ul.y)));
             c = mix(c, float3(1.0), 0.3 * smoothstep(0.3, 0.7, ul.y));
-        } else if (kind == 2) {   // slab: rounded rect (aspect 0.45, corner 0.3), white crest, bluish base, ragged bottom
-            float2 hs = float2(in.size * 0.5, in.size * 0.5 * in.aspect);
-            float2 q = u * hs;
-            float n = 0.5 + 0.25 * sin(u.x * 9.0 + seed * 40.0) + 0.25 * sin(u.x * 23.0 + seed * 70.0);
-            if (u.y < 0.0) q.y -= n * hs.y * 0.3 * (-u.y);
-            float r = hs.y * 0.6;
-            float2 dd = abs(q) - (hs - r);
-            float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0) - r;
-            a = clamp(0.5 - sd / max(fwidth(sd), 0.3), 0.0, 1.0);
-            c = mix(body, shadow, 0.6 * (1.0 - smoothstep(-0.9, -0.7, ul.y)));
-            c = mix(c, float3(1.0), smoothstep(0.45, 0.55, ul.y));
+        } else if (kind == 2 && in.prof > 0.0) {   // falling chunk of pile: curved lumpy crest from the profile, soft ragged underside, broken edges
+            uint pr = uint(in.prof + 0.5);
+            float T = float(pr & 511u) * 0.5, W = in.size;
+            float hl = float((pr >> 9) & 31u) / 31.0, hm = float((pr >> 14) & 31u) / 31.0, hr = float((pr >> 19) & 31u) / 31.0;
+            float2 q = u * float2(W * 0.5, T * 0.5) * 1.15;
+            float s = clamp(q.x / (W * 0.5), -1.0, 1.0);
+            float h = hm + 0.5 * (hr - hl) * s + (0.5 * (hl + hr) - hm) * s * s;   // quadratic through the 3 pile heights
+            float lump = 0.5 + 0.3 * sin(s * (3.0 + 5.0 * seed) + seed * 40.0) + 0.2 * sin(s * 11.0 + seed * 70.0);
+            h = clamp(h + (lump - 0.5) * 0.28, 0.12, 1.0) * (1.0 - 0.6 * smoothstep(0.55, 1.0, abs(s)));   // shoulders round off toward the broken ends
+            float ytop = -T * 0.5 + h * T;
+            float ybot = -T * 0.5 + T * (0.04 + 0.12 * (0.5 + 0.3 * sin(s * 7.0 + seed * 90.0) + 0.2 * sin(s * 19.0 + seed * 30.0)));
+            float vv = clamp(q.y / (T * 0.5), -1.0, 1.0);
+            float xlim = W * 0.5 * (1.0 - 0.10 * (0.5 + 0.3 * sin(vv * 6.0 + seed * 50.0) + 0.2 * sin(vv * 17.0 + seed * 20.0)) - 0.22 * (1.0 - smoothstep(-1.0, -0.3, vv)) - 0.12 * smoothstep(0.2, 1.0, vv));   // mound: rounded foot, narrower crest
+            float inside = min(min(ytop - q.y, q.y - ybot), xlim - abs(q.x));
+            a = clamp(0.5 + inside / max(fwidth(inside), 1.0), 0.0, 1.0);
+            float depth = (ytop - q.y) / max(ytop - ybot, 1.0);   // 0 at the crest, 1 at the underside
+            float mott = 0.5 + 0.5 * sin(q.x * 0.22 + seed * 60.0 + q.y * 0.15);   // slow mottling, no pattern
+            c = mix(float3(1.0), body, smoothstep(0.15, 0.85, depth));
+            c = mix(c, shadow, (0.55 * smoothstep(0.6, 1.0, depth) + 0.08 * mott * depth) * (1.0 - hide));
+            c = mix(c, float3(1.0), 1.0 - smoothstep(0.0, 1.6, ytop - q.y));
         } else if (kind == 3) {   // puff: soft white, no rim
             a = max(1.0 - dot(u, u), 0.0);
         } else {   // glint: 4-point star

@@ -98,41 +98,93 @@ private func vanish(calm: Bool = false) -> (f: SnowField, vol: Float) {
     return (f, vol)
 }
 
-@Test func vanishedPileBecomesFewIntactSlabs() {
+@Test func vanishedPileBecomesAMixOfFewChunks() {
     let (f, vol) = vanish()
-    #expect(f.debris.count <= 8 && f.debris.count >= 4)
-    #expect(f.debris.allSatisfy { $0.shape == 2 && $0.size >= 30 && $0.size <= 80 })
+    #expect(f.debris.count <= 12 && f.debris.count >= 3)
+    #expect(f.debris.allSatisfy { $0.shape == 2 && $0.amp > 0 && $0.prof > 0 && $0.size >= 8 && $0.size <= 130 })
     #expect(abs(f.debris.reduce(0) { $0 + $1.vol } - vol) < 0.01)
     #expect(f.puffs.isEmpty)
 }
 
-@Test func blocksStayIntactInTheAirAndBreakOnImpact() {
-    let (f, vol) = vanish()
-    let n = f.debris.count
-    var steps = 0
-    while !f.debris.contains(where: { $0.shape == 1 }) && steps < 600 {
-        f.step(dt: 1 / 60); steps += 1
-        #expect(f.debris.filter { $0.shape == 2 }.count <= n)   // never splits in the air
+@Test func chunkSizesVaryAndCutsFallOnThinPoints() {
+    var sizes: [Float] = [], cutH: Float = 0, cuts = 0
+    for seed in UInt64(1)...6 {
+        let f = makeField(seed: seed)
+        f.update(windows: [win(1, 300, 300, 600, 200)])
+        let i = f.surfaces.firstIndex { $0.id == 1 }!
+        let c0 = f.surfaces[i].c0
+        for b in 10..<290 { f.surfaces[i].pile.heights[b] = 8 + 5 * sin(Float(b) * 0.35) }   // lumpy pile: thin points every ~18 bins
+        f.debris.removeAll()
+        f.update(windows: [])
+        let chunks = f.debris.filter { $0.shape == 2 }.sorted { $0.pos.x < $1.pos.x }
+        sizes += chunks.map { $0.size }
+        for c in chunks.dropLast() {   // the cut sits at the right end of the chunk
+            let b = Int((c.pos.x + c.size / 2) / Tuning.binWidth) - c0
+            cutH += 8 + 5 * sin(Float(b) * 0.35); cuts += 1
+        }
     }
-    #expect(steps > 10 && steps < 600)   // fell for a while, then something broke
-    #expect(f.debris.contains { $0.shape == 1 })
+    #expect((sizes.max() ?? 0) - (sizes.min() ?? 0) > 30)   // big and small, not even cuts
+    #expect(sizes.filter { $0 < 30 }.count > 0 && sizes.filter { $0 > 60 }.count > 0)
+    #expect(cuts > 0 && cutH / Float(cuts) < 7)   // cuts sit in the valleys (below the mean height 8)
+}
+
+@Test func chunkKeepsThePilesProfile() {
+    let f = tallPile()
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for b in 20..<60 { f.surfaces[i].pile.heights[b] = 4 + Float(b - 20) * 0.3 }   // ramps up to the right
+    f.debris.removeAll()
+    f.update(windows: [])
+    let r = f.debris.filter { $0.shape == 2 }.max { $0.size < $1.size }!
+    let left = Float((r.prof >> 9) & 31), right = Float((r.prof >> 19) & 31)
+    #expect(right >= left)   // taller on the right
+    #expect(r.blockThickness > 4 && r.blockThickness <= 16)
+}
+
+@Test func releaseRipplesChunksAreHeldThenFall() {
+    let (f, _) = vanish()
+    let holds = f.debris.map { $0.delay }
+    #expect(holds.max()! > 0.05 && holds.max()! <= 0.5 && holds.min()! < holds.max()!)
+    let n = f.debris.count
+    for _ in 0..<4 { f.step(dt: 1 / 60) }
+    let held = f.debris.filter { $0.delay > 0 }.count
+    #expect(held > 0 && held < n)   // some are falling already, others still waiting for the ripple
+}
+
+@Test func largeChunksStayIntactInTheAirAndBreakOnImpact() {
+    let f = tallPile()
+    f.debris.removeAll()
+    f.update(windows: [])
+    let prof = Flake.pack(thickness: 10, left: 0.8, mid: 1, right: 0.7)
+    f.debris.append(Flake(pos: [500, 700], vx: 0, fall: 0, phase: 0, amp: 1, freq: 0, size: 90, alpha: 1, kind: .debris, vol: 900, shape: 2, prof: prof))
+    var steps = 0, lastY: Float = 700
+    while let c = f.debris.first(where: { $0.shape == 2 }), steps < 600 { lastY = c.pos.y; f.step(dt: 1 / 60); steps += 1 }
+    #expect(lastY < 130 && steps > 30 && steps < 600)   // fell ~600pt intact, then broke on the ground
     #expect(!f.puffs.isEmpty)
 }
 
-@Test func breakingABlockHandsAllItsVolumeToItsPieces() {
+@Test func smallChunksCrumbleMidAirAndKeepTheirVolume() {
+    let f = tallPile()
+    f.debris.removeAll()
+    f.update(windows: [])
+    f.debris.append(Flake(pos: [500, 900], vx: 0, fall: 0, phase: 0, amp: 1, freq: 0, size: 16, alpha: 1, kind: .debris, vol: 120, shape: 2, prof: Flake.pack(thickness: 8, left: 0.9, mid: 1, right: 0.9)))
+    var steps = 0
+    while f.debris.contains(where: { $0.shape == 2 }) && steps < 120 { f.step(dt: 1 / 60); steps += 1 }
+    #expect(!f.debris.contains { $0.shape == 2 } && f.debris.contains { $0.shape == 1 })
+    #expect(abs(f.debris.reduce(0) { $0 + $1.vol } - 120) < 0.01)
+}
+
+@Test func breakingAChunkHandsAllItsVolumeToItsPieces() {
     let (f, _) = vanish()
     let slab = f.debris.first { $0.shape == 2 }!
     f.debris.removeAll()
     f.breakSlab(slab, top: 100)
-    #expect(f.debris.count >= 3 && f.debris.allSatisfy { $0.shape == 1 && $0.phase > 0 })
+    #expect(f.debris.count >= 3 && f.debris.allSatisfy { $0.phase > 0 && $0.shape <= 1 })
     #expect(abs(f.debris.reduce(0) { $0 + $1.vol } - slab.vol) < 0.01)
 }
 
-@Test func powderTrailedOffABlockComesOutOfItsVolume() {
+@Test func crumbsShedWhileFallingComeOutOfTheChunksVolume() {
     let (f, vol) = vanish()
-    for _ in 0..<20 { f.step(dt: 1 / 60) }   // 1/3 s of free fall: still all blocks
-    let trail = f.debris.filter { $0.shape == 0 && $0.vol == 0.8 }   // powder shaken off a block (sky debris carries no vol)
-    let total = f.debris.filter { $0.shape == 2 }.reduce(0) { $0 + $1.vol } + trail.reduce(0) { $0 + $1.vol }
-    #expect(abs(total - vol) < 0.01)
-    #expect(trail.count < 16)   // a few flakes per slab per second   // only a little powder
+    for _ in 0..<40 { f.step(dt: 1 / 60) }   // ~0.67 s: the ripple has passed, chunks are falling
+    #expect(f.debris.contains { $0.shape != 2 && $0.vol > 0 })   // some crumbs/powder came off
+    #expect(abs(f.debris.reduce(0) { $0 + $1.vol } - vol) < 0.01)
 }
