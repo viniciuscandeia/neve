@@ -4,6 +4,7 @@ import Foundation
 extension SnowField {
     /// One flake lands on a surface (also the test entry point for building piles without simulating snowfall).
     func deposit(surface: Int, bin: Int, volume: Float, powder: Bool = false) {
+        if windowsStale, surfaces[surface].id > 0 { return }   // after a Space switch the window list is not trusted yet
         if surfaces[surface].pile.deposit(bin: bin, volume: volume, powder: powder) { pilesDirty = true }
         if surfaces[surface].pile.spillL > 2 || surfaces[surface].pile.spillR > 2 { spill(surface) }
     }
@@ -23,18 +24,26 @@ extension SnowField {
 
     /// Rebuilds surfaces from the front-to-back window list. Returns debris spawned by knocked-off piles.
     @discardableResult
-    public func update(windows: [WindowInfo], dt: Float = Tuning.shedRefDt) -> Int {
-        // `dt` = time since the last *change* (the caller measures it): identical lists must not shrink it, or velocity is overestimated.
+    public func update(windows: [WindowInfo], dt: Float = Tuning.shedRefDt, now: Double? = nil) -> Int {
+        // Each window's dt is its own time since its last sample (`stamps`, monotonic `now`; without it a clock advanced by `dt`).
+        if let now { clock = now } else { clock += Double(dt) }
         pollDt = dt
+        windowsStale = false
+        defer { stamps.removeAll(keepingCapacity: true); for w in windows { stamps[w.number] = clock } }
         guard windows != lastWindows || boundsDirty else {
             if draggingID != nil { draggingID = nil; pilesDirty = true }
-            for i in surfaces.indices { surfaces[i].vel = .zero }
+            for i in surfaces.indices {   // an identical snapshot decays velocity with elapsed time instead of zeroing it
+                let v = surfaces[i].vel * exp(-windowDt(surfaces[i].id) / Tuning.velSmoothing)
+                surfaces[i].vel = v.x * v.x + v.y * v.y < 0.25 ? .zero : v
+            }
             return 0
         }
         boundsDirty = false
         lastWindows = windows
         return updateSurfaces(windows: windows)
     }
+
+    func windowDt(_ id: Int) -> Float { stamps[id].map { Float(min(max(clock - $0, 1.0 / 240), 0.5)) } ?? pollDt }
 
     /// 0...1 share of a pile that falls off when its window moves with velocity `v` (previous poll's velocity `prev`).
     static func shedFraction(v: SIMD2<Float>, prev: SIMD2<Float>) -> Float {
@@ -200,14 +209,15 @@ extension SnowField {
                 pile = kept
             } else if sameSize {   // moved: the pile travels with the window; a speed-dependent share falls off
                 // Smooth over ~100 ms: at frame-rate updates raw d/dt is noisy; at the old 0.1-0.5 s polls this is ~raw.
-                let a = exp(-pollDt / Tuning.velSmoothing)
-                vel = prev.vel * a + d / pollDt * (1 - a)
+                let wdt = windowDt(id)
+                let a = exp(-wdt / Tuning.velSmoothing)
+                vel = prev.vel * a + d / wdt * (1 - a)
                 if moved == nil { moved = id }
                 carry(shift: shift)
-                spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.perUpdate(SnowField.shedFraction(v: vel, prev: prev.vel), dt: pollDt), velocity: vel)
+                spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.perUpdate(SnowField.shedFraction(v: vel, prev: prev.vel), dt: wdt), velocity: vel)
             } else {   // resized: snow stays where it is in x; the part no longer over the window falls
                 carry(shift: 0)
-                let v = (d / pollDt).limited()
+                let v = (d / windowDt(id)).limited()
                 for k in prev.pile.heights.indices where prev.pile.visible[k] {
                     let col = prev.c0 + k
                     if col < c0 || col >= c1 { spawned += shedBin(col: col, edgeY: prev.edgeY + prev.pile.base[k], from: 0, amount: prev.pile.heights[k], velocity: v) }

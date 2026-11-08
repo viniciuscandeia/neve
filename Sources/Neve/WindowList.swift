@@ -3,8 +3,8 @@ import Foundation
 import NeveCore
 
 /// On-screen normal windows, front to back. Bounds need no Screen Recording permission.
-public func readWindows(primaryHeight: CGFloat, exclude: Set<Int> = [], scene: Set<Int>? = nil) -> [WindowInfo] {
-    guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else { return [] }
+public func readWindows(primaryHeight: CGFloat, exclude: Set<Int> = [], scene: Set<Int>? = nil) -> [WindowInfo]? {   // nil = CGWindowList failed (distinct from a valid empty list)
+    guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else { return nil }
     // Read CF values directly: bridging every dictionary to Swift costs more than the call itself.
     func int(_ d: CFDictionary, _ k: CFString) -> Int? {
         guard let v = CFDictionaryGetValue(d, Unmanaged.passUnretained(k).toOpaque()) else { return nil }
