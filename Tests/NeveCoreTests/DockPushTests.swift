@@ -135,3 +135,19 @@ private func rain(_ f: SnowField, rounds: Int) {
         for x in s where x.x1 <= 156 || x.x0 >= 1284 { #expect(abs(x.top1 - x.top0) <= 12) }   // no spike or notch
     }
 }
+
+@Test func frozenFieldAppliesDockResizeWithoutStepping() {
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 0, visibleTop: 880, flakeCount: 0, seed: 5)
+    func dock(_ x: CGFloat, _ w: CGFloat) -> [WindowInfo] { [WindowInfo(number: 0, frame: CGRect(x: x, y: 10, width: w, height: 84), radius: 25)] }
+    f.frozen = true
+    f.update(windows: dock(500, 400))
+    f.update(windows: dock(400, 600))   // resize, no step
+    #expect(f.dockCur == CGRect(x: 400, y: 10, width: 600, height: 84))
+    #expect(f.surfaces[f.index[0]!].frame.minX == 400)
+    // frozen switched on mid-animation: snaps too
+    let g = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 0, visibleTop: 880, flakeCount: 0, seed: 5)
+    g.update(windows: dock(500, 400)); g.update(windows: dock(400, 600))
+    #expect(g.dockCur != g.dockTarget)
+    g.frozen = true; g.update(windows: dock(400, 600))
+    #expect(g.dockCur == g.dockTarget && g.surfaces[g.index[0]!].frame.minX == 400)
+}

@@ -120,6 +120,7 @@ extension SnowField {
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
             let e = entries[k]
             let s = Int(e.surface)
+            guard landable(s) else { continue }
             let top = e.edgeY + surfaces[s].pile.heights[c - surfaces[s].c0]
             if prevY >= e.edgeY, newY < top, top > bestTop { best = s; bestTop = top }
         }

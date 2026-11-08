@@ -121,6 +121,7 @@ extension SnowField {
 
     /// Heavy landing: the carried volume goes into a crater with a raised rim (+-4 columns, rim ~2x the centre) and clumps jump up.
     func impact(surface s: Int, bin: Int, x: Float, top: Float, fall: Float, vol: Float) {
+        guard landable(s) else { return }
         let total = vol / Tuning.binWidth
         func weight(_ o: Int) -> Float { abs(o) == 4 ? 0.9 : 0.6 + 0.2 * Float(abs(o)) }
         var wsum: Float = 0
@@ -233,7 +234,9 @@ extension SnowField {
         for dx in [Float(-0.4), 0, 0.4] as [Float] {
             let c = column(f.pos.x + dx * f.size)
             for k in Int(offsets[c])..<Int(offsets[c + 1]) {
-                let e = entries[k], top = e.edgeY + surfaces[Int(e.surface)].pile.heights[c - surfaces[Int(e.surface)].c0]
+                let e = entries[k]
+                guard landable(Int(e.surface)) else { continue }
+                let top = e.edgeY + surfaces[Int(e.surface)].pile.heights[c - surfaces[Int(e.surface)].c0]
                 if prevY - half >= e.edgeY, top > f.pos.y - half, top > (best ?? -.infinity) { best = top }
             }
         }

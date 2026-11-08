@@ -50,6 +50,9 @@ public final class SnowField {
     var areaScale: Float = 1
     var lowPower = false
     private(set) var calm = false
+    var groundWinKey: [CGRect] = [], groundWinCeil: [Float] = [], groundWinHidden: [Bool] = []   // buildGround cache (non-Dock windows)
+    /// "Neve parada": `step` is never called, so nothing can animate: the Dock jumps to its target at once.
+    public var frozen = false { didSet { if frozen, !oldValue, dockCur != dockTarget { dockCur = dockTarget; boundsDirty = true } } }
     var time: Float = 0
     var windGain: Float = 8
     var wind: Float = 0
@@ -175,7 +178,11 @@ public final class SnowField {
     /// so the active count ramps linearly from 0 to the intensity's target over `duration` seconds of stepping. Piles are kept.
     public func beginIntro(duration: Float) {
         outro = false; outroRel = 1; melting = false
-        for i in figures.indices { figures[i].melt = 1 }
+        for i in figures.indices {
+            figures[i].melt = 1
+            if let k = figures[i].preMelt { figures[i].radii = k.radii; figures[i].built = k.built; figures[i].preMelt = nil }   // a resumed melt: stand tall again
+        }
+        figuresVersion &+= 1
         snowmanCooldown = 0
         for i in flakes.indices { flakes[i].kind = .dormant }
         introT = 0; introDur = max(duration, 0.01)
@@ -196,6 +203,8 @@ public final class SnowField {
         pilesDirty = true
     }
 
+    /// The one clear contract: removes every accumulated effect (piles, balls, figures and their fights / shots / splats, debris, glints, puffs,
+    /// frost, icicles, gifts + confetti, meltwater drops). Snowfall (flakes, intensity), cooldowns and the event director are left alone.
     public func clear() {
         carrots.removeAll(keepingCapacity: true)
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
@@ -203,6 +212,8 @@ public final class SnowField {
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
         for i in surfaces.indices { surfaces[i].pile.empty() }
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
+        iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
+        giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)
         pilesDirty = true
     }
 

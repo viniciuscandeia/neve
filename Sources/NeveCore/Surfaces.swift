@@ -3,8 +3,11 @@ import Foundation
 
 extension SnowField {
     /// One flake lands on a surface (also the test entry point for building piles without simulating snowfall).
+    /// Whether snow may land on / hit surface `s`: after a Space switch (`windowsStale`) window surfaces are not trusted until the next snapshot. The ground and the Dock stay.
+    func landable(_ s: Int) -> Bool { !(windowsStale && surfaces[s].id > 0) }
+
     func deposit(surface: Int, bin: Int, volume: Float, powder: Bool = false) {
-        if windowsStale, surfaces[surface].id > 0 { return }   // after a Space switch the window list is not trusted yet
+        guard landable(surface) else { return }
         if surfaces[surface].pile.deposit(bin: bin, volume: volume, powder: powder) { pilesDirty = true }
         if surfaces[surface].pile.spillL > 2 || surfaces[surface].pile.spillR > 2 { spill(surface) }
     }
@@ -60,7 +63,7 @@ extension SnowField {
     static func perUpdate(_ f: Float, dt: Float) -> Float { dt >= Tuning.shedRefDt ? f : 1 - pow(1 - f, dt / Tuning.shedRefDt) }
 
     @discardableResult
-    func updateSurfaces(windows: [WindowInfo]) -> Int {
+    func updateSurfaces(windows: [WindowInfo], only: Set<Int>? = nil) -> Int {   // `only`: rebuild just these surface ids (the rest are reused as they are)
         let windows = scene?.vanished.map { id in windows.filter { $0.number != id } } ?? windows   // NEVE_DEMO_VANISH: that scene window is treated as minimised
         let ox = origin.x, oy = origin.y
         var rects: [CGRect] = []
@@ -79,6 +82,7 @@ extension SnowField {
             // Dock bar (id 0) sits below the visible frame's bottom; hidden/offscreen Dock has minY < 0.
             let lowOk = id == 0 ? r.minY >= -1 : edge > groundY
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
+            if let only, !only.contains(id), let k = old.firstIndex(where: { $0.id == id }) { built.append(old.swapRemove(k)); continue }
             if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
             spawned += flushRuns()   // runs never span two surfaces
         }
@@ -86,7 +90,7 @@ extension SnowField {
         spawned += flushRuns()
         for s in old { spawned += knockOff(s) }   // gone surfaces
         draggingID = moved
-        for i in built.indices { built[i].runs = built[i].pile.visibleRuns() }
+        for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns() }
         surfaces = built
         index.removeAll(keepingCapacity: true)
         for (i, s) in surfaces.enumerated() { index[s.id] = i }
@@ -109,20 +113,31 @@ extension SnowField {
         if !docks.isEmpty {
             pile.maxes = bankMaxes(docks)
         }
+        // What the ordinary windows do to each ground column (hidden / roof) only changes with their frames: cached across Dock animation frames.
+        let winRects = rects.indices.filter { windows[$0].number != 0 }.map { rects[$0] }
+        if winRects != groundWinKey || groundWinCeil.count != numCols {
+            groundWinKey = winRects
+            groundWinCeil = [Float](repeating: .infinity, count: numCols); groundWinHidden = [Bool](repeating: false, count: numCols)
+            for b in 0..<numCols {
+                let x = CGFloat((Float(b) + 0.5) * bw)
+                for r in winRects {
+                    if r.contains(CGPoint(x: x, y: 1)) { groundWinHidden[b] = true; break }
+                    if r.minY > 1, x >= r.minX, x < r.maxX { groundWinCeil[b] = min(groundWinCeil[b], Float(r.minY)) }
+                }
+            }
+        }
         for b in 0..<numCols {
             let x = CGFloat((Float(b) + 0.5) * bw)
-            var ceiling = Float.infinity, barBelow = false
-            for (i, r) in rects.enumerated() {
+            var ceiling = groundWinCeil[b], barBelow = false
+            if groundWinHidden[b] { pile.visible[b] = false }
+            for (i, r) in rects.enumerated() where windows[i].number == 0 {
                 // The floating Dock bar hovers a few points above the screen bottom: it still hides the ground under it.
-                if windows[i].number == 0 {   // Dock bar: snow may flow under it, up to its rounded underside (the overlay sits above the Dock)
+                do {   // Dock bar: snow may flow under it, up to its rounded underside (the overlay sits above the Dock)
                     if r.maxY > 1 {
                         // Inside the bar: lowest underside within a bin either side (a column just outside it stays free: the bank rises beside the bar end): the straight contour between bin centres then stays below the arc (it is convex).
                         for dx in [-bw, 0, bw] where dx == 0 || (x >= r.minX && x < r.maxX) { if let u = Tuning.barUnderside(x: Float(x) + dx, minX: Float(r.minX), maxX: Float(r.maxX), minY: Float(r.minY), radius: Float(min(windows[i].radius, r.height / 2))) { ceiling = min(ceiling, u); barBelow = true } }
                     }
-                    continue
                 }
-                if r.contains(CGPoint(x: x, y: 1)) { pile.visible[b] = false; break }
-                if r.minY > 1, x >= r.minX, x < r.maxX { ceiling = min(ceiling, Float(r.minY)) }
             }
             pile.cap[b] = ceiling.isFinite ? max(ceiling - (barBelow ? Tuning.barMargin : 0), 0) : ceiling
         }
