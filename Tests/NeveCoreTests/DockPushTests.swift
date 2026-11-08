@@ -114,6 +114,7 @@ private func rain(_ f: SnowField, rounds: Int) {
     #expect(g[84] > 94 - 3 && g[84] <= 94.01)                // flush with the Dock top at the bar end
     #expect(g[20] > 94 - 8 && g[20] <= 94.01)                // a level shelf, not a slope, across the gap
     #expect(f.pile(id: Tuning.groundID)!.heights[635] > 94 - 3)
+    #expect(g[64...84].allSatisfy { $0 > 94 - 3 })           // flat for the 40pt next to the bar end: a snowman can step up (Tuning.stepMax)
 }
 
 @Test func halfFilledBankIsAMonotoneRampTowardTheBar() {
