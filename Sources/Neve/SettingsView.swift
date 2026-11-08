@@ -97,6 +97,9 @@ private struct IntensityTile: View {
     }
 }
 
+/// Shown wherever the Accessibility permission is offered; the app works fully without it.
+let axHint = "Opcional: coloca neve no Dock e acompanha as janelas com mais rapidez. Sem ela, o resto funciona."
+
 private struct Header: View {
     @ObservedObject var panel: PanelState
     let env: SettingsEnv
@@ -112,10 +115,24 @@ private struct Header: View {
                     Toggle("Nevar", isOn: on).labelsHidden().toggleStyle(.switch).controlSize(.small).keyboardShortcut("n")
                 }
             }
-            if panel.axMissing { FooterRow("Permitir neve no Dock…", "exclamationmark.triangle", action: env.askAccessibility) }
+            if panel.axMissing {
+                FooterRow("Permitir Acessibilidade…", "exclamationmark.triangle", action: env.askAccessibility)
+                Text(axHint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+            }
             if panel.metalMissing { Label("Metal indisponível", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, 4)
+    }
+}
+
+private struct AccessRow: View {
+    @ObservedObject var panel: PanelState
+    let ask: () -> Void
+    var body: some View {
+        if panel.axMissing {
+            Button(action: ask) { Label("Permitir Acessibilidade…", systemImage: "exclamationmark.triangle") }
+            Text(axHint).font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -156,6 +173,7 @@ struct QuickSettingsView: View {
             Header(panel: env.panel, env: env)
             Divider()
             IntensityTile(store: env.store)
+            if MusicTap.supported && !env.reduceMotion { MusicNote(panel: env.panel, reduceMotion: false).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4) }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                 ForEach(tiles, id: \.pref) { o in PrefBinding(o.pref, env.store) { Tile(option: o, on: $0) } }
             }
@@ -217,6 +235,7 @@ struct SettingsWindowView: View {
                     if env.reduceMotion { toggle(stillOpt) }
                 case .sistema:
                     PrefBinding(.showInCaptures, env.store) { b in Toggle(isOn: b) { Label("Mostrar em capturas", systemImage: "camera") } }
+                    AccessRow(panel: env.panel, ask: env.askAccessibility)
                     if !env.isDev { Toggle(isOn: env.login) { Label("Abrir no login", systemImage: "arrow.right.circle") } }
                 case .brincar:
                     Text("Segure ⌥ e arraste a neve para fazer bolas.")

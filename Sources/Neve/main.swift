@@ -178,18 +178,23 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// The tap runs only while the option is on and nothing asks for calm: Reduce Motion, economy, Low Power. Off = tap destroyed.
     private func syncMusic() {
-        let want = flag(.music) && !reduceMotion && !economy && !ProcessInfo.processInfo.isLowPowerModeEnabled && sceneKind == nil
+        let calm = economy || ProcessInfo.processInfo.isLowPowerModeEnabled
+        let want = flag(.music) && !reduceMotion && !calm && sceneKind == nil
         if want, !MusicTap.shared.running {
-            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Sem permissão para captar o áudio (Privacidade e Segurança)." : "Requer macOS 14.2 ou mais recente.")
-        } else if !want { MusicTap.shared.stop(); if MusicTap.supported { panel.musicNote = "" } }
+            // The cause is unknown (permission, output device or aggregate creation can all fail): say so neutrally.
+            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Não foi possível captar o áudio. Confira Privacidade e Segurança e a saída de som." : "Requer macOS 14.2 ou mais recente.")
+        } else if !want {
+            MusicTap.shared.stop()
+            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? "Pausada no modo econômico." : "" }
+        }
     }
 
     private func settingsEnv() -> SettingsEnv {
         var rows: [(title: String, id: String)] = []
         if NSScreen.screens.count > 1 { rows = NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
-        let cur = (["all", "main"] + rows.map(\.id)).contains(target) ? target : "all"
+        let valid = ["all", "main"] + rows.map(\.id)
         return SettingsEnv(store: ud, screens: rows, reduceMotion: reduceMotion, isDev: neveInstance != nil,
-                           target: Binding(get: { cur }, set: { [weak self] in self?.setTarget($0) }),
+                           target: Binding(get: { [weak self] in self.map { valid.contains($0.target) ? $0.target : "all" } ?? "all" }, set: { [weak self] in self?.setTarget($0) }),
                            login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
                            openWindow: { [weak self] in self?.showSettingsWindow() },
                            panel: panel, askAccessibility: { [weak self] in self?.askAccessibility() },

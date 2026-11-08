@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import os
+import NeveCore
 
 /// Event-driven window tracking: one AXObserver per regular app reports window move / resize / minimize / create / destroy / hide.
 /// Events only mark "dirty"; `onChange` fires at most every 1/30 s, so the caller does one CGWindowList read per burst
@@ -14,11 +15,15 @@ final class WindowWatcher {
     private var pending = false
     private var lastFire = Date.distantPast
     private static let minInterval = 1.0 / 30
-    private static let log = Logger(subsystem: "io.github.viniciuscandeia.neve", category: "watcher")
-    private static let appEvents = [kAXWindowMovedNotification, kAXWindowResizedNotification, kAXWindowMiniaturizedNotification,
+    private nonisolated static let log = Logger(subsystem: "io.github.viniciuscandeia.neve", category: "watcher")
+    private nonisolated static let appEvents = [kAXWindowMovedNotification, kAXWindowResizedNotification, kAXWindowMiniaturizedNotification,
                                     kAXWindowDeminiaturizedNotification, kAXWindowCreatedNotification, kAXApplicationHiddenNotification,
                                     kAXApplicationShownNotification, kAXFocusedWindowChangedNotification]
-    private var attaching: Task<Void, Never>?
+    /// AX acquisition (create, subscribe, enumerate windows) can block for the messaging timeout per call on a hung app:
+    /// it runs here, never on main. Only the run-loop source install and the publish happen on main.
+    private static let axQueue = DispatchQueue(label: "io.github.viniciuscandeia.neve.axattach", qos: .utility)
+    private var inflight: [pid_t: Int] = [:]   // pid -> ticket; a result whose ticket is gone (detach / deactivate) is discarded
+    private var ticket = 0
 
     func setActive(_ on: Bool) {
         guard on != active else { return }
@@ -27,60 +32,70 @@ final class WindowWatcher {
         if on {
             ws.addObserver(self, selector: #selector(launched(_:)), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
             ws.addObserver(self, selector: #selector(terminated(_:)), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-            // One app per main-actor turn: attaching to ~100 apps in one go would stall the main thread at startup.
-            attaching = Task {
-                for app in NSWorkspace.shared.runningApplications {
-                    guard !Task.isCancelled else { return }
-                    attach(app)
-                    await Task.yield()
-                }
-                Self.log.info("watching \(self.observers.count) apps")
-            }
+            for app in NSWorkspace.shared.runningApplications { attach(app) }   // non-blocking: the serial queue works through them
         } else {
-            attaching?.cancel()
-            attaching = nil
             ws.removeObserver(self)
+            inflight.removeAll()
             for pid in Array(observers.keys) { detach(pid) }
         }
     }
 
     @objc private func launched(_ n: Notification) {
         guard let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        if !attach(app) {   // not ready yet (no AX server): once more a second later
-            Task {
-                try? await Task.sleep(for: .seconds(1))
-                if active, !app.isTerminated { attach(app) }
-            }
-        }
+        attach(app)
     }
     @objc private func terminated(_ n: Notification) {
         if let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { detach(app.processIdentifier) }
         mark()
     }
 
-    /// False only when a regular app could not be observed (worth retrying); apps that do not qualify count as done.
-    @discardableResult
-    private func attach(_ app: NSRunningApplication) -> Bool {
+    private func attach(_ app: NSRunningApplication, attempt: Int = 1) {
         let pid = app.processIdentifier
-        guard app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil else { return true }
+        guard active, app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil, (attempt > 1 || inflight[pid] == nil) else { return }
+        ticket += 1
+        let mine = ticket
+        inflight[pid] = mine
+        let me = Unmanaged.passUnretained(self).toOpaque()
+        nonisolated(unsafe) let ref = me
+        Self.axQueue.async {
+            let r = Self.acquire(pid: pid, refcon: ref)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard self.inflight[pid] == mine else { return }   // detached or deactivated meanwhile: the observer is dropped
+                    self.inflight[pid] = nil
+                    if let obs = r.observer, self.active, !app.isTerminated {
+                        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
+                        self.observers[pid] = obs
+                    } else if r.observer == nil, !app.isTerminated, let d = AttachRetry.delay(afterFailedAttempt: attempt) {
+                        Task { try? await Task.sleep(for: .seconds(d)); self.attach(app, attempt: attempt + 1) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Off-main. `.cannotComplete` (hung / not ready app) bails at once instead of paying a timeout per remaining call.
+    private nonisolated static func acquire(pid: pid_t, refcon: UnsafeMutableRawPointer) -> Acquired {
         var obs: AXObserver?
         let err = AXObserverCreate(pid, windowCallback, &obs)
-        guard err == .success, let obs else { Self.log.info("skip \(app.localizedName ?? "?") (create: \(err.rawValue))"); return false }
+        guard err == .success, let obs else { log.info("skip pid \(pid) (create: \(err.rawValue))"); return Acquired() }
         let el = AXUIElementCreateApplication(pid)   // the global AX messaging timeout (set at startup) bounds every call
-        let me = Unmanaged.passUnretained(self).toOpaque()
         var ok = 0
-        for n in Self.appEvents where AXObserverAddNotification(obs, el, n as CFString, me) == .success { ok += 1 }
-        guard ok > 0 else { Self.log.info("skip \(app.localizedName ?? "?") (no notifications)"); return false }
-        var v: CFTypeRef?
-        if AXUIElementCopyAttributeValue(el, kAXWindowsAttribute as CFString, &v) == .success, let ws = v as? [AXUIElement] {
-            for w in ws { _ = AXObserverAddNotification(obs, w, kAXUIElementDestroyedNotification as CFString, me) }
+        for n in appEvents {
+            let e = AXObserverAddNotification(obs, el, n as CFString, refcon)
+            if e == .success { ok += 1 } else if e == .cannotComplete { break }
         }
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
-        observers[pid] = obs
-        return true
+        guard ok > 0 else { log.info("skip pid \(pid) (no notifications)"); return Acquired() }
+        var v: CFTypeRef?
+        let w = AXUIElementCopyAttributeValue(el, kAXWindowsAttribute as CFString, &v)
+        if w == .success, let ws = v as? [AXUIElement] {
+            for win in ws where AXObserverAddNotification(obs, win, kAXUIElementDestroyedNotification as CFString, refcon) == .cannotComplete { break }
+        }
+        return Acquired(observer: obs)
     }
 
     private func detach(_ pid: pid_t) {
+        inflight[pid] = nil
         guard let o = observers.removeValue(forKey: pid) else { return }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(o), .commonModes)
     }
@@ -111,6 +126,9 @@ final class WindowWatcher {
         }
     }
 }
+
+/// @unchecked: an AXObserver is a CF handle used by one thread at a time (built on the AX queue, then handed to main).
+private struct Acquired: @unchecked Sendable { var observer: AXObserver? }
 
 /// Runs on the main run loop (sources are added to CFRunLoopGetMain), so main-actor isolation holds.
 private let windowCallback: AXObserverCallback = { _, element, notification, refcon in
