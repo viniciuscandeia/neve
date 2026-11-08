@@ -52,7 +52,7 @@ extension SnowField {
 
     private func resetWorld() {
         clear()
-        giftState = GiftState(); chain = AvaChain(); icicles.removeAll(keepingCapacity: true); iceWin.removeAll(keepingCapacity: true); carrots.removeAll(); cursorThrow = CursorThrow()
+        giftState = GiftState(); chain = AvaChain(); carrots.removeAll(); cursorThrow = CursorThrow()   // (gift timers etc. restart; the rest is `clear()`)
         shotLand = nil; impactAt = nil
         director.queue.removeAll(); director.story = StoryState(); for i in director.cooldownUntil.indices { director.cooldownUntil[i] = 0 }
         snowmanCooldown = .infinity

@@ -133,3 +133,44 @@ private func dripCount(_ f: SnowField) -> Int { f.drops.count }
     #expect(n <= f.capacity)
     #expect((0..<n).filter { p[$0].kind == 5 }.count == f.drops.count)
 }
+
+@Test func resumedMeltRestoresStackAndClosingItsWindowTerminates() {
+    let f = makeField()
+    f.update(windows: [win(1, 200, 300, 300, 200)])
+    let w = f.surfaces.firstIndex { $0.id == 1 }!
+    for b in f.surfaces[w].pile.heights.indices { f.surfaces[w].pile.heights[b] = 12 }
+    let id = stand(f, x: 350, on: 1)
+    let (r0, b0) = (fig(f, id).radii, fig(f, id).built)
+    f.beginMelt(duration: 12)
+    advance(f, 2)
+    #expect(fig(f, id).built < Snowman.stageCount || fig(f, id).radii.x < r0.x)
+    f.beginIntro(duration: 2)
+    #expect(fig(f, id).radii == r0 && fig(f, id).built == b0)
+    // a partial stack that cannot demote must be removed when its window closes, not loop forever
+    f.figures[f.figureIndex(id)!].built = 5
+    f.update(windows: [])
+    var steps = 0
+    while f.figures.contains(where: { $0.id == id }) && steps < 600 { f.step(dt: 1 / 60); steps += 1 }
+    #expect(steps < 600)
+}
+
+@Test func clearRemovesEveryAccumulatedEffectButKeepsCooldowns() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 400, 300, 150)])
+    f.stage(.heavy)
+    advance(f, 1)
+    let gi = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
+    for b in 0..<500 { f.surfaces[gi].pile.heights[b] = 12 }
+    f.figures.removeAll()   // the field may have grown its own auto snowman
+    standAuto(f, x: 400)
+    f.iceWin.append(WinIce(id: 1, acc: 1, fill: 1, frost: 1, frozen: true, w0: 300, h0: 150))
+    f.icicles.append(Icicle(win: 1, slot: 0, dx: 0, len: 10, maxLen: 20, width: 3, tilt: 0, w0: 300))
+    f.dropGift(at: SIMD2(400, 300), dir: 1)
+    f.drops.append(Drop(pos: SIMD2(350, 300), size: 2, src: 1))
+    f.debris.append(Flake(pos: [100, 100], vx: 0, fall: 0, phase: 0, amp: 0, freq: 0, size: 4, alpha: 1, kind: .debris))
+    f.snowmanCooldown = 123
+    #expect(!f.gifts.isEmpty && !f.figures.isEmpty && !f.drops.isEmpty && !f.iceWin.isEmpty)
+    f.clear()
+    #expect(f.gifts.isEmpty && f.figures.isEmpty && f.drops.isEmpty && f.iceWin.isEmpty && f.icicles.isEmpty && f.debris.isEmpty && f.pileVolume == 0)
+    #expect(f.snowmanCooldown == 123)
+}

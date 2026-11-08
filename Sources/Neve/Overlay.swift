@@ -176,6 +176,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.setCalm(motion)
         reduceMotion = motion
         still = prefs.still && motion
+        field.frozen = still
         contrast = hc ? 1 : 0
         wake()
     }

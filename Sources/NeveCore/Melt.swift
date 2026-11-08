@@ -57,8 +57,10 @@ extension SnowField {
                 endFights(of: figures[i].id)
                 figures[i].phase = .collapsing; figures[i].phaseT = 0; figures[i].fade = 1; figures[i].fight = nil; figures[i].pose = Pose()
             } else if !calm {
-                figures[i].radii *= max(0, 1 - 0.9 * dt / (0.55 * meltDur))   // sags
-                figures[i].built = min(figures[i].built, max(3, Snowman.stageCount - Int(p / 0.55 * 4.99)))   // scarf, arms, nose, coal go first
+                if figures[i].preMelt == nil { figures[i].preMelt = (figures[i].radii, figures[i].built) }
+                let k = figures[i].preMelt!
+                figures[i].radii = k.radii * exp(-0.9 * p / 0.55)   // sags
+                figures[i].built = min(k.built, max(3, Snowman.stageCount - Int(p / 0.55 * 4.99)))   // scarf, arms, nose, coal go first
             }
             figuresVersion &+= 1
         }
@@ -70,8 +72,6 @@ extension SnowField {
     /// Whatever is left (frost lips, a held ball, stray debris) goes at once.
     private func finishMelt() {
         clear()
-        iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true)
-        giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)
         for i in flakes.indices { flakes[i].kind = .dormant }
         pilesDirty = true
     }

@@ -45,6 +45,7 @@ public struct Figure {
     var penguin = PenguinState()                                // Figures+Penguin.swift
     var sleigh = SleighState()                                  // sleigh crossing bookkeeping (Figures+Sleigh.swift)
     var motion = Motion()
+    var preMelt: (radii: SIMD3<Float>, built: Int)?             // size before the melt sagged it; a resumed melt restores it
     var melt: Float = 1                                         // visitors: 1 -> 0 while the snow melts away (multiplied into the look's fade)
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
@@ -312,7 +313,10 @@ extension SnowField {
 
     /// The figure lost its surface (window closed): the auto one shatters, a stack falls apart. False when removed.
     private func lose(_ i: Int) -> Bool {
-        if figures[i].fromBalls { demote(figures[i].id, falling: .zero); return false }
+        if figures[i].fromBalls {
+            if demote(figures[i].id, falling: .zero) == nil { removeFigure(i) }   // "false" must mean removed, whatever state it was in
+            return false
+        }
         collapse()
         return true
     }

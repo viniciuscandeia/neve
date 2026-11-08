@@ -9,7 +9,7 @@ extension SnowField {
     func effective(_ w: [WindowInfo]) -> [WindowInfo] {
         guard let k = w.firstIndex(where: { $0.number == 0 }) else { dockTarget = nil; dockCur = nil; return w }
         let t = w[k].frame
-        if let c = dockCur, abs(c.minY - t.minY) < 0.5, abs(c.height - t.height) < 0.5, c.maxX > t.minX, c.minX < t.maxX {
+        if !frozen, let c = dockCur, abs(c.minY - t.minY) < 0.5, abs(c.height - t.height) < 0.5, c.maxX > t.minX, c.minX < t.maxX {
             dockCur = CGRect(x: c.minX, y: t.minY, width: c.width, height: t.height)
         } else { dockCur = t }
         dockTarget = t
