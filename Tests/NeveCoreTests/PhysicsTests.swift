@@ -56,7 +56,7 @@ import Testing
     f.step(dt: 0.05)
     // Starts at most 50 pt/s down (+ a little upward kick is impossible: window did not move);
     // gravity 1400 pt/s^2 over 0.05 s adds 70 pt/s, so every survivor is now at >= 70.
-    #expect(f.debris.allSatisfy { $0.fall >= 70 })
+    #expect(f.debris.allSatisfy { $0.fall >= 70 || $0.delay > 0 })   // (chunks still waiting for the release ripple have not started to fall)
     #expect(f.debris.count > 0)
 }
 
@@ -82,7 +82,7 @@ import Testing
     let elsewhere = f.debris.filter { $0.pos.x < 380 || $0.pos.x > 620 }.count
     #expect(overLower > 0 && elsewhere > 0)
     // Falling 300 pt at 1400 pt/s^2 takes ~0.6 s; falling the 600 pt to the screen bottom takes ~0.85 s.
-    for _ in 0..<42 { f.step(dt: 1 / 60) }   // 0.7 s
+    for _ in 0..<52 { f.step(dt: 1 / 60) }   // 0.87 s: the ripple holds the last chunks up to 0.35 s
     #expect(f.debris.filter { $0.pos.x > 420 && $0.pos.x < 580 && $0.shape == 2 }.isEmpty)   // blocks broke on the lower pile (their clumps are still in the air)
     #expect(f.debris.filter { $0.pos.x < 380 || $0.pos.x > 620 }.count > 0)
 }

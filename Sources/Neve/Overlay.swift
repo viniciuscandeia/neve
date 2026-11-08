@@ -36,6 +36,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     // MARK: pile pass
     private static let pileCapacity = 8192
     private let pileBuffers: [MTLBuffer]
+    static let slowmo = Float(ProcessInfo.processInfo.environment["NEVE_SLOWMO"] ?? "") ?? 1   // visual checks: the sim runs at this fraction of real time
     private var pileSlot = 0, pileCount = 0, frameDt: Float = 1.0 / 60   // 3-slot ring, rewritten only when the pile changed
     private var shiftID: Int?, shift = SIMD2<Float>.zero   // dragged window: its figures / balls ride with the drag pile layer
     private var bufferIndex = 0
@@ -432,7 +433,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         advanceCover(now)   // MARK: P3-0
         frameDt = Float(dt)
         field.music = prefs.music ? MusicTap.shared.read() : .silent
-        if !still { field.step(dt: Float(dt)) }
+        if !still { field.step(dt: Float(dt) * Self.slowmo) }
         Perf.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
         let cursor = sceneKind == nil ? NSEvent.mouseLocation : CGPoint(x: -1e5, y: -1e5)   // scenes ignore the real cursor: the same story every time

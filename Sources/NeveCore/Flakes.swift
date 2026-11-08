@@ -22,6 +22,7 @@ public struct Flake {
     var vol: Float = 0      // carried snow (area, pt^2): deposited where it lands; 0 = legacy size-based deposit
     var delay: Float = 0    // slab: seconds aloft; puff / glint: seconds of life left
     var shape: UInt8 = 0
+    var prof: UInt32 = 0    // falling chunk: packed top profile (Effects.swift `Flake.pack`)
     var wv: Float = 0       // sky/background: lateral speed from the wind field, relaxing toward it (inertia grows with size)
 }
 

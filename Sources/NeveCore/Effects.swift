@@ -169,41 +169,66 @@ extension SnowField {
     }
 }
 
-/// Intact falling blocks (`Flake.amp` > 0, shape 2): a vanished window's pile drops as a few slabs that break only on impact.
+/// Intact falling chunks (`Flake.amp` > 0, shape 2): a vanished window's pile slides off as chunks that keep the pile's profile (`Flake.prof`),
+/// let go in a ripple, shed crumbs and powder while falling, and break up on impact (small ones also mid-air: soft snow is fragile).
+extension Flake {
+    /// Packed profile: bits 0-8 thickness in half-points, then left / middle / right height as 5-bit fractions of it (the shader draws the crest from them).
+    static func pack(thickness t: Float, left: Float, mid: Float, right: Float) -> UInt32 {
+        func q(_ r: Float) -> UInt32 { UInt32(min(max(r, 0), 1) * 31 + 0.5) }
+        return UInt32(min(max(t * 2, 1), 511)) | q(left) << 9 | q(mid) << 14 | q(right) << 19
+    }
+    var blockThickness: Float { Float(prof & 511) * 0.5 }
+}
+
 extension SnowField {
-    /// Cuts pile bins [b0, b1) into ~40-80pt slabs (thickness = mean pile height). Thin or tiny runs fall as plain dots. Returns the debris made.
-    func dropBlocks(_ s: Surface, from b0: Int, to b1: Int, velocity v: SIMD2<Float>) -> Int {
+    /// Cuts pile bins [b0, b1) into chunks of mixed size (20-120pt), cutting at the thin points of the pile. Thin runs fall as plain dots.
+    /// The chunks are released in a ripple that spreads from `originX` at `Tuning.rippleSpeed` (Reduce Motion: all at once). Returns the debris made.
+    func dropBlocks(_ s: Surface, from b0: Int, to b1: Int, velocity v: SIMD2<Float>, originX: Float) -> Int {
         let bw = Tuning.binWidth
-        let parts = max(1, Int((Float(b1 - b0) * bw / 60).rounded()))
-        let vx0 = v.x * 0.5 + (calm ? 0 : Float.random(in: -10...10, using: &rng))   // shared: the blocks leave together
-        let fall0 = (calm ? Tuning.calmDebrisFall : Float.random(in: 5...20, using: &rng)) - v.y * 0.5
-        var n = 0
-        for p in 0..<parts {
-            let a = b0 + (b1 - b0) * p / parts, e = b0 + (b1 - b0) * (p + 1) / parts
-            guard e > a else { continue }
-            var sum: Float = 0, base: Float = 0
-            for k in a..<e { sum += s.pile.heights[k]; base += s.pile.base[k] }
-            let cnt = Float(e - a), width = cnt * bw, mean = sum / cnt
-            if width < 8 || mean < 3 {
+        let vx0 = v.x * 0.5 + (calm ? 0 : Float.random(in: -8...8, using: &rng))
+        let fall0 = (calm ? Tuning.calmDebrisFall : Float.random(in: 0...15, using: &rng)) - v.y * 0.5
+        var n = 0, a = b0
+        while a < b1 {
+            let remain = b1 - a
+            let r = Float.random(in: 0..<1, using: &rng)
+            var cnt = max(4, Int((r < 0.35 ? Float.random(in: 70...120, using: &rng) : r < 0.75 ? Float.random(in: 36...70, using: &rng) : Float.random(in: 20...36, using: &rng)) / bw))
+            if remain - cnt < 6 { cnt = remain } else {   // cut where the pile is thinnest within +-25%
+                let lo = a + max(3, cnt - cnt / 4), hi = min(a + cnt + cnt / 4, b1 - 6)
+                if lo <= hi {
+                    var best = lo
+                    for k in lo...hi where s.pile.heights[k] < s.pile.heights[best] { best = k }
+                    cnt = best - a
+                }
+            }
+            let e = a + cnt
+            defer { a = e }
+            var sum: Float = 0, base: Float = .infinity, top: Float = 0
+            for k in a..<e { sum += s.pile.heights[k]; base = min(base, s.pile.base[k]); top = max(top, s.pile.heights[k]) }
+            let width = Float(cnt) * bw, mean = sum / Float(cnt)
+            if mean < 3 {
                 for k in a..<e { n += shedBin(col: s.c0 + k, edgeY: s.edgeY + s.pile.base[k], from: 0, amount: s.pile.heights[k], velocity: v) }
                 n += flushRuns()
                 continue
             }
-            let tilt: Float = calm ? 0 : Float.random(in: -0.07...0.07, using: &rng)
-            let spin: Float = calm ? 0 : Float.random(in: -0.15...0.15, using: &rng)
-            let jx: Float = calm ? 0 : Float.random(in: -2...2, using: &rng), jf: Float = calm ? 0 : Float.random(in: -4...4, using: &rng)   // tiny desync
-            guard put(Flake(pos: [(Float(s.c0 + a) + cnt / 2) * bw, s.edgeY + base / cnt + mean / 2], vx: vx0 + jx, fall: max(fall0 + jf, 0), phase: 0, amp: 1, freq: 0,
-                            size: width, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, rot: tilt, spin: spin, vol: sum * bw, shape: 2)) else { return n }
+            func avg(_ lo: Int, _ hi: Int) -> Float { var t: Float = 0; for k in lo..<hi { t += s.pile.heights[k] }; return t / Float(hi - lo) / top }
+            let w = max(1, cnt / 6), m = a + cnt / 2
+            let prof = Flake.pack(thickness: top, left: avg(a, a + w), mid: avg(max(a, m - w / 2), min(e, m + w / 2 + 1)), right: avg(e - w, e))
+            let cx = (Float(s.c0 + a) + Float(cnt) / 2) * bw
+            let lean = calm ? 0 : cx < originX ? Float.random(in: -14...0, using: &rng) : Float.random(in: 0...14, using: &rng)
+            let hold = calm ? 0 : min(abs(cx - originX) / Tuning.rippleSpeed + Float.random(in: 0...0.08, using: &rng), 0.35)
+            guard put(Flake(pos: [cx, s.edgeY + base + top / 2], vx: vx0 + lean, fall: max(fall0 + (calm ? 0 : Float.random(in: -6...10, using: &rng)), 0), phase: 0, amp: 1, freq: 0,
+                            size: width, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, rot: calm ? 0 : Float.random(in: -0.06...0.06, using: &rng),
+                            spin: calm ? 0 : Float.random(in: -0.35...0.35, using: &rng), vol: sum * bw, delay: hold, shape: 2, prof: prof)) else { return n }
             n += 1
         }
         if n > 0 { pilesDirty = true }
         return n
     }
 
-    /// Top of the surface the block's lower edge crossed this step (probing left, centre, right), or nil. Nothing is hit while `quiet`.
+    /// Top of the surface the chunk's lower edge crossed this step (probing left, centre, right), or nil. Nothing is hit while `quiet`.
     func slabHit(_ f: Flake, prevY: Float) -> Float? {
         guard !quiet else { return nil }
-        let half = f.vol / f.size / 2
+        let half = f.blockThickness / 2
         var best: Float?
         for dx in [Float(-0.4), 0, 0.4] as [Float] {
             let c = column(f.pos.x + dx * f.size)
@@ -215,26 +240,35 @@ extension SnowField {
         return best
     }
 
-    /// Impact: the block shatters across its width into clumps (carrying its whole volume, which lands as usual) and a few puffs.
-    func breakSlab(_ f: Flake, top: Float) {
-        let k = min(max(Int(f.size / 9), 3), 8), vol = f.vol / Float(k)
+    /// The chunk breaks into clumps (carrying its volume, which lands as usual) and powder. On impact (`top` = the surface) they burst up and out
+    /// with puffs; in the air (`air`) they just fall apart where they are.
+    func breakSlab(_ f: Flake, top: Float, air: Bool = false) {
+        let k = air ? min(max(Int(f.size / 8), 2), 4) : min(max(Int(f.size / 9), 3), 8)
+        let powder = calm ? 0 : min(Int(f.size / 8), 8, Int(f.vol * 0.3 / 0.8))
+        let vol = (f.vol - Float(powder) * 0.8) / Float(k), y = air ? f.pos.y : top + 1.5
         for j in 0..<k {
-            let u = (Float(j) + Float.random(in: 0.2...0.8, using: &rng)) / Float(k) - 0.5   // -0.5...0.5 across the block
-            let fall = -Float.random(in: calm ? 15...40 : 50...130, using: &rng)
-            _ = put(Flake(pos: [f.pos.x + u * f.size, top + 1.5], vx: f.vx * 0.5 + u * Float.random(in: 30...80, using: &rng), fall: fall, phase: 0.12, amp: 0, freq: 0,
+            let u = (Float(j) + Float.random(in: 0.2...0.8, using: &rng)) / Float(k) - 0.5   // -0.5...0.5 across the chunk
+            let fall = air ? f.fall + Float.random(in: -10...30, using: &rng) : -Float.random(in: calm ? 15...40 : 50...130, using: &rng)
+            _ = put(Flake(pos: [f.pos.x + u * f.size, y], vx: f.vx * (air ? 1 : 0.5) + u * (air ? Float.random(in: 15...40, using: &rng) : Float.random(in: 30...80, using: &rng)), fall: fall, phase: air ? 0 : 0.12, amp: 0, freq: 0,
                           size: min(max(vol.squareRoot() * 0.9, 3), 9), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1,
                           spin: Float.random(in: -3...3, using: &rng), vol: vol, shape: 1))
         }
+        for _ in 0..<powder {
+            _ = put(Flake(pos: [f.pos.x + Float.random(in: -0.5...0.5, using: &rng) * f.size, y + Float.random(in: 0...2, using: &rng)], vx: f.vx * 0.5 + Float.random(in: -45...45, using: &rng),
+                          fall: air ? f.fall * 0.8 : -Float.random(in: 30...110, using: &rng), phase: air ? 0 : 0.12, amp: 0, freq: 0, size: Float.random(in: 2.2...3.2, using: &rng),
+                          alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, vol: 0.8))
+        }
         guard !calm else { return }
-        for _ in 0..<(Int(f.size / 20) + 1) { addPuff(x: f.pos.x + Float.random(in: -0.5...0.5, using: &rng) * f.size, y: top + 3) }
+        for _ in 0..<(air ? 1 : Int(f.size / 20) + 1) { addPuff(x: f.pos.x + Float.random(in: -0.5...0.5, using: &rng) * f.size, y: air ? f.pos.y : top + 3) }
     }
 
-    /// A little powder shakes off a falling block (~5 flakes/s); it carries its volume out of the block.
+    /// Soft snow sheds crumbs and powder off its underside while it falls; they carry their volume out of the chunk.
     func trailPowder(_ f: inout Flake, dt: Float) {
-        guard !calm, f.vol > 40, Float.random(in: 0..<1, using: &rng) < 5 * dt else { return }
-        let side: Float = Bool.random(using: &rng) ? 0.5 : -0.5, t = f.vol / f.size
-        guard put(Flake(pos: [f.pos.x + side * f.size, f.pos.y + Float.random(in: -t / 2...t / 2, using: &rng)], vx: f.vx + side * 12, fall: f.fall * 0.9, phase: 0, amp: 0, freq: 0,
-                        size: Float.random(in: 2.2...3.2, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, vol: 0.8)) else { return }
-        f.vol -= 0.8
+        guard !calm, f.vol > 30, Float.random(in: 0..<1, using: &rng) < (3 + f.size / 12) * dt else { return }
+        let crumb = Float.random(in: 0..<1, using: &rng) < 0.35, v: Float = crumb ? 2 : 0.8, t = f.blockThickness
+        guard put(Flake(pos: [f.pos.x + Float.random(in: -0.5...0.5, using: &rng) * f.size, f.pos.y - t * Float.random(in: 0.2...0.5, using: &rng)], vx: f.vx + Float.random(in: -10...10, using: &rng), fall: f.fall * 0.85,
+                        phase: 0, amp: 0, freq: 0, size: crumb ? Float.random(in: 2.8...4, using: &rng) : Float.random(in: 2.2...3.2, using: &rng), alpha: 0.95, kind: .debris,
+                        seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: crumb ? Float.random(in: -3...3, using: &rng) : 0, vol: v, shape: crumb ? 1 : 0)) else { return }
+        f.vol -= v
     }
 }

@@ -52,6 +52,7 @@ extension SnowField {
 
     @discardableResult
     func updateSurfaces(windows: [WindowInfo]) -> Int {
+        let windows = scene?.vanished.map { id in windows.filter { $0.number != id } } ?? windows   // NEVE_DEMO_VANISH: that scene window is treated as minimised
         let ox = origin.x, oy = origin.y
         var rects: [CGRect] = []
         rects.reserveCapacity(windows.count)
@@ -356,12 +357,13 @@ extension SnowField {
         guard !silent else { return 0 }
         var n = 0, b = 0
         let count = s.pile.heights.count
+        let origin = [Float(s.frame.midX), Float(s.frame.minX), Float(s.frame.maxX)][Int.random(in: 0..<3, using: &rng)]   // the ripple starts mid-window or at one end
         func solid(_ k: Int) -> Bool { s.pile.visible[k] && s.pile.heights[k] > 0.5 }
         while b < count {
             guard solid(b) else { b += 1; continue }
             var e = b
             while e < count, solid(e) { e += 1 }
-            n += dropBlocks(s, from: b, to: e, velocity: v)
+            n += dropBlocks(s, from: b, to: e, velocity: v, originX: origin)
             b = e
         }
         return n
