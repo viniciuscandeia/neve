@@ -20,6 +20,7 @@ enum Perf {
     private static var n = [Int](repeating: 0, count: 7)
     private static var frames = 0
     private static var instances = 0
+    private static var truncPrims = 0, truncPiles = 0   // items dropped for lack of buffer space this window
     private static var winStart: UInt64 = 0
     private static var cpuStart = 0.0
 
@@ -32,6 +33,8 @@ enum Perf {
         n[s.rawValue] += 1
         if d > peak[s.rawValue] { peak[s.rawValue] = d }
     }
+
+    @inline(__always) static func truncated(prims: Int = 0, piles: Int = 0) { if on { truncPrims += prims; truncPiles += piles } }
 
     @inline(__always) static func setInstances(_ c: Int) { if on { instances = c } }
 
@@ -71,11 +74,12 @@ enum Perf {
         }
         let debris = field.debris.count
         line += String(format: " gpu=%.3fms(n=%d) cpu=%.1f%% main=%.1f%%", g.count == 0 ? 0 : g.sum / Double(g.count) * 1000, g.count, (c - cpuStart) / wall * 100, Double(mainNs) / 1e9 / wall * 100)
-        line += " flakes=\(max(instances - debris, 0)) debris=\(debris) balls=\(field.balls.count) figures=\(field.figures.count) fights=\(field.fights.count) shots=\(field.shots.count)\n"
+        line += " flakes=\(max(instances - debris, 0)) debris=\(debris) balls=\(field.balls.count) figures=\(field.figures.count) fights=\(field.fights.count) shots=\(field.shots.count) trunc=prims:\(truncPrims)/piles:\(truncPiles)\n"
         FileHandle.standardError.write(Data(line.utf8))
         if let p = ProcessInfo.processInfo.environment["NEVE_PERF_LOG"], let h = FileHandle(forWritingAtPath: p) ?? { FileManager.default.createFile(atPath: p, contents: nil); return FileHandle(forWritingAtPath: p) }() {
             h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
         }
+        truncPrims = 0; truncPiles = 0
         frames = 0; winStart = t; cpuStart = c
     }
 }

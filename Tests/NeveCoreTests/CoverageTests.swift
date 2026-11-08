@@ -97,3 +97,33 @@ private let visible = CGRect(x: 0, y: 80, width: 1000, height: 700)   // Dock 80
     f.step(dt: 1 / 30)
     for (i, fl) in f.flakes.enumerated() where was[i] && fl.kind != .dormant { #expect(fl.pos.y >= 800) }
 }
+
+// Capacity: every segment is written when the buffer is sized from the demand; a short one counts what it dropped.
+@Test func wideSnowySurfacesFitTheDemandSizedBuffer() {
+    let f = SnowField(size: CGSize(width: 3000, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
+    let ws = (0..<6).map { win($0 + 1, CGFloat($0) * 20, 120 + CGFloat($0) * 110, 2900 - CGFloat($0) * 40, 90) }
+    f.update(windows: ws)
+    for w in ws { pileUp(f, id: w.number, rounds: 6) }
+    pileUp(f, id: Tuning.groundID, rounds: 6)
+    func write(_ cap: Int) -> (n: Int, dropped: Int) {
+        var d = 0
+        var buf = [PileSeg](repeating: PileSeg(x0: 0, x1: 0, top0: 0, top1: 0, base0: 0, base1: 0, slope: 0, dragged: 0), count: cap)
+        let n = buf.withUnsafeMutableBufferPointer { f.writePiles(to: $0.baseAddress!, capacity: cap, dt: 10, force: true, dropped: &d) }!
+        return (n, d)
+    }
+    let full = write(1 << 16)
+    #expect(full.dropped == 0 && full.n > 1000 && full.n <= f.pileSegDemand)
+    let fit = write(f.pileSegDemand)
+    #expect(fit.n == full.n && fit.dropped == 0)
+    let small = write(full.n / 2)
+    #expect(small.n == full.n / 2 && small.dropped == full.n - small.n)
+}
+
+@Test func primWriterCountsDrops() {
+    var buf = [Prim](repeating: Prim(), count: 2)
+    buf.withUnsafeMutableBufferPointer { b in
+        var w = PrimWriter(b.baseAddress!, capacity: 2)
+        for _ in 0..<5 { w.ellipse(center: .zero, radii: [1, 1], color: .one) }
+        #expect(w.n == 2 && w.dropped == 3)
+    }
+}

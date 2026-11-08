@@ -418,13 +418,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         // Show-desktop leaves a sliver on-screen: treat as gone. A window the user dragged mostly off-screen keeps its snow.
         windows.removeAll { $0.number != exemptID && mostlyOffscreen($0.frame, screens: screenFrames) }
         let covering = windows.map(\.frame)
+        let coverList = windows   // real windows: coverage / compaction also work in behind mode
         if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
         else if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
         for o in overlays {
             let fs = covering.contains { o.covers($0) }
             if fs != o.isFullscreen { settleUntil[displayID(o.screen)] = Date().addingTimeInterval(1) }
             o.setFullscreen(fs)
-            if !o.isFullscreen { o.update(windows: windows, dragTarget: dragID) }   // under fullscreen the list is just that app: keep piles untouched
+            if !o.isFullscreen { o.update(windows: windows, covering: coverList, dragTarget: dragID) }   // under fullscreen the list is just that app: keep piles untouched
         }
         if scenarioHeavy, Date().timeIntervalSince(lastStage) >= 20 { lastStage = Date(); overlays.forEach { $0.stage(.heavy) } }   // perf A/B load
         if fullscreenIdle != idleWatch {

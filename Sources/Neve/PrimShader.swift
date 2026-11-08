@@ -6,7 +6,7 @@ vertex PVOut primVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Prim *prims [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
     Prim q = prims[iid];
     float2 lo, hi;
-    if (q.kind == 0) { float r = max(q.b.x, q.b.y); lo = q.a - r; hi = q.a + r; }
+    if (q.kind == 0) { float cs = cos(q.c.x), sn = sin(q.c.x); float2 e = sqrt(float2(q.b.x * q.b.x * cs * cs + q.b.y * q.b.y * sn * sn, q.b.x * q.b.x * sn * sn + q.b.y * q.b.y * cs * cs)); lo = q.a - e; hi = q.a + e; }
     else if (q.kind == 1) { float h = q.width * 0.5; lo = min(q.a, q.b) - h; hi = max(q.a, q.b) + h; }
     else { lo = min(min(q.a, q.b), min(q.c, q.d)); hi = max(max(q.a, q.b), max(q.c, q.d)); }
     float pad = q.soft + 2.0;

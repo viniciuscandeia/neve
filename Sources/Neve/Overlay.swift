@@ -31,11 +31,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
-    private static let primCapacity = 800   // ~700 prims / screen
-    private let primBuffers: [MTLBuffer]
+    private var primCapacity = 800   // ~700 prims / screen; grows (in update, never per frame) after a frame that dropped some
+    private var primBuffers: [MTLBuffer]
+    private var primWant = 0
     // MARK: pile pass
-    private static let pileCapacity = 8192
-    private let pileBuffers: [MTLBuffer]
+    private var pileCapacity = 8192   // grows with the surfaces' bin count when the window list changes
+    private var pileBuffers: [MTLBuffer]
+    private var pileForce = false     // buffers were replaced: rewrite the piles once
     static let slowmo = Float(ProcessInfo.processInfo.environment["NEVE_SLOWMO"] ?? "") ?? 1   // visual checks: the sim runs at this fraction of real time
     private var pileSlot = 0, pileCount = 0, frameDt: Float = 1.0 / 60   // 3-slot ring, rewritten only when the pile changed
     private var shiftID: Int?, shift = SIMD2<Float>.zero   // dragged window: its figures / balls ride with the drag pile layer
@@ -86,13 +88,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         var primBuffers: [MTLBuffer] = []
         for _ in 0..<3 {
-            guard let b = gpu.device.makeBuffer(length: Overlay.primCapacity * MemoryLayout<Prim>.stride, options: .storageModeShared) else { return nil }
+            guard let b = gpu.device.makeBuffer(length: primCapacity * MemoryLayout<Prim>.stride, options: .storageModeShared) else { return nil }
             primBuffers.append(b)
         }
         self.primBuffers = primBuffers
         var pileBuffers: [MTLBuffer] = []
         for _ in 0..<3 {
-            guard let b = gpu.device.makeBuffer(length: Overlay.pileCapacity * MemoryLayout<PileSeg>.stride, options: .storageModeShared) else { return nil }
+            guard let b = gpu.device.makeBuffer(length: pileCapacity * MemoryLayout<PileSeg>.stride, options: .storageModeShared) else { return nil }
             pileBuffers.append(b)
         }
         self.pileBuffers = pileBuffers
@@ -194,22 +196,49 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var confirmedDrag: Int?   // the window being dragged by the mouse (main confirms it); only that one is extrapolated
     /// Space switch: no deposits on window surfaces until the next snapshot reconciles.
     func markStale() { field.markStale() }
-    func update(windows: [WindowInfo], dragTarget: Int? = nil) {
+    /// `covering`: the real windows for coverage / compaction when `windows` (the surfaces) is deliberately empty (behind-windows mode).
+    func update(windows: [WindowInfo], covering: [WindowInfo]? = nil, dragTarget: Int? = nil) {
         let now = CACurrentMediaTime()
         field.update(windows: windows, now: now)   // each window's dt = its own time since its last sample
         confirmedDrag = dragTarget
+        growBuffers()
         let changed = windows != lastWindows
         if changed { lastWindows = windows; fastUntil = now + 0.5; wake() }
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
-        measureCover(windows)               // MARK: P3-0
+        measureCover(covering ?? windows)   // MARK: P3-0
     }
+    /// Poll rate, outside the frame path: size the prim / pile buffers from the demand (old ones stay alive in any in-flight command buffer).
+    private func growBuffers() {
+        func make<T>(_ n: Int, _: T.Type) -> [MTLBuffer]? {
+            let bs = (0..<3).compactMap { _ in gpu.device.makeBuffer(length: n * MemoryLayout<T>.stride, options: .storageModeShared) }
+            return bs.count == 3 ? bs : nil
+        }
+        let pd = field.pileSegDemand
+        if pd > pileCapacity, let b = make((pd * 5 / 4 + 1023) & ~1023, PileSeg.self) {
+            pileBuffers = b; pileCapacity = b[0].length / MemoryLayout<PileSeg>.stride; pileForce = true; wake()
+        }
+        if primWant > primCapacity, let b = make((primWant * 3 / 2 + 255) & ~255, Prim.self) {
+            primBuffers = b; primCapacity = b[0].length / MemoryLayout<Prim>.stride; wake()
+        }
+    }
+
     // MARK: P3-0 maximized window: snow only in the visible strip
 
     /// Windows -> coverage of the usable area, the live rect and the shader occluders (poll rate; cheap).
+    private var coverKey: (windows: [WindowInfo], vis: CGRect, behindLarge: Bool)?
     private func measureCover(_ windows: [WindowInfo]) {
-        let vis = screen.visibleFrame, o = frame.origin
+        let vis = screen.visibleFrame
+        if coverKey == nil || coverKey! != (windows, vis, prefs.behindLarge) {   // identical snapshots (bursts, other screens' polls) reuse the last coverage / occluders
+            coverKey = (windows, vis, prefs.behindLarge)
+            computeCover(windows, vis)
+        }
+        advanceWhileIdle()
+    }
+
+    private func computeCover(_ windows: [WindowInfo], _ vis: CGRect) {
+        let o = frame.origin
         let rects = windows.filter { $0.number != 0 && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
         let c = coverage(of: rects, in: vis)
         coverFraction = c.fraction; 
@@ -221,6 +250,10 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             let big = rects.filter { $0.width * $0.height >= 0.35 * vis.width * vis.height }
             for (i, r) in big.prefix(4).enumerated() { occ[4 + i] = box(r) }
         }
+    }
+
+    /// Hysteresis timers keep running on every poll, changed snapshot or not.
+    private func advanceWhileIdle() {
         if !(window.isVisible && link?.isPaused == false) {   // not ticking (covered / paused): the poll drives the state machine
             advanceCover(CACurrentMediaTime())
             if cover.pending, !coverCheck {   // look again shortly: nobody else will
@@ -562,17 +595,22 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         Perf.add(.write, t0); t0 = Perf.now()
         Perf.setInstances(count)
         let pbuf = primBuffers[(bufferIndex + 2) % 3]   // bufferIndex already advanced: the same ring slot as `buffer`
-        var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: Overlay.primCapacity)
+        var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: primCapacity)
         t0 = Perf.now()
         writePrims(&w)
+        if w.dropped > 0 { primWant = max(primWant, primCapacity + w.dropped) }
+        Perf.truncated(prims: w.dropped)
         Perf.add(.actors, t0); t0 = Perf.now()
         pass.colorAttachments[0].texture = drawable.texture
         let slot = (pileSlot + 1) % pileBuffers.count
         t0 = Perf.now()
-        if let n = field.writePiles(to: pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), capacity: Overlay.pileCapacity, dt: frameDt) {
+        var pileDropped = 0
+        defer { pileForce = false }
+        if let n = field.writePiles(to: pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), capacity: pileCapacity, dt: frameDt, force: pileForce, dropped: &pileDropped) {
             pileSlot = slot
             pileCount = n
         }
+        Perf.truncated(piles: pileDropped)
         Perf.add(.pile, t0); t0 = Perf.now()
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size

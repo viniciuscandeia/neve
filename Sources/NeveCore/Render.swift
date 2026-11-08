@@ -24,16 +24,17 @@ public struct Prim {
     public init() {}
 }
 
-/// Appends prims into a caller-owned buffer (no allocation); drops silently when full.
+/// Appends prims into a caller-owned buffer (no allocation); when full it drops and counts them in `dropped` (the caller grows the buffer).
 public struct PrimWriter {
     private let p: UnsafeMutablePointer<Prim>
     private let capacity: Int
     public private(set) var n = 0
+    public private(set) var dropped = 0
 
     public init(_ p: UnsafeMutablePointer<Prim>, capacity: Int) { self.p = p; self.capacity = capacity }
 
     private mutating func put(_ q: Prim) {
-        guard n < capacity else { return }
+        guard n < capacity else { dropped += 1; return }
         p[n] = q
         n += 1
     }
@@ -88,7 +89,11 @@ extension SnowField {
     /// clamp the CA path had; the ground bank and the Dock pile are bridged where they meet). Heights come from the eased `shown`
     /// arrays: they rise toward the real ones with a 0.25 s time constant and ease down with a 0.05 s one (Reduce Motion: snap down). Returns nil when nothing changed since the
     /// last write (same `pileVersion`, no easing left): the caller reuses its last buffer. `force` writes regardless (tests).
-    public func writePiles(to p: UnsafeMutablePointer<PileSeg>, capacity: Int, dt: Float, force: Bool = false) -> Int? {
+    /// Upper bound of the segments `writePiles` can emit for the current surfaces (one per bin pair, plus bridges): size the buffer from it when the window list changes.
+    public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count } + 2 * seams.count + 16 }
+
+    /// `dropped` (optional) receives the number of segments that did not fit in `capacity`.
+    public func writePiles(to p: UnsafeMutablePointer<PileSeg>, capacity: Int, dt: Float, force: Bool = false, dropped: UnsafeMutablePointer<Int>? = nil) -> Int? {
         guard force || pileVersion != pileWritten || pileEasing else { return nil }
         pileWritten = pileVersion
         let k = 1 - exp(-dt / Tuning.pileEase), kDrop = 1 - exp(-dt / 0.05), kSoft = 1 - exp(-dt / 0.12)
@@ -107,8 +112,9 @@ extension SnowField {
         pileEnds.removeAll(keepingCapacity: true)
         let bw = Tuning.binWidth
         var n = 0
+        dropped?.pointee = 0
         func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool, bank: Bool = false) {   // bank: shades like the ground bank (AO measured from the ground, not from this piece's own base)
-            guard n < capacity else { return }
+            guard n < capacity else { dropped?.pointee += 1; return }
             p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0))
             n += 1
         }
@@ -201,7 +207,7 @@ extension SnowField {
             if fillL > 0, fillL >= d.first.t - 4 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridged[0] = true }
             if fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridged[1] = true }
         }
-        for h in held where !bridged[h.side] { guard n < capacity else { break }; p[n] = h.seg; n += 1 }   // no bridge came: keep the plain ground slice
+        for h in held where !bridged[h.side] { guard n < capacity else { dropped?.pointee += 1; continue }; p[n] = h.seg; n += 1 }   // no bridge came: keep the plain ground slice
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {
             for a in pileEnds where a.id == l.left {
