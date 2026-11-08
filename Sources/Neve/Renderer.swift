@@ -43,14 +43,16 @@ let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
 struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop
-struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; };
+struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
     Instance i = inst[iid];
     float c = cos(i.rot), sn = sin(i.rot);
-    float2 l = corner * i.size * 0.5 * float2(1.0, i.kind == 2 ? 0.45 : 1.0);   // slab aspect 0.45
+    uint k = i.kind & 255u;
+    float aspect = (i.kind >> 8) > 0u ? min(float(i.kind >> 8) * 0.25 / i.size, 1.5) : 0.45;   // intact block: thickness in kind's upper bits (quarter-points); else 0.45
+    float2 l = corner * i.size * 0.5 * float2(1.0, k == 2 ? aspect : 1.0);
     float2 p = i.pos + float2(c * l.x - sn * l.y, sn * l.x + c * l.y);
     VOut o;
     o.position = float4(p / viewSize * 2.0 - 1.0, 0.0, 1.0);
@@ -59,8 +61,9 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.size = i.size;
     o.seed = i.seed;
     o.wpos = p;
-    o.kind = float(i.kind);
+    o.kind = float(k);
     o.rot = i.rot;
+    o.aspect = aspect;
     return o;
 }
 // White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
@@ -96,7 +99,7 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         // Light stays fixed while the shape turns: shading masks use the un-rotated position (world offset / half-size), clamped to the quad.
         float rc = cos(in.rot), rs = sin(in.rot);
         float2 ul = float2(rc * u.x - rs * u.y, rs * u.x + rc * u.y);
-        if (kind == 2) ul.y = clamp((rs * u.x + rc * 0.45 * u.y) / 0.45, -1.0, 1.0);
+        if (kind == 2) ul.y = clamp(rc * u.y + rs * u.x / max(in.aspect, 0.45), -1.0, 1.0);   // long thin blocks: a small tilt must not flip the lighting
         float a = 0.0;
         float3 c = float3(1.0);
         if (kind == 1) {   // clump: lumpy disc, shadowed below, whiter on top
@@ -106,7 +109,7 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
             c = mix(body, shadow, 0.35 * (1.0 - smoothstep(-0.3, 0.2, ul.y)));
             c = mix(c, float3(1.0), 0.3 * smoothstep(0.3, 0.7, ul.y));
         } else if (kind == 2) {   // slab: rounded rect (aspect 0.45, corner 0.3), white crest, bluish base, ragged bottom
-            float2 hs = float2(in.size * 0.5, in.size * 0.225);
+            float2 hs = float2(in.size * 0.5, in.size * 0.5 * in.aspect);
             float2 q = u * hs;
             float n = 0.5 + 0.25 * sin(u.x * 9.0 + seed * 40.0) + 0.25 * sin(u.x * 23.0 + seed * 70.0);
             if (u.y < 0.0) q.y -= n * hs.y * 0.3 * (-u.y);

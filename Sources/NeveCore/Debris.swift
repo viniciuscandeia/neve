@@ -23,6 +23,13 @@ extension SnowField {
             f.pos.x += f.vx * dt
             f.pos.y -= f.fall * dt
             f.rot += f.spin * dt
+            if f.amp > 0 {   // intact block: breaks only when it hits something
+                let top = slabHit(f, prevY: prevY)
+                if let top { breakSlab(f, top: top) }
+                if top != nil || f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w { debris[i] = debris[debris.count - 1]; debris.removeLast() }
+                else { trailPowder(&f, dt: dt); debris[i] = f }
+                i -= 1; continue
+            }
             if f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w
                 || (f.phase <= 0 && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale, fall: f.fall, vol: f.vol)) {
                 debris[i] = debris[debris.count - 1]

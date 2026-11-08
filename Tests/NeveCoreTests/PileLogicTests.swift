@@ -120,7 +120,7 @@ private func maxSway(calm: Bool) -> Float {
     for _ in 0..<40 { for b in stride(from: 5, to: 190, by: 2) { f.deposit(surface: i, bin: b, volume: 4) } }
     let spilled = f.debris.count   // edge spill-off is not knock-off
     f.update(windows: [])
-    #expect(f.debris.count - spilled > 10)
+    #expect(f.debris.count - spilled >= 3)   // a few intact blocks
     #expect(f.debris.dropFirst(spilled).allSatisfy { $0.vx == 0 && $0.fall == Tuning.calmDebrisFall })
     f.step(dt: 0.05)
     #expect(f.debris.dropFirst(spilled).allSatisfy { $0.fall > Tuning.calmDebrisFall })   // still falls (and accelerates)

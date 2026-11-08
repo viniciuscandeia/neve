@@ -350,11 +350,20 @@ extension SnowField {
         }
     }
 
-    /// Turns a whole pile into falling debris, inheriting some of the surface's motion.
+    /// A vanished surface's pile falls as a few intact blocks (`dropBlocks`), not as a spray: each run of snow is cut into ~60pt slabs.
     func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
-        var n = 0
-        for (b, h) in s.pile.heights.enumerated() where s.pile.visible[b] { n += shedBin(col: s.c0 + b, edgeY: s.edgeY + s.pile.base[b], from: 0, amount: h, velocity: v) }
-        return n + flushRuns()
+        guard !silent else { return 0 }
+        var n = 0, b = 0
+        let count = s.pile.heights.count
+        func solid(_ k: Int) -> Bool { s.pile.visible[k] && s.pile.heights[k] > 0.5 }
+        while b < count {
+            guard solid(b) else { b += 1; continue }
+            var e = b
+            while e < count, solid(e) { e += 1 }
+            n += dropBlocks(s, from: b, to: e, velocity: v)
+            b = e
+        }
+        return n
     }
 
     /// Releases the bins whose (x-ordered, jittered) rank lies in (from, to].
