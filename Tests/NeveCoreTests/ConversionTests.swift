@@ -75,13 +75,3 @@ private func numbers(_ w: [RawWindow], exclude: Set<Int> = []) -> [Int] {
     #expect(!mostlyOffscreen(CGRect(x: 1300, y: 0, width: 400, height: 300), screens: s + [CGRect(x: 1440, y: 0, width: 1000, height: 900)]))  // spans two screens
     #expect(!mostlyOffscreen(CGRect(x: 5000, y: 0, width: 10, height: 10), screens: []))
 }
-
-@Test func burstPollIsBounded() {
-    var b = BurstPoll()
-    #expect(!b.active(now: 0))
-    b.trigger(now: 10)
-    #expect(b.active(now: 10.5))
-    #expect(!b.active(now: 11.01))
-    b.trigger(now: 10.9)   // retrigger extends, never accumulates
-    #expect(b.active(now: 11.8) && !b.active(now: 11.91))
-}

@@ -48,11 +48,87 @@ public func mostlyOffscreen(_ frame: CGRect, screens: [CGRect], minVisible: CGFl
     return seen / area < minVisible
 }
 
-/// Bounded fast-poll window: `trigger` on a click / Space change; the caller polls every `interval` while `active`.
-public struct BurstPoll: Sendable {
-    public static let interval = 0.05, duration = 1.0
-    public private(set) var until = -Double.infinity
+/// The window the user is dragging: the unique one that moved by what the mouse moved over the SAME interval (global points,
+/// |Δwindow − Δmouse| < `tol`), at a constant size. Zero or several compatible windows -> nil (no extrapolation, no exemptions).
+public func dragTarget(prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVector, tol: CGFloat = 8) -> Int? {
+    var found: Int?
+    for w in cur where w.number > 0 {
+        guard let p = prev.first(where: { $0.number == w.number }),
+              abs(p.frame.width - w.frame.width) < 0.5, abs(p.frame.height - w.frame.height) < 0.5 else { continue }
+        let dx = w.frame.minX - p.frame.minX, dy = w.frame.minY - p.frame.minY
+        guard abs(dx) > 0.5 || abs(dy) > 0.5, hypot(dx - mouseDelta.dx, dy - mouseDelta.dy) < tol else { continue }
+        if found != nil { return nil }
+        found = w.number
+    }
+    return found
+}
+
+public struct PollReasons: OptionSet, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let windows = PollReasons(rawValue: 1), dock = PollReasons(rawValue: 2), geometry = PollReasons(rawValue: 4)
+}
+
+/// Pure cadence of window reads. Everything funnels through here: at most one read per `minGap` (30/s cap), whoever asks.
+/// Idle: only explicit requests (events, the 2 s safety poll). A transition (AX event, app activate / hide / launch, Space change,
+/// click on the desktop) starts a ~20 Hz burst that ends after a `guardTime` AND two identical snapshots in a row, or at `hardCap`.
+/// A drag (a frame moved while the button is held) samples at ~25 Hz for as long as movement continues; releasing runs the settle tail.
+/// The caller asks `nextDue`, sleeps until then, calls `take`, performs the read and reports it with `didRead`.
+public struct PollScheduler: Sendable {
+    public static let minGap = 1.0 / 30, burstGap = 0.05, dragGap = 0.04, guardTime = 0.25, hardCap = 1.5, maxRetries = 3
+    public private(set) var pending: PollReasons = []
+    public private(set) var held = false, dragging = false
+    private var lastRead = -Double.infinity, burstStart = -Double.infinity, burstOn = false, identical = 0, failures = 0
     public init() {}
-    public mutating func trigger(now: Double) { until = now + Self.duration }
-    public func active(now: Double) -> Bool { now < until }
+
+    public mutating func request(_ r: PollReasons) { pending.formUnion(r) }
+
+    /// Fresh baseline: the burst clock and the identical-snapshot count restart.
+    public mutating func transition(now: Double) { pending.insert(.windows); burstStart = now; burstOn = true; identical = 0 }
+
+    public mutating func mouseDown(now: Double, onDesktop: Bool) {
+        held = true
+        if onDesktop { transition(now: now) } else { request(.windows) }
+    }
+    public mutating func mouseDragged() { if held { request(.windows) } }
+    public mutating func mouseUp(now: Double, onDesktop: Bool) {
+        held = false
+        if dragging { dragging = false; transition(now: now) }
+        else if onDesktop { transition(now: now) } else { request(.windows) }
+    }
+
+    public func burstActive(now: Double) -> Bool {
+        dragging || (burstOn && now - burstStart < Self.hardCap && !(now - burstStart >= Self.guardTime && identical >= 2))
+    }
+
+    /// Earliest time the next read may run; nil = nothing wanted.
+    public func nextDue(now: Double) -> Double? {
+        var want = Double.infinity
+        if !pending.isEmpty { want = lastRead + Self.minGap }
+        if burstActive(now: now) { want = min(want, lastRead + (dragging ? Self.dragGap : Self.burstGap)) }
+        return want < .infinity ? max(want, lastRead + Self.minGap) : nil
+    }
+
+    /// The reasons to act on now (a burst tick always reads the windows), or nil if not yet due.
+    public mutating func take(now: Double) -> PollReasons? {
+        guard let due = nextDue(now: now), now >= due - 0.0005 else { return nil }
+        var r = pending
+        if burstActive(now: now) { r.insert(.windows) }
+        pending = []; lastRead = now
+        return r
+    }
+
+    /// `ok` false = CGWindowList failed (not an empty list): keep the last snapshot and retry a few times.
+    /// `changed` = differs from the previous snapshot; `frameMoved` = some window's frame changed (same id).
+    public mutating func didRead(ok: Bool, changed: Bool, frameMoved: Bool) {
+        guard ok else {
+            failures += 1
+            if failures <= Self.maxRetries { pending.insert(.windows) } else { failures = 0 }
+            return
+        }
+        failures = 0
+        identical = changed ? 0 : identical + 1
+        if held, frameMoved { dragging = true }
+        else if dragging, held, identical >= 3 { dragging = false }   // stopped moving mid-hold: back to events only
+    }
 }

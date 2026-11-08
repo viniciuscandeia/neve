@@ -190,13 +190,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private var pileSeen = -1
-    private var lastWindows: [WindowInfo] = [], lastChange: CFTimeInterval = 0
-    func update(windows: [WindowInfo]) {
-        // Time since the last *changed* list (identical polls must not shrink it), clamped like the old wall-clock path.
+    private var lastWindows: [WindowInfo] = []
+    private var confirmedDrag: Int?   // the window being dragged by the mouse (main confirms it); only that one is extrapolated
+    /// Space switch: no deposits on window surfaces until the next snapshot reconciles.
+    func markStale() { field.markStale() }
+    func update(windows: [WindowInfo], dragTarget: Int? = nil) {
         let now = CACurrentMediaTime()
-        field.update(windows: windows, dt: Float(min(max(now - lastChange, 1.0 / 240), 0.5)))
+        field.update(windows: windows, now: now)   // each window's dt = its own time since its last sample
+        confirmedDrag = dragTarget
         let changed = windows != lastWindows
-        if changed { lastWindows = windows; lastChange = now; fastUntil = now + 0.5; wake() }
+        if changed { lastWindows = windows; fastUntil = now + 0.5; wake() }
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
         pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
@@ -454,7 +457,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
         lastCursor = cursor
         Perf.add(.input, t0); t0 = Perf.now()
-        let drag = field.draggingID
+        let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
         // A dragged window follows the mouse 1:1: its pile segments, figures and balls shift by the mouse delta since the last poll (a shader uniform).
         // After release the last offset is held until the next poll reconciles with the real bounds.
         if drag != nil, NSEvent.pressedMouseButtons != 0 {

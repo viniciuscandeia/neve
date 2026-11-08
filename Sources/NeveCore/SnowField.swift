@@ -8,6 +8,8 @@ public final class SnowField {
     private(set) var groundY: Float
     private(set) var visibleTop: Float
     var boundsDirty = false
+    public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
+    var clock = 0.0, stamps: [Int: Double] = [:]   // monotonic time and each window's last sample, for per-window dt
     public internal(set) var flakes: [Flake] = []
     public internal(set) var debris: [Flake] = []
     var glints: [Flake] = []     // sparkles on pile crests (Effects.swift), kept out of `debris`
@@ -155,6 +157,7 @@ public final class SnowField {
     }
 
     /// Space switch: windows vanish all at once. Drop piles without debris (and mute knock-offs briefly).
+    public func markStale() { windowsStale = true }
     public func dropPiles() {
         silentUntil = time + 1.5
         let n = balls.count
