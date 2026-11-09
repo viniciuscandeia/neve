@@ -8,7 +8,7 @@ struct SVOut { float4 position [[position]]; float2 p; uint id [[flat]]; };
 vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant PileSeg *segs [[buffer(0)]],
                         constant float2 &viewSize [[buffer(1)]], constant float2 &dragOffset [[buffer(2)]]) {
     PileSeg s = segs[iid];
-    float2 lo = float2(s.x0 - 1.0, min(s.base0, s.base1) - 6.0), hi = float2(s.x1 + 1.0, max(s.top0, s.top1) + 4.0);
+    float2 lo = float2(s.x0 - ((s.dragged & 4) != 0 ? 0.0 : 1.0), min(s.base0, s.base1) - 6.0), hi = float2(s.x1 + ((s.dragged & 8) != 0 ? 0.0 : 1.0), max(s.top0, s.top1) + 4.0);
     float2 corner = float2((vid & 1) ? 1.0 : 0.0, (vid & 2) ? 1.0 : 0.0);
     float2 p = mix(lo, hi, corner);
     SVOut o;
