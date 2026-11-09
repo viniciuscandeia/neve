@@ -191,3 +191,32 @@ private func maxSway(calm: Bool) -> Float {
     #expect(f.pilesSettled)                          // eased to the end: the link may sleep
     #expect(!f.isBusy)
 }
+
+// Smoothed end slopes: stride matches the Metal struct (10 x 4 bytes); neighbours share n; run ends keep their own slope.
+@Test func pileSegNormalsAreContinuous() {
+    #expect(MemoryLayout<PileSeg>.stride == 40)
+    let f = makeField()
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for _ in 0..<40 { for b in 100..<140 { f.deposit(surface: i, bin: b, volume: 3 + Float(b % 7)) } }
+    let s = pileSegs(f).filter { $0.dragged == 0 && $0.top0 > 300 && $0.x0 > 300 && $0.x1 < 700 }
+    #expect(s.count > 10)
+    var joined = 0
+    for k in 0..<(s.count - 1) where abs(s[k].x1 - s[k + 1].x0) < 1e-3 {
+        #expect(s[k].n1 == s[k + 1].n0)
+        #expect(abs(s[k].n1 - (s[k].slope + s[k + 1].slope) / 2) < 1e-4)
+        joined += 1
+    }
+    #expect(joined > 5)
+}
+
+@Test func pileSegRunEndsKeepOwnSlope() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for _ in 0..<40 { for b in 100..<140 { f.deposit(surface: i, bin: b, volume: 3) } }
+    let s = pileSegs(f).filter { $0.x0 > 300 && $0.x1 < 700 && $0.top0 > 300 }
+    #expect(!s.isEmpty)
+    #expect(s.first!.n0 == s.first!.slope)
+    #expect(s.last!.n1 == s.last!.slope)
+}
