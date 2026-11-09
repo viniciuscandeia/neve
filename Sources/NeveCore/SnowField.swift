@@ -82,6 +82,8 @@ public final class SnowField {
     /// Profiling only (nil = free): seconds clock; time spent in `stepFlakes` accumulates in `flakeSeconds` (reader zeroes it) over `flakeSteps` calls.
     public var timer: (() -> Double)?
     public var flakeSeconds = 0.0, flakeSteps = 0
+    /// Profiling only (needs `timer`): `writePiles` split into easing / contour (runs, bridges, seams) / n0-n1 joins; the reader zeroes it.
+    public var pileSeconds = (ease: 0.0, contour: 0.0, join: 0.0)
     public var optionHeld = false        // the overlay reports the ⌥ key every frame
     var carrots: [Carrot] = []           // stolen noses lying on a pile or falling (Figures+Rabbit.swift)
     var shotLand: (p: SIMD2<Float>, t: Float)?, impactAt: (x: Float, y: Float, t: Float)?   // last landings (robin startle)

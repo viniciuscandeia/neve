@@ -19,6 +19,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private static let forceMotion = ProcessInfo.processInfo.environment["NEVE_REDUCE_MOTION"] == "1"   // perf / tests: behave as if Reduce Motion is on
 
     let screen: NSScreen
+    private var perf: Perf.Meter?   // NEVE_PERF=1 only
     private let field: SnowField
     private let gpu: Gpu
     private let window: NSWindow
@@ -156,7 +157,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         apply(prefs)
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
         field.setIntensity(prefs.intensity, immediate: true)
-        if Perf.on { field.timer = Perf.seconds }
+        if Perf.on {
+            field.timer = Perf.seconds
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0
+            perf = Perf.Meter(label: "screen\(id) \(Int(frame.width))x\(Int(frame.height))")
+        }
         intro()
     }
 
@@ -464,7 +469,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
-        guard window.isVisible else { return }
+        perf?.bump(.ticks)
+        guard window.isVisible else { perf?.bump(.hidden); return }
         dirty = false
         var t0 = Perf.now()
         let now = time, resumed = lastTimestamp == 0
@@ -474,7 +480,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         frameDt = Float(dt)
         field.music = prefs.music ? MusicTap.shared.read() : .silent
         if !still { field.step(dt: Float(dt) * Self.slowmo) }
-        Perf.add(.step, t0); t0 = Perf.now()
+        perf?.add(.step, t0); t0 = Perf.now()
         // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
         let cursor = sceneKind == nil ? NSEvent.mouseLocation : CGPoint(x: -1e5, y: -1e5)   // scenes ignore the real cursor: the same story every time
         let option = sceneKind == nil && NSEvent.modifierFlags.contains(.option)
@@ -493,7 +499,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         refreshDay(now: now)
         field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
         lastCursor = cursor
-        Perf.add(.input, t0); t0 = Perf.now()
+        perf?.add(.input, t0); t0 = Perf.now()
         let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
         // A dragged window follows the mouse 1:1: its pile segments, figures and balls shift by the mouse delta since the last poll (a shader uniform).
         // After release the last offset is held until the next poll reconciles with the real bounds.
@@ -502,9 +508,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             shiftID = drag
             shift = SIMD2(Float(m.x - pollMouse.x), Float(m.y - pollMouse.y))
         }
-        Perf.add(.pile, t0)
+        perf?.add(.drag, t0)
         render(drawable)
-        Perf.frame(field)
+        perf?.frame(field, "paused=\(link?.isPaused ?? true) occluded=\(occluded) slow=\(slow)")
         // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
         if moved.x * moved.x + moved.y * moved.y > 60 * 60 || held != nil || field.isBusy { fastUntil = now + 0.5 }
         let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
@@ -585,9 +591,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private func render(_ drawable: CAMetalDrawable) {
         let g = shrunk ?? CGRect(origin: .zero, size: frame.size)   // MARK: P3-0
         // A drawable made before a resize has the old size: skip it (the next one matches).
-        guard drawable.texture.width == Int((g.width * scale).rounded()), drawable.texture.height == Int((g.height * scale).rounded()) else { return }
-        guard inFlight.wait(timeout: .now()) == .success else { return }   // never block the main thread
+        perf?.bump(.renders)
+        guard drawable.texture.width == Int((g.width * scale).rounded()), drawable.texture.height == Int((g.height * scale).rounded()) else { perf?.bump(.skipSize); return }
+        guard inFlight.wait(timeout: .now()) == .success else { perf?.bump(.skipSlot); return }   // never block the main thread
         guard let cmd = gpu.queue.makeCommandBuffer() else {
+            perf?.bump(.skipCmd)
             inFlight.signal()
             return
         }
@@ -596,15 +604,15 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         var t0 = Perf.now()
         let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
 
-        Perf.add(.write, t0); t0 = Perf.now()
-        Perf.setInstances(count)
+        perf?.add(.write, t0); t0 = Perf.now()
+        perf?.setInstances(count)
         let pbuf = primBuffers[(bufferIndex + 2) % 3]   // bufferIndex already advanced: the same ring slot as `buffer`
         var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: primCapacity)
         t0 = Perf.now()
         writePrims(&w)
         if w.dropped > 0 { primWant = max(primWant, primCapacity + w.dropped) }
-        Perf.truncated(prims: w.dropped)
-        Perf.add(.actors, t0); t0 = Perf.now()
+        perf?.truncated(prims: w.dropped)
+        perf?.add(.actors, t0); t0 = Perf.now()
         pass.colorAttachments[0].texture = drawable.texture
         let slot = (pileSlot + 1) % pileBuffers.count
         t0 = Perf.now()
@@ -613,9 +621,10 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if let n = field.writePiles(to: pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), capacity: pileCapacity, dt: frameDt, force: pileForce, dropped: &pileDropped) {
             pileSlot = slot
             pileCount = n
-        }
-        Perf.truncated(piles: pileDropped)
-        Perf.add(.pile, t0); t0 = Perf.now()
+            perf?.add(.pile, t0); perf?.bump(.pileWrites); perf?.setSegs(n)
+        } else { perf?.bump(.pileHits) }
+        perf?.truncated(piles: pileDropped)
+        t0 = Perf.now()
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
             // Shaders always work in whole-screen coordinates; the viewport slides the screen under the (smaller) drawable.
@@ -648,9 +657,10 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.endEncoding()
         }
         cmd.present(drawable)
-        let sem = inFlight
-        cmd.addCompletedHandler { c in Perf.gpuDone(c); sem.signal() }
+        let sem = inFlight, meter = perf
+        cmd.addCompletedHandler { c in meter?.gpuDone(c); sem.signal() }
         cmd.commit()
-        Perf.add(.encode, t0)
+        perf?.bump(.commits)
+        perf?.add(.encode, t0)
     }
 }
