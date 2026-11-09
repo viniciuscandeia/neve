@@ -109,7 +109,9 @@ import Testing
     #expect(t.target == 1)
     t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 5, dy: 0), screens: screens)    // jitter: kept
     #expect(t.target == 1)
-    t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 60, dy: 0), screens: screens)   // mouse moved, window did not
+    t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 60, dy: 0), screens: screens)   // mouse moved, window did not: one stale read is not enough
+    #expect(t.target == 1)
+    t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 60, dy: 0), screens: screens)   // twice: pinned
     #expect(t.target == nil)
     t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 60, dy: 0), screens: screens)
     #expect(t.target == nil)

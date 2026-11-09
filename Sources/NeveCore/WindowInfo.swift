@@ -80,6 +80,7 @@ public func dragPlausible(at p: CGPoint, windows: [WindowInfo], titleStrip: CGFl
 public struct DragTracker: Sendable {
     public private(set) var target: Int?, exempt: Int?
     private var pinned: Int?   // the held target while the window is not following the mouse
+    private var stillReads = 0  // consecutive reads with the mouse moving and the target not (one can be a stale window-server frame)
     public init() {}
 
     public mutating func pressed(at p: CGPoint, windows: [WindowInfo]) {
@@ -88,12 +89,15 @@ public struct DragTracker: Sendable {
 
     /// One window read. `moved` = some frame changed since `prev`; `mouseDelta` = mouse movement over the same interval.
     public mutating func read(down: Bool, moved: Bool, prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVector, screens: [CGRect]) {
-        if !down { target = nil; pinned = nil }
-        else if moved, let d = dragTarget(prev: prev, cur: cur, mouseDelta: mouseDelta) { target = d; pinned = nil; exempt = d }
+        if !down { target = nil; pinned = nil; stillReads = 0 }
+        else if moved, let d = dragTarget(prev: prev, cur: cur, mouseDelta: mouseDelta) { target = d; pinned = nil; exempt = d; stillReads = 0 }
         else if let t = target ?? pinned, let p = prev.first(where: { $0.number == t }), let c = cur.first(where: { $0.number == t }),
                 abs(c.frame.minX - p.frame.minX) < 0.5, abs(c.frame.minY - p.frame.minY) < 0.5, hypot(mouseDelta.dx, mouseDelta.dy) > 8 {
-            pinned = t; target = nil   // the mouse moved but the window did not (stopped at the menu bar / a screen edge): no pile offset until it moves again
-        }
+            // The mouse moved but the window did not (stopped at the menu bar / a screen edge): no pile offset until it moves again.
+            // Two reads in a row: the window server can hand back the same frame once during a fast drag.
+            stillReads += 1
+            if stillReads >= 2 { pinned = t; target = nil }
+        } else { stillReads = 0 }
         if let e = exempt {
             if let w = cur.first(where: { $0.number == e }), mostlyOffscreen(w.frame, screens: screens) { return }
             exempt = nil

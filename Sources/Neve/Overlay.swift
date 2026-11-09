@@ -217,7 +217,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
         pollMouse = mouse ?? NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
-        measureCover(covering ?? windows)  
+        measureCover(covering ?? windows)
     }
     /// Poll rate, outside the frame path: size the prim / pile buffers from the demand (old ones stay alive in any in-flight command buffer).
     private func growBuffers() {
@@ -251,7 +251,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let o = frame.origin
         let rects = windows.filter { $0.number != 0 && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
         let c = coverage(of: rects, in: vis)
-        coverFraction = c.fraction; 
+        coverFraction = c.fraction;
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
         for i in 0..<8 { occ[i] = .zero }
@@ -487,7 +487,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let realDt = lastTimestamp == 0 ? 1.0 / 60 : now - lastTimestamp   // real elapsed time: pointer speed and sweep use it, never the clamped step
         let dt = min(realDt, 0.06)   // 20 fps (economy, calm) steps 0.05
         lastTimestamp = now
-        advanceCover(now)  
+        advanceCover(now)
         frameDt = Float(dt)
         // Cursor first, simulation after: the flakes, figures and piles of this frame already see this frame's pointer.
         // One sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
@@ -608,7 +608,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func render(_ drawable: CAMetalDrawable) {
-        let g = shrunk ?? CGRect(origin: .zero, size: frame.size)  
+        let g = shrunk ?? CGRect(origin: .zero, size: frame.size)
         // A drawable made before a resize has the old size: skip it (the next one matches).
         perf?.bump(.renders)
         guard drawable.texture.width == Int((g.width * scale).rounded()), drawable.texture.height == Int((g.height * scale).rounded()) else { perf?.bump(.skipSize); return }
@@ -672,7 +672,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             var streakDt = frameDt * Self.slowmo   // streak length = distance per SIM frame, so it matches the (slowed) velocity
             enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
-            occ[8] = SIMD4(occStrength, (0..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, 0, 0)
+            occ[8] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, 0, 0)   // rects 0-3 only mask with strength > 0; 4-7 always
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()
