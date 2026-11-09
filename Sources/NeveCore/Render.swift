@@ -93,6 +93,7 @@ extension SnowField {
     /// Upper bound of the segments `writePiles` can emit for the current surfaces (one per bin pair, plus bridges): size the buffer from it when the window list changes.
     public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count } + 2 * seams.count + 16 }
 
+    /// Note: `shown`, `pileWritten` and `pileEasing` are presentation state (what was last drawn, and the easing toward the real heights), kept in the core so the output stays testable.
     /// `dropped` (optional) receives the number of segments that did not fit in `capacity`.
     public func writePiles(to p: UnsafeMutablePointer<PileSeg>, capacity: Int, dt: Float, force: Bool = false, dropped: UnsafeMutablePointer<Int>? = nil) -> Int? {
         guard force || pileVersion != pileWritten || pileEasing else { return nil }

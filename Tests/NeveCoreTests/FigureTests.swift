@@ -170,13 +170,13 @@ private func windowTop(_ f: SnowField, id: Int, h: Float = 12) {
     #expect(g.pickSnowball(at: CGPoint(x: CGFloat(head.x), y: CGFloat(head.y))) == nil && g.figures.count == 1)
 }
 
-@Test func figuresDoNotChurnTheBallsVersion() {
+@Test func standingFiguresLeaveTheBallsAlone() {
     let f = field()
     stand(f, x: 300); stand(f, x: 700)
     advance(f, 1)
-    let v = f.ballsVersion
+    let before = f.balls
     advance(f, 20)
-    #expect(f.ballsVersion == v)
+    #expect(f.balls == before)
 }
 
 @Test func looseBallsBounceOffAStandingFigure() {

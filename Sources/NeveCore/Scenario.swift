@@ -29,9 +29,7 @@ extension SnowField {
             if figures[i].fromBalls || figures[i].headless { removeFigure(i) }
             i -= 1
         }
-        let before = balls.count
         balls.removeAll { $0.state != .held }
-        if balls.count != before { ballsVersion &+= 1 }
         let kept = figures.filter { $0.fromBalls && $0.kind == .snowman }
         var xs = [mid - 75, mid + 75]
         if let k = kept.first { xs = [k.foot.x < mid ? mid + 75 : mid - 75] }

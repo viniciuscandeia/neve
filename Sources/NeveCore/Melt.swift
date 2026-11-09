@@ -27,7 +27,6 @@ extension SnowField {
         fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); carrots.removeAll(keepingCapacity: true)
         for i in icicles.indices { icicles[i].dying = true }
         if let k = figures.firstIndex(where: { $0.kind == .sleigh }) { removeFigure(k) }
-        figuresVersion &+= 1
     }
 
     func stepMelt(dt: Float) {
@@ -49,7 +48,7 @@ extension SnowField {
             guard i < figures.count else { continue }
             if figures[i].kind != .snowman {
                 figures[i].melt -= dt
-                if figures[i].melt <= 0 { removeFigure(i) } else { figuresVersion &+= 1 }
+                if figures[i].melt <= 0 { removeFigure(i) }
                 continue
             }
             guard figures[i].phase != .collapsing else { continue }
@@ -62,11 +61,8 @@ extension SnowField {
                 figures[i].radii = k.radii * exp(-0.9 * p / 0.55)   // sags
                 figures[i].built = min(k.built, max(3, Snowman.stageCount - Int(p / 0.55 * 4.99)))   // scarf, arms, nose, coal go first
             }
-            figuresVersion &+= 1
         }
-        var started = false
-        for k in balls.indices where !balls[k].melting && balls[k].state != .held && meltT >= meltDur * 0.4 * Self.hash01(balls[k].id) { balls[k].melting = true; started = true }
-        if started { ballsVersion &+= 1 }
+        for k in balls.indices where !balls[k].melting && balls[k].state != .held && meltT >= meltDur * 0.4 * Self.hash01(balls[k].id) { balls[k].melting = true }
     }
 
     /// Whatever is left (frost lips, a held ball, stray debris) goes at once.

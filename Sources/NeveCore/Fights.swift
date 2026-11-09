@@ -56,7 +56,6 @@ extension SnowField {
                 let right: Float = figures[j].foot.x >= figures[i].foot.x ? 1 : -1
                 figures[i].facing = right; figures[j].facing = -right
                 fights.append(Fight(a: figures[i].id, b: figures[j].id))
-                figuresVersion &+= 1   // facing changed
                 break
             }
             if fights.count >= Tuning.maxFights { return }
@@ -227,10 +226,8 @@ extension SnowField {
         b.spin = -dir * Tuning.headSpin
         b.vel = SIMD2(dir * 110, 200)
         balls.append(b)
-        ballsVersion &+= 1
         figures[j].headless = true
         figures[j].motion.cheer = 0
-        figuresVersion &+= 1
         if !figures[j].fromBalls { snowmanCooldown = Tuning.snowmanCooldown }
     }
 }

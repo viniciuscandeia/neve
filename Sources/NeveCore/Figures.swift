@@ -121,7 +121,6 @@ extension SnowField {
         f.motion.phase = Float.random(in: 0..<6, using: &rng)
         f.phase = built < Snowman.stageCount ? .building : .idle
         figures.append(f)
-        figuresVersion &+= 1
         return f.id
     }
 
@@ -136,7 +135,6 @@ extension SnowField {
         let gone = (b.id, balls[mi].id, balls[hi].id)
         guard let fid = addFigure(fromBalls: true, radii: radii, built: Snowman.stageCount, surface: sid, x: b.pos.x) else { return nil }
         balls.removeAll { $0.id == gone.0 || $0.id == gone.1 || $0.id == gone.2 }
-        ballsVersion &+= 1
         return fid
     }
 
@@ -162,7 +160,6 @@ extension SnowField {
             balls.append(b)
         }
         removeFigure(j)
-        ballsVersion &+= 1
         return (bottom, top)
     }
 
@@ -190,7 +187,6 @@ extension SnowField {
         figures[j].phase = .collapsing; figures[j].phaseT = 0; figures[j].fade = 1
         figures[j].fight = nil; figures[j].pose = Pose()
         snowmanCooldown = Tuning.snowmanCooldown
-        figuresVersion &+= 1
     }
 
     /// Drops figure `j` from the world; a fight it was in ends (the other one rests).
@@ -198,7 +194,6 @@ extension SnowField {
         endFights(of: figures[j].id)
         if figures[j].kind != .snowman { director.ended(figures[j].kind, at: time) }
         figures.remove(at: j)
-        figuresVersion &+= 1
     }
 
     /// Figures a user can grab: stacks they built, and any body that lost its head.
@@ -234,7 +229,6 @@ extension SnowField {
         figures[j].radii.z = radius
         figures[j].stageAge = 0
         figures[j].motion.rest = 0
-        figuresVersion &+= 1
     }
 
     // MARK: Simulation
@@ -248,11 +242,7 @@ extension SnowField {
         if !animate, !fights.isEmpty || !shots.isEmpty { fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true) }
         var i = 0
         while i < figures.count {
-            let before = figures[i]
             guard stepFigure(i, dt, animate: animate) else { continue }
-            let f = figures[i]
-            if f.foot != before.foot || f.pose != before.pose || f.facing != before.facing || f.phase != before.phase || f.built != before.built
-                || f.kind != .snowman || f.carrot != before.carrot || f.headless != before.headless || f.droop != before.droop || f.headTilt != before.headTilt || f.fade != before.fade || f.stageAge < 0.35 { figuresVersion &+= 1 }
             i += 1
         }
         if animate, !melting {
@@ -331,7 +321,7 @@ extension SnowField {
             let n = surfaces[ni]
             if SnowField.shedFraction(v: n.vel, prev: o.vel) > 0.5 { knockOff(i, n.vel * 0.5); continue }
             let dx = Float(n.frame.minX - o.frame.minX)
-            if dx != 0 { figures[i].foot.x += dx; figures[i].at = .surface(id: sid, x: figures[i].foot.x); figuresVersion &+= 1 }
+            if dx != 0 { figures[i].foot.x += dx; figures[i].at = .surface(id: sid, x: figures[i].foot.x) }
         }
     }
 

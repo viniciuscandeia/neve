@@ -97,7 +97,6 @@ extension SnowField {
         if let (j, d2) = figureTop(at: q, slack: 4), d2 < bestD, let ids = demote(figures[j].id), let k = index(of: ids.top) { best = k }
         guard let i = best else { return nil }
         balls[i].state = .held; balls[i].parent = nil; balls[i].surfaceID = nil; balls[i].vel = .zero; balls[i].spin = 0
-        ballsVersion &+= 1
         return balls[i].id
     }
 
@@ -111,7 +110,6 @@ extension SnowField {
         var live = 0
         for x in balls where !x.melting { live += 1 }
         if live > Tuning.maxBalls, let k = balls.firstIndex(where: { !$0.melting && $0.state != .held }) { balls[k].melting = true }
-        ballsVersion &+= 1
         return b.id
     }
 
@@ -138,7 +136,7 @@ extension SnowField {
             b.pos = q
         }
         if dt > 0 { b.vel = b.vel * 0.5 + (b.pos - balls[i].pos) / dt * 0.5 }
-        if b != balls[i] { balls[i] = b; ballsVersion &+= 1 }
+        balls[i] = b
     }
 
     /// Lets go: the ball falls (with the throw velocity) and lands on a surface or another ball.
@@ -146,7 +144,6 @@ extension SnowField {
         guard let i = index(of: id), balls[i].state == .held else { return }
         balls[i].state = .falling
         balls[i].vel = (throwing ? balls[i].vel : .zero).limited(600)
-        ballsVersion &+= 1
     }
 
     // MARK: Simulation
@@ -159,7 +156,6 @@ extension SnowField {
             balls[i].rotation += balls[i].spin * dt
             balls[i].spin *= exp(-4 * dt)
             if abs(balls[i].spin) < 0.2 { balls[i].spin = 0 }
-            ballsVersion &+= 1
         }
         for _ in 0..<2 {   // stacks are at most 3 high: two passes settle children after parents
             for i in balls.indices where balls[i].state == .resting && balls[i].parent != nil { follow(i) }
@@ -173,14 +169,12 @@ extension SnowField {
         for i in balls.indices where balls[i].melting {
             balls[i].fade -= dt / 0.6
             if balls[i].fade <= 0 { gone = true }
-            ballsVersion &+= 1
         }
         if gone { balls.removeAll { $0.fade <= 0 } }
     }
 
     private func setFalling(_ i: Int, _ v: SIMD2<Float>) {
         balls[i].state = .falling; balls[i].surfaceID = nil; balls[i].parent = nil; balls[i].vel = v
-        ballsVersion &+= 1
     }
 
     /// On a surface: follows the pile top; falls when that column is no longer visible snow ground.
@@ -196,18 +190,18 @@ extension SnowField {
                 else if c + d < s.pile.heights.count, s.pile.visible[c + d], s.pile.cap[c + d] - s.pile.heights[c + d] >= need { dir = 1 }
                 d += 1
             }
-            if dir != 0 { balls[i].pos.x += dir * 90 * dt; balls[i].rotation += dir * 90 * dt / balls[i].radius; ballsVersion &+= 1 }
+            if dir != 0 { balls[i].pos.x += dir * 90 * dt; balls[i].rotation += dir * 90 * dt / balls[i].radius }
         }
         var sum: Float = 0, n: Float = 0
         for k in max(0, c - 2)...min(s.pile.heights.count - 1, c + 2) { sum += s.pile.heights[k]; n += 1 }
         let y = s.edgeY + s.pile.base[c] + sum / n + balls[i].radius * SnowField.sink
-        if abs(y - balls[i].pos.y) > 0.01 { balls[i].pos.y = y; ballsVersion &+= 1 }
+        if abs(y - balls[i].pos.y) > 0.01 { balls[i].pos.y = y }
     }
 
     private func follow(_ i: Int) {
         guard let p = balls[i].parent, let j = index(of: p) else { setFalling(i, .zero); return }
         let pos = SIMD2(balls[j].pos.x, balls[j].pos.y + balls[j].radius + balls[i].radius - SnowField.stackOverlap)
-        if pos != balls[i].pos || balls[i].surfaceID != balls[j].surfaceID { balls[i].pos = pos; balls[i].surfaceID = balls[j].surfaceID; ballsVersion &+= 1 }
+        if pos != balls[i].pos || balls[i].surfaceID != balls[j].surfaceID { balls[i].pos = pos; balls[i].surfaceID = balls[j].surfaceID }
     }
 
     private func fall(_ i: Int, _ dt: Float) {
@@ -235,7 +229,7 @@ extension SnowField {
             landed = true
             break
         }
-        if !landed, hitFigures(&b) { landed = true; if b.melting { balls[i] = b; ballsVersion &+= 1; return } }
+        if !landed, hitFigures(&b) { landed = true; if b.melting { balls[i] = b; return } }
         if !landed, let (si, _, top) = supportTop(x: b.pos.x, fromY: prev.y),
            b.pos.y <= top + b.radius * SnowField.sink {
             b.pos.y = top + b.radius * SnowField.sink
@@ -243,7 +237,6 @@ extension SnowField {
         }
         if b.pos.y < -b.radius * 2 { balls[i].melting = true; balls[i].fade = 0; balls[i].state = .falling; return }
         balls[i] = b
-        ballsVersion &+= 1
     }
 
     /// A falling ball against the standing figures: a head that fits lands back on a headless body (and is used up),
@@ -278,7 +271,7 @@ extension SnowField {
             let n = surfaces[ni]
             if SnowField.shedFraction(v: n.vel, prev: o.vel) > 0.5 { setFalling(i, n.vel * 0.5); continue }
             let dx = Float(n.frame.minX - o.frame.minX)
-            if dx != 0 { balls[i].pos.x += dx; ballsVersion &+= 1 }
+            if dx != 0 { balls[i].pos.x += dx }
         }
     }
 
@@ -295,7 +288,6 @@ extension SnowField {
             guard ex * ex + ey * ey <= (r + balls[i].radius) * (r + balls[i].radius) else { continue }
             pop(i, v)
         }
-        ballsVersion &+= 1
     }
 
     func pop(_ i: Int, _ v: SIMD2<Float>) {

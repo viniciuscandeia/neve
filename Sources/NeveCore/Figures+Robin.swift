@@ -84,7 +84,6 @@ extension SnowField {
         f.robin = r
         f.facing = fromLeft ? 1 : -1
         figures.append(f)
-        figuresVersion &+= 1
         return true
     }
 

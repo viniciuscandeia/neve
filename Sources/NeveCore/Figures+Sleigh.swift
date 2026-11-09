@@ -89,7 +89,6 @@ extension SnowField {
         f.built = 0; f.facing = d; f.phase = .walking
         f.sleigh = s
         figures.append(f)
-        figuresVersion &+= 1
         return true
     }
 
