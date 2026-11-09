@@ -653,6 +653,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.setRenderPipelineState(gpu.flakes)
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
+            enc.setVertexBytes(&frameDt, length: MemoryLayout<Float>.size, index: 2)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
             occ[8] = SIMD4(occStrength, 0, 0, 0)
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }

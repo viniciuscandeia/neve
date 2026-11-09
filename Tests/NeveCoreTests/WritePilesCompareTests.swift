@@ -11,7 +11,7 @@ private func blank() -> [PileSeg] { [PileSeg](repeating: PileSeg(x0: -7, x1: -7,
 
 private func same(_ a: PileSeg, _ b: PileSeg) -> Bool {
     a.x0 == b.x0 && a.x1 == b.x1 && a.top0 == b.top0 && a.top1 == b.top1 && a.base0 == b.base0 && a.base1 == b.base1
-        && a.slope == b.slope && a.dragged == b.dragged && a.n0 == b.n0 && a.n1 == b.n1
+        && a.slope == b.slope && a.dragged == b.dragged && a.n0 == b.n0 && a.n1 == b.n1 && a.inset == b.inset
 }
 
 /// Reference vs shipped writer on two identically built fields; every field of the whole buffer (past `n` too), the count and the drop count must match.
