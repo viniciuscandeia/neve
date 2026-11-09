@@ -100,3 +100,19 @@ import Testing
     #expect(!f.snowNear(from: CGPoint(x: 300, y: 700), to: CGPoint(x: 400, y: 700)))   // well above
     #expect(!f.snowNear(from: CGPoint(x: 700, y: 502), to: CGPoint(x: 800, y: 502)))   // beside the window
 }
+
+@Test func dragTargetIsSuspendedWhileTheWindowIsPinnedAndResumesWhenItMoves() {
+    let a = win(1, 100, 100, 300, 200), screens = [CGRect(x: 0, y: 0, width: 2000, height: 1000)]
+    let a2 = win(1, 150, 100, 300, 200), a3 = win(1, 200, 100, 300, 200)
+    var t = DragTracker()
+    t.read(down: true, moved: true, prev: [a], cur: [a2], mouseDelta: CGVector(dx: 50, dy: 0), screens: screens)
+    #expect(t.target == 1)
+    t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 5, dy: 0), screens: screens)    // jitter: kept
+    #expect(t.target == 1)
+    t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 60, dy: 0), screens: screens)   // mouse moved, window did not
+    #expect(t.target == nil)
+    t.read(down: true, moved: false, prev: [a2], cur: [a2], mouseDelta: CGVector(dx: 60, dy: 0), screens: screens)
+    #expect(t.target == nil)
+    t.read(down: true, moved: true, prev: [a2], cur: [a3], mouseDelta: CGVector(dx: 50, dy: 0), screens: screens)    // moves again
+    #expect(t.target == 1)
+}

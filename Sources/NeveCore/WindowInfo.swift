@@ -75,10 +75,11 @@ public func dragPlausible(at p: CGPoint, windows: [WindowInfo], titleStrip: CGFl
 }
 
 /// The dragged window and the "exempt from show-desktop" window, one source of truth for the poll. The target is the window whose move matched
-/// the mouse's (see `dragTarget`); it is kept until the button is released unless ANOTHER window clearly matches. The exempt window
+/// the mouse's (see `dragTarget`); it is kept until the button is released unless ANOTHER window clearly matches; it is suspended while the window stands still under a moving mouse (pinned at an edge) and resumes when it moves again. The exempt window
 /// (dragged mostly off screen on purpose: it keeps its snow) is cleared by a press outside it, when it is mostly back on screen, or when it is gone.
 public struct DragTracker: Sendable {
     public private(set) var target: Int?, exempt: Int?
+    private var pinned: Int?   // the held target while the window is not following the mouse
     public init() {}
 
     public mutating func pressed(at p: CGPoint, windows: [WindowInfo]) {
@@ -87,8 +88,12 @@ public struct DragTracker: Sendable {
 
     /// One window read. `moved` = some frame changed since `prev`; `mouseDelta` = mouse movement over the same interval.
     public mutating func read(down: Bool, moved: Bool, prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVector, screens: [CGRect]) {
-        if !down { target = nil }
-        else if moved, let d = dragTarget(prev: prev, cur: cur, mouseDelta: mouseDelta) { target = d; exempt = d }
+        if !down { target = nil; pinned = nil }
+        else if moved, let d = dragTarget(prev: prev, cur: cur, mouseDelta: mouseDelta) { target = d; pinned = nil; exempt = d }
+        else if let t = target ?? pinned, let p = prev.first(where: { $0.number == t }), let c = cur.first(where: { $0.number == t }),
+                abs(c.frame.minX - p.frame.minX) < 0.5, abs(c.frame.minY - p.frame.minY) < 0.5, hypot(mouseDelta.dx, mouseDelta.dy) > 8 {
+            pinned = t; target = nil   // the mouse moved but the window did not (stopped at the menu bar / a screen edge): no pile offset until it moves again
+        }
         if let e = exempt {
             if let w = cur.first(where: { $0.number == e }), mostlyOffscreen(w.frame, screens: screens) { return }
             exempt = nil
