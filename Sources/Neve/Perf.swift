@@ -26,6 +26,9 @@ enum Perf {
 
     @inline(__always) static func now() -> UInt64 { on ? clock_gettime_nsec_np(CLOCK_UPTIME_RAW) : 0 }
 
+    /// Seconds clock injected into `SnowField.timer` (only when NEVE_PERF=1).
+    static func seconds() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e9 }
+
     @inline(__always) static func add(_ s: Slot, _ t0: UInt64) {
         guard on else { return }
         let d = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- t0
@@ -73,6 +76,9 @@ enum Perf {
             sum[i] = 0; peak[i] = 0; n[i] = 0
         }
         let debris = field.debris.count
+        let fl = field.flakeSteps == 0 ? 0 : field.flakeSeconds / Double(field.flakeSteps) * 1000
+        line += String(format: " flakesim=%.3fms(n=%d)", fl, field.flakeSteps)
+        field.flakeSeconds = 0; field.flakeSteps = 0
         line += String(format: " gpu=%.3fms(n=%d) cpu=%.1f%% main=%.1f%%", g.count == 0 ? 0 : g.sum / Double(g.count) * 1000, g.count, (c - cpuStart) / wall * 100, Double(mainNs) / 1e9 / wall * 100)
         line += " flakes=\(max(instances - debris, 0)) debris=\(debris) balls=\(field.balls.count) figures=\(field.figures.count) fights=\(field.fights.count) shots=\(field.shots.count) trunc=prims:\(truncPrims)/piles:\(truncPiles)\n"
         FileHandle.standardError.write(Data(line.utf8))
