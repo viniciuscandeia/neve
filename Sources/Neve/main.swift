@@ -56,7 +56,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         item.button?.image = Self.symbol("snowflake", "Neve")
         if let n = neveInstance { item.button?.title = " \(n)"; item.button?.imagePosition = .imageLeft }
         item.button?.target = self
-        item.button?.action = #selector(togglePopover)
+        item.button?.action = #selector(statusClicked)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateStatus()
         statusItem = item
 
@@ -182,10 +183,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let want = flag(.music) && !reduceMotion && !calm && sceneKind == nil
         if want, !MusicTap.shared.running {
             // The cause is unknown (permission, output device or aggregate creation can all fail): say so neutrally.
-            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Não foi possível captar o áudio. Confira Privacidade e Segurança e a saída de som." : "Requer macOS 14.2 ou mais recente.")
+            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Sem acesso ao áudio. Veja Privacidade e Segurança e a saída de som." : "Precisa do macOS 14.2 ou mais novo.")
         } else if !want {
             MusicTap.shared.stop()
-            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? (economy ? "Pausada no modo econômico." : "Pausada pelo Modo de Baixo Consumo do macOS.") : "" }
+            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? (economy ? "Pausada: modo econômico ligado." : "Pausada: Modo de Baixo Consumo ligado.") : "" }
         }
     }
 
@@ -201,6 +202,19 @@ final class AppController: NSObject, NSApplicationDelegate {
                            clear: { [weak self] in self?.clearSnow(); self?.popover?.performClose(nil) },
                            quit: { NSApp.terminate(nil) })
     }
+
+    /// Right-click / ctrl-click: a small menu (fallback if the popover fails); left click: the popover.
+    @objc private func statusClicked() {
+        guard let e = NSApp.currentEvent, e.type == .rightMouseUp || e.modifierFlags.contains(.control) else { return togglePopover() }
+        popover?.performClose(nil)
+        let m = NSMenu()
+        m.addItem(withTitle: "Ajustes…", action: #selector(showSettingsWindow), keyEquivalent: "").target = self
+        m.addItem(withTitle: "Sair Neve", action: #selector(quitApp), keyEquivalent: "").target = self
+        statusItem?.menu = m
+        statusItem?.button?.performClick(nil)
+        statusItem?.menu = nil
+    }
+    @objc private func quitApp() { NSApp.terminate(nil) }
 
     /// Status-item click: the popover (⌥-click opens the full window directly).
     @objc private func togglePopover() {
@@ -221,11 +235,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// The single "Ajustes" window (rebuilt on each open so the screen list is fresh).
-    private func showSettingsWindow() {
+    @objc private func showSettingsWindow() {
         popover?.performClose(nil)
         if settingsWindow == nil {
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "Ajustes"
+            w.styleMask.insert(.resizable)
             w.isReleasedWhenClosed = false
             w.center()
             settingsWindow = w
@@ -300,20 +315,20 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var statusText: String {
         let level = Intensity.saved(ud)
         if !enabled { return "Desligado" }
-        if screensAsleep || sessionInactive || userIdle { return "Pausado — inativo" }
-        if hot { return "Pausado — sistema quente" }
-        if fullscreenIdle { return "Pausado — app em tela cheia" }
-        var s = level == .nevasca ? "Nevasca · vento forte" : "Nevando · \(level.title)"
-        if economy { s += " · econômico · só tela principal" }
-        else if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" ? wantedScreens[0].localizedName : "tela principal") }
-        if ambient { s += " · ambiente" }
-        if behind { s += " · atrás das janelas" }
-        if reduceMotion { s += " · movimento reduzido" }
+        if screensAsleep || sessionInactive || userIdle { return "Pausado: sem atividade" }
+        if hot { return "Pausado: Mac esquentou" }
+        if fullscreenIdle { return "Pausado: app em tela cheia" }
+        var s = "Nevando · \(level.title)"
+        // At most one modifier; the other modes are already visible as tiles.
+        if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" && !economy ? wantedScreens[0].localizedName : "tela principal") }
+        else if reduceMotion { s += " · movimento reduzido" }
         return s
     }
 
     private func updateStatus() {
         panel.status = statusText
+        statusItem?.button?.setAccessibilityLabel("Neve")
+        statusItem?.button?.setAccessibilityValue(panel.status)
         let paused = !enabled || !polling || userIdle || fullscreenIdle
         let slash = Self.symbol("snowflake.slash", "Neve — desligada")
         let (img, alpha) = !enabled

@@ -82,20 +82,20 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 
 | Item | O que faz |
 |---|---|
-| Linha de status | Ex.: "Nevando · Média", "Pausado — app em tela cheia", "Pausado — inativo", "Desligado" |
+| Linha de status | Ex.: "Nevando · Média", "Pausado: app em tela cheia", "Pausado: sem atividade", "Desligado" |
 | **Nevar** (⌘N) | Liga e desliga a neve |
 | **Permitir Acessibilidade…** | Só aparece quando falta a permissão de Acessibilidade (opcional: neve no Dock e acompanhamento mais rápido das janelas) |
 | **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
 | **Ajustes** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
-Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar**, depois uma grade de blocos, com efeito imediato: *Quantidade* (linha de ícones), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Neve atrás de janelas grandes*. e, no rodapé, **Limpar neve**, **Ajustes** e **Sair**. **Ajustes** abre a janela **Ajustes**, com tudo por abas:
+Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar**, depois uma grade de blocos, com efeito imediato: *Quantidade* (linha de ícones), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Atrás de janelas grandes*. e, no rodapé, **Limpar neve**, **Ajustes…** e **Sair**. **Ajustes** abre a janela **Ajustes**, com tudo por abas:
 
-- **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Neve atrás de janelas grandes*.
+- **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
 - **Desempenho:** *Modo econômico* (30 fps, só tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso) e *Neve parada* (só com Reduzir Movimento).
-- **Sistema:** *Mostrar em capturas* e *Abrir no login* (não aparece em instâncias de desenvolvimento).
-- **Como brincar:** dicas.
+- **Sistema:** *Aparecer em capturas de tela* e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
+- **Dicas:** dicas.
 
 ## 🔥 Instalação
 
@@ -115,7 +115,7 @@ scripts/make-app.sh    # gera build/Neve.app
 ```
 
 1. Mova `build/Neve.app` para `/Applications` (necessário para o item de login funcionar de forma confiável) e abra.
-2. No popover, abra **Ajustes** e marque **Abrir no login**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
+2. No popover, abra **Ajustes** e marque **Abrir ao iniciar sessão**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
 
 O Neve permite uma única instância. A permissão de Acessibilidade fica associada à assinatura do app: com a identidade estável "Neve Local Signing" ela sobrevive a recompilações; com a assinatura ad-hoc (usada se a identidade não existir, e `make-app.sh` avisa) ela se perde a cada build.
 
@@ -148,7 +148,7 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 - Apenas os limites (bounds) das janelas são lidos. Não exige Gravação de Tela.
 - A permissão de Acessibilidade é opcional e serve para dois ganhos: a neve acumular no Dock (Dock na parte inferior da tela) e o acompanhamento de janelas guiado por eventos, mais rápido que o poll. Sem ela, todo o resto funciona (as janelas são lidas por poll). Não exige Gravação de Tela.
 - *Neve dança com a música* pede a permissão de Gravação de Áudio do Sistema: o áudio é analisado na hora (volume, grave e batidas), nada é gravado nem sai do Mac. Desligar a opção encerra a captura.
-- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Mostrar em capturas** para incluí-la.
+- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Aparecer em capturas de tela** para incluí-la.
 
 ## ♿ Acessibilidade
 
@@ -177,7 +177,7 @@ Tests/run.sh             # testes (Swift Testing)
 
 ### Cenas determinísticas (`NEVE_SCENE`)
 
-Roteiros dirigidos pelo tempo de simulação (mesma semente e mesmos quadros de janela, mesma história). Na cena, as opções são fixas (**Mostrar em capturas** ligado, tudo ativo) sem tocar nas preferências salvas, o cursor real é ignorado e só as janelas da cena entram na simulação.
+Roteiros dirigidos pelo tempo de simulação (mesma semente e mesmos quadros de janela, mesma história). Na cena, as opções são fixas (**Aparecer em capturas de tela** ligado, tudo ativo) sem tocar nas preferências salvas, o cursor real é ignorado e só as janelas da cena entram na simulação.
 
 - **`NEVE_SCENE=demo`** (+ `NEVE_SEED`, padrão 7): o Neve abre 3 janelas próprias (Notas, Fotos, Terminal, em cima de um fundo liso, na tela principal) e roda um roteiro de 30 s em loop: 0–4 s neve e rampa de neve encostada; ~6 s surge um segundo boneco e eles brigam; ~12,4 s a cabeça cai e o vencedor comemora; 16 s a cabeça é recolocada; ~17,5 s o passarinho pousa na janela de cima; ~17,5 s o coelho rouba a cenoura e o boneco atira; ~19,8 s um tiro errado assusta o passarinho e a avalanche desce sobre a janela de baixo; 25 s a janela Fotos é arrastada rápido (placas e estalactites se quebram); 22–30 s o trenó cruza e solta presentes. `NEVE_SCENE_WAIT=<s>` atrasa o início do roteiro; `NEVE_SCENE_MARK=<arquivo>` grava a hora Unix do segundo 0 (para alinhar uma gravação).
 - **`NEVE_SCENE=fight`** (+ `NEVE_SEED`, padrão 4): dois bonecos a 150 pt no chão; a terceira bolada acontece em T = 3,6 s (comemoração em T+0,3 s, braços abaixados em T+2,2 s), a cabeça volta aos 7 s, o loop reinicia aos 14 s. Os testes conferem esses instantes.
@@ -188,7 +188,7 @@ As demais variáveis de demonstração (`NEVE_DEMO_*`, `NEVE_SNOWMAN_FAST`, `NEV
 
 **Regra: nunca use `pkill`/`pgrep` por nome (`pkill -x Neve` etc.).** Isso derruba o app do usuário e as execuções de outros agentes. Guarde o pid do que você mesmo lançou e mate só ele.
 
-- **Bundle de dev:** `NEVE_DEV=<nome> scripts/make-app.sh` (ou `--dev <nome>`) gera `build/Neve-<nome>.app` com bundle id `io.github.viniciuscandeia.neve.dev`, executável `Neve-dev-<nome>` e `NeveInstance=<nome>` no Info.plist (assinado com a mesma identidade). Sem `NEVE_DEV` o build é o do usuário, como antes. A instância de dev (Info.plist ou env `NEVE_INSTANCE`) não trava por instância única, mostra o nome ao lado do ícone na barra de menus, não tem "Abrir no login" e grava as preferências só no suite `io.github.viniciuscandeia.neve.dev.<nome>` (nunca no domínio do usuário). A permissão de Acessibilidade vale por bundle id: sem ela, a neve no Dock não aparece e as janelas são acompanhadas por poll.
+- **Bundle de dev:** `NEVE_DEV=<nome> scripts/make-app.sh` (ou `--dev <nome>`) gera `build/Neve-<nome>.app` com bundle id `io.github.viniciuscandeia.neve.dev`, executável `Neve-dev-<nome>` e `NeveInstance=<nome>` no Info.plist (assinado com a mesma identidade). Sem `NEVE_DEV` o build é o do usuário, como antes. A instância de dev (Info.plist ou env `NEVE_INSTANCE`) não trava por instância única, mostra o nome ao lado do ícone na barra de menus, não tem "Abrir ao iniciar sessão" e grava as preferências só no suite `io.github.viniciuscandeia.neve.dev.<nome>` (nunca no domínio do usuário). A permissão de Acessibilidade vale por bundle id: sem ela, a neve no Dock não aparece e as janelas são acompanhadas por poll.
 - **`scripts/agent-run.sh [--screen] [--name N] [--defaults k=v ...] -- <comando...>`:** compila o bundle de dev (nome padrão = hash do diretório do worktree), abre a própria instância, exporta `NEVE_PID`, `NEVE_APP` e `NEVE_DEFAULTS_SUITE`, roda o comando e, ao sair, encerra só esse pid. Com `--screen` pega o lock da tela e mantém `caffeinate -dimsu` durante a execução. Use `--screen` em tudo que depende da tela (capturas, medições).
 - **`scripts/dev-lock.sh acquire <dono> [timeout=600] | release <dono> | status`:** lock da tela em `/tmp/neve-screen.lock` (`mkdir` atômico, com dono e pid), espera até o timeout e quebra locks cujo pid morreu. Pode ser carregado com `source` (`neve_lock_acquire`, `neve_lock_release`, `neve_lock_status`). Pelo CLI o pid guardado é o do shell chamador (`NEVE_LOCK_PID` o substitui); em shells de uma chamada só, prefira `agent-run.sh --screen`.
 - **`scripts/perf.sh [heavy|media|max] [segundos=60] [--drag] [--runs N=3] [--bin CAMINHO]`:** mede CPU e wakeups ociosos do Neve e a CPU do WindowServer (via `top`) com janelas do Finder abertas (`max` = janela maximizada; `--drag` arrasta uma janela). Roda a própria instância de dev (ou `--bin`), com defaults no suite dela, segura o lock da tela durante todo o teste e mata só o próprio pid. Se o Neve do usuário estiver aberto, avisa que a CPU do WindowServer o inclui (ele não é fechado). Com `NEVE_PERF=1` (sempre ligado no script) também mostra o log de fases.
