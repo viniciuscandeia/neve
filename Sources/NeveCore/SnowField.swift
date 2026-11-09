@@ -10,6 +10,12 @@ public struct BusyReasons: OptionSet, Sendable {
     public static let names: [(BusyReasons, String)] = [(.drag, "drag"), (.dock, "dock"), (.shots, "shots"), (.fights, "fights"), (.debris, "debris"), (.introOutro, "intro"), (.figures, "figures"), (.gust, "gust"), (.balls, "balls")]
 }
 
+/// A window's snow (and freeze progress) set aside while its window is on another Space.
+struct Stashed {
+    var heights: [Float], stamp: Double
+    var ice: WinIce? = nil
+}
+
 public final class SnowField {
     public let size: SIMD2<Float>
     let origin: CGPoint
@@ -17,7 +23,9 @@ public final class SnowField {
     private(set) var visibleTop: Float
     var boundsDirty = false
     public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
-    var stash: [Int: (heights: [Float], stamp: Double)] = [:]   // window piles kept across a Space switch, by window number (cap 64, 30 min)
+    var stash: [Int: Stashed] = [:]   // window piles (and their frost) kept across a Space switch, by window number (cap 64, 30 min)
+    var overhang: [Int: [Int: Float]] = [:]   // per window: snow on columns past the screen edge (global column -> height), kept until they come back on screen
+    var staleUntil = 0.0          // `windowsStale` lapses at this simulation time even without a changed snapshot (an identical one right after the switch proves nothing)
     var clock = 0.0, stamps: [Int: Double] = [:]   // monotonic time and each window's last sample, for per-window dt
     public internal(set) var flakes: [Flake] = []
     public internal(set) var debris: [Flake] = []
@@ -175,15 +183,11 @@ public final class SnowField {
         setIntensity(intensity)
     }
 
-    /// Space switch: windows vanish all at once. Drop piles without debris (and mute knock-offs briefly).
-    public func markStale() { windowsStale = true }
+    /// Space switch: nothing is emptied. Knock-offs are muted briefly and the window list is marked stale; the next changed snapshot
+    /// stashes the windows that vanished (silently) and leaves the ones still present, the Dock, the ground and what stands on them alone.
+    public func markStale() { windowsStale = true; staleUntil = time + 4 }
     public func dropPiles() {
         silentUntil = time + 1.5
-        balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
-        dropWindowFigures()
-        for s in surfaces where s.id > 0 && s.pile.heights.contains(where: { $0 > 0 }) { stash[s.id] = (s.pile.heights, clock) }   // plain windows only: they get their snow back when they return
-        while stash.count > 64, let old = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[old] = nil }
-        for i in surfaces.indices where surfaces[i].id != Tuning.groundID { surfaces[i].pile.empty() }   // the ground is not tied to a window
         pilesDirty = true
     }
 
@@ -223,7 +227,7 @@ public final class SnowField {
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         if !balls.isEmpty { balls.removeAll() }
         for i in surfaces.indices { surfaces[i].pile.empty() }
-        stash.removeAll()
+        stash.removeAll(); overhang.removeAll()
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
         giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)

@@ -198,14 +198,13 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
     #expect(f.pile(id: 1) == nil)
 }
 
-@Test func spaceSwitchDropsPilesWithoutDebris() {
+@Test func spaceSwitchEmptiesNothingUpFrontAndVanishedWindowsLeaveWithoutDebris() {
     let f = makeField()
     f.update(windows: [front, back])
     pileUp(f, id: 1)
-    f.dropPiles()
-    #expect(f.pile(id: 1)!.heights.max()! == 0)
-    pileUp(f, id: 1, rounds: 2)   // snow keeps landing on the not-yet-removed windows
-    #expect(f.pile(id: 1)!.heights.max()! > 0.5)
+    let h = f.pile(id: 1)!.heights
+    f.dropPiles(); f.markStale()
+    #expect(f.pile(id: 1)!.heights == h)   // nothing is emptied before the next snapshot
     let before = f.debris.count
     #expect(f.update(windows: []) == 0)   // windows vanish in the same switch: no avalanche
     #expect(f.debris.count == before)
@@ -318,13 +317,19 @@ func debrisCountIsTruthfulAtThePoolLimit(seed: UInt64) {
     #expect(f.pile(id: Tuning.groundID)!.heights[250] == h)
 }
 
-@Test func groundSurvivesSpaceSwitchDropButWindowsDoNot() {
+@Test func groundSurvivesSpaceSwitchAndSoDoWindowsThatStayPresent() {
     let f = makeField()
     f.update(windows: [back])
     pileUp(f, id: Tuning.groundID)
     pileUp(f, id: 1)
-    f.dropPiles()
-    #expect(f.pile(id: 1)!.heights.max()! == 0)
+    let h = f.pile(id: 1)!.heights
+    f.dropPiles(); f.markStale()
+    f.update(windows: [win(1, back.frame.minX, back.frame.minY, back.frame.width, back.frame.height)], now: 5)   // an unchanged list settles nothing
+    #expect(f.windowsStale)
+    f.update(windows: [win(1, back.frame.minX, back.frame.minY + 1, back.frame.width, back.frame.height)], now: 6)   // a changed one does
+    #expect(!f.windowsStale)
+    #expect(f.pile(id: 1)!.heights.max()! > 0)
+    #expect(f.pile(id: 1)!.heights.count == h.count)
     #expect(f.pile(id: Tuning.groundID)!.heights.max()! >= 4)
 }
 
@@ -500,7 +505,7 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     let f = makeField()
     f.update(windows: [back])
     pileUp(f, id: 1)
-    f.dropPiles(); f.update(windows: [])
+    f.dropPiles(); f.markStale(); f.update(windows: [])
     f.update(windows: [win(1, back.frame.minX, back.frame.minY, back.frame.width + 100, back.frame.height)])
     #expect(f.pile(id: 1)!.heights.max()! == 0)
     #expect(f.stash[1] == nil)
@@ -510,13 +515,13 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     let f = makeField()
     f.update(windows: [back])
     pileUp(f, id: 1)
-    for i in 0..<70 { f.stash[100 + i] = ([1], Double(i) - 1000) }
-    f.dropPiles()
+    for i in 0..<70 { f.stash[100 + i] = Stashed(heights: [1], stamp: Double(i) - 1000) }
+    f.dropPiles(); f.markStale(); f.update(windows: [])
     #expect(f.stash.count == 64)
     #expect(f.stash[1] != nil && f.stash[100] == nil)   // oldest evicted
     f.clear()
     #expect(f.stash.isEmpty)
-    f.stash[1] = ([1], f.clock - 1900)
+    f.stash[1] = Stashed(heights: [1], stamp: f.clock - 1900)
     f.update(windows: [back])
     #expect(f.pile(id: 1)!.heights.max()! == 0)
 }

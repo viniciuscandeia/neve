@@ -181,7 +181,10 @@ private func velocities(bMoves: Bool) -> [Float] {
     #expect(f.surfaces[i].pile.heights[5] == 0)
     let g = f.surfaces.firstIndex { $0.id == Tuning.groundID }
     if let g { f.deposit(surface: g, bin: 5, volume: 5); #expect(f.surfaces[g].pile.heights[5] > 0) }   // ground pile keeps working
-    f.update(windows: [win(1, 100, 300, 300, 200)], now: 0.1)
+    f.update(windows: [win(1, 100, 300, 300, 200)], now: 0.1)   // an identical list proves nothing about the new Space
+    f.deposit(surface: i, bin: 5, volume: 50)
+    #expect(f.surfaces[i].pile.heights[5] == 0)
+    f.update(windows: [win(1, 100, 301, 300, 200)], now: 0.2)
     f.deposit(surface: i, bin: 5, volume: 50)
     #expect(f.surfaces[i].pile.heights[5] > 0)
 }
