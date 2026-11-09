@@ -228,9 +228,9 @@ extension SnowField {
             break
         }
         if !landed, hitFigures(&b) { landed = true; if b.melting { balls[i] = b; return } }
-        if !landed, let (si, _, top) = supportTop(x: b.pos.x, fromY: prev.y),
-           b.pos.y <= top + b.radius * SnowField.sink {
-            b.pos.y = standY(si: si, x: b.pos.x) + b.radius * SnowField.sink   // lands on the drawn snow: no hop when `rest` takes over
+        if !landed, let (si, _, _) = supportTop(x: b.pos.x, fromY: prev.y),
+           case let rest = standY(si: si, x: b.pos.x) + b.radius * SnowField.sink, b.pos.y <= rest {   // contact test and resting height are the same drawn-snow function
+            b.pos.y = rest   // lands on the drawn snow: no hop when `rest` takes over
             b.state = .resting; b.surfaceID = surfaces[si].id; b.vel = .zero
         }
         if b.pos.y < -b.radius * 2 { balls[i].melting = true; balls[i].fade = 0; balls[i].state = .falling; return }

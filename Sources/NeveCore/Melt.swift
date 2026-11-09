@@ -6,7 +6,9 @@ extension SnowField {
     public var isMelting: Bool { melting }
     /// The melt has run its full time: everything is gone, rendering may pause.
     /// Airborne debris, dust, glints and meltwater are let finish first (finishMelt keeps them), so nothing vanishes in the last frame.
-    public var meltDone: Bool { melting && meltT >= meltDur && debris.isEmpty && puffs.isEmpty && glints.isEmpty && drops.isEmpty }
+    /// A hard cap (`meltGrace` s past the duration) finishes it even if some element never expires.
+    public var meltDone: Bool { melting && meltT >= meltDur && (meltT >= meltDur + Self.meltGrace || debris.isEmpty && puffs.isEmpty && glints.isEmpty && drops.isEmpty) }
+    static let meltGrace: Float = 2
     /// Speed-up of every fade-out while melting, so the latest one (a ball / snowman / gift starting at 40-55% of a short Reduce Motion melt)
     /// is still done when the melt ends. 1 for a normal melt, and outside melting.
     var fadeK: Float { melting ? max(1, 1.34 / meltDur) : 1 }
@@ -33,7 +35,12 @@ extension SnowField {
     }
 
     func stepMelt(dt: Float) {
-        guard melting, meltT < meltDur else { return }
+        guard melting else { return }
+        if meltT >= meltDur {   // finished: the airborne leftovers get `meltGrace` s, then they go too
+            meltT += dt
+            if meltT >= meltDur + Self.meltGrace { debris.removeAll(); puffs.removeAll(); glints.removeAll(); drops.removeAll() }
+            return
+        }
         meltT += dt
         if meltT >= meltDur { finishMelt(); return }
         let p = meltT / meltDur

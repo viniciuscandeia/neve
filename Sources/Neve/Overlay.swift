@@ -202,7 +202,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var lastWindows: [WindowInfo] = []
     private var confirmedDrag: Int?   // the window being dragged by the mouse (main confirms it); only that one is extrapolated
     /// Space switch: no deposits on window surfaces until the next snapshot reconciles.
-    func markStale() { field.markStale() }
+    func markStale() { field.markStale(now: CACurrentMediaTime()) }
     /// `covering`: the real windows for coverage / compaction when `windows` (the surfaces) is deliberately empty (behind-windows mode).
     /// `dragTarget`: the mouse-confirmed dragged window, the one source for pile segments, figures and balls. `mouse`: the pointer read at the same
     /// instant as the window bounds (the per-frame drag offset is measured from it).
@@ -669,7 +669,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.setRenderPipelineState(gpu.flakes)
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
-            enc.setVertexBytes(&frameDt, length: MemoryLayout<Float>.size, index: 2)
+            var streakDt = frameDt * Self.slowmo   // streak length = distance per SIM frame, so it matches the (slowed) velocity
+            enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
             occ[8] = SIMD4(occStrength, (0..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, 0, 0)
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }

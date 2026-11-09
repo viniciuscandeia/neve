@@ -134,3 +134,47 @@ private func switchSpace(_ f: SnowField) { f.dropPiles(); f.markStale() }
     #expect(after.heights.count == before.heights.count)
     #expect(abs(total(after) - total(before)) < total(before) * 0.1)
 }
+
+@Test func spaceSwitchStashesEvenWhenSimTimeRanOutBeforeTheSnapshot() {
+    let f = makeField()
+    f.update(windows: [back], now: 0)
+    pileUp(f, id: 1)
+    switchSpace(f)
+    advance(f, 5)                                   // sim time passes staleUntil; the old flag would lapse on an unchanged read
+    f.update(windows: [back], now: 1)               // identical (pre-switch) snapshot
+    let before = f.debris.count
+    f.update(windows: [], now: 2)
+    #expect(f.debris.count == before && f.stash[1] != nil)
+}
+
+@Test func spaceSwitchStashesInAPausedFieldWithNoStepAtAll() {
+    let f = makeField()
+    f.update(windows: [back], now: 0)
+    pileUp(f, id: 1)
+    switchSpace(f)
+    f.update(windows: [], now: 5.9)
+    #expect(f.stash[1] != nil)
+}
+
+@Test func vanishingLongAfterTheSwitchWindowIsARealClose() {
+    let f = makeField()
+    f.update(windows: [back], now: 0)
+    pileUp(f, id: 1)
+    switchSpace(f)
+    f.update(windows: [back, win(9, 600, 300, 100, 100)], now: 7)   // past the window: ids are forgotten
+    f.update(windows: [win(9, 600, 300, 100, 100)], now: 8)
+    #expect(f.stash[1] == nil && !f.debris.isEmpty)
+}
+
+@Test func overhangComesBackFromTheSpaceStash() {
+    let f = makeField()
+    let w = win(1, -100, 200, 300, 200)
+    f.update(windows: [w], now: 0)
+    pileUp(f, id: 1)
+    f.overhang[1] = [-10: 3]
+    switchSpace(f)
+    f.update(windows: [], now: 1)
+    #expect(f.overhang[1] == nil && f.stash[1]?.overhang.count == 1)
+    f.update(windows: [w], now: 2)
+    #expect(f.overhang[1] == [-10: 3])
+}

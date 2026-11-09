@@ -184,3 +184,19 @@ private func stack(_ f: SnowField, _ radii: [Float]) -> [Int] {
     let a = g.anchors(of: g.figures[0])
     #expect(g.hitTest(point: CGPoint(x: CGFloat(a.head.x), y: CGFloat(a.head.y) + 12)))   // a stacked snowman is interactive too
 }
+
+@Test func ballLandingWhileThePileEasesDoesNotSnapDown() {
+    let f = snowy(12)
+    let i = f.surfaces.firstIndex { $0.id == Tuning.groundID }!
+    f.surfaces[i].pile.shown = f.surfaces[i].pile.heights.map { $0 * 0.1 }   // drawn snow still low: heights just jumped
+    let id = dropBall(f, scoop: CGPoint(x: 300, y: 8), r: 8, at: CGPoint(x: 600, y: 60))
+    let k = f.balls.firstIndex { $0.id == id }!
+    f.balls[k].pos = [700, 12 + 8 * SnowField.sink + 0.01]   // just above the real pile top, away from the groove
+    let y0 = ball(f, id).pos.y
+    f.step(dt: 1 / 60)
+    #expect(ball(f, id).pos.y > y0 - 1)   // it keeps falling toward the drawn surface instead of teleporting onto it
+    run(f, 1)
+    let b = ball(f, id)
+    let want: Float = f.standY(si: i, x: b.pos.x) + b.radius * SnowField.sink
+    #expect(abs(b.pos.y - want) < 0.01)
+}

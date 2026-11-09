@@ -143,7 +143,7 @@ extension SnowField {
 
     /// Sparkles on crests of piles >= 6pt: at most 6 alive, one new every 2s, 0 -> 1 -> 0 over 0.6s. Off for Reduce Motion, economy, low power, the outro / melt:
     /// then none are born and the live ones fade out over ~0.17 s. A glint rides the DRAWN crest of its surface (eased `shown`, smoothed like the contour; `prof` = surface id,
-    /// `amp` 1 = tied, `phase` = local bin) and fades when that surface is dragged or gone. `fade` < 1 marks a dying glint.
+    /// `amp` 1 = tied, `phase` = GLOBAL column; the local bin is recomputed against c0 each frame, out of range = fades) and fades when that surface is dragged or gone. `fade` < 1 marks a dying glint.
     func stepGlints(dt: Float) {
         let off = calm || economy || lowPower || quiet
         var i = glints.count - 1
@@ -151,7 +151,9 @@ extension SnowField {
             glints[i].delay -= dt
             if glints[i].amp > 0 {
                 let id = Int(Int32(bitPattern: glints[i].prof))
-                if let si = index[id], id != draggingID { glints[i].pos.y = crestY(si: si, bin: Int(glints[i].phase)) } else { glints[i].fade = min(glints[i].fade, 0.99) }
+                if let si = index[id], id != draggingID, case let b = Int(glints[i].phase) - surfaces[si].c0, b >= 0, b < surfaces[si].pile.heights.count {
+                    glints[i].pos = [binCenter(surfaces[si].c0 + b), crestY(si: si, bin: b)]
+                } else { glints[i].fade = min(glints[i].fade, 0.99) }
             }
             if off { glints[i].fade = min(glints[i].fade, 0.99) }
             if glints[i].fade < 1 { glints[i].fade -= dt * 6 }
@@ -167,7 +169,7 @@ extension SnowField {
             let s = Int.random(in: 0..<surfaces.count, using: &rng), b = Int.random(in: 0..<surfaces[s].pile.heights.count, using: &rng)
             let h = surfaces[s].pile.heights[b]
             guard h >= 6, surfaces[s].pile.visible[b], surfaces[s].id != draggingID else { continue }
-            glints.append(Flake(pos: [binCenter(surfaces[s].c0 + b), crestY(si: s, bin: b)], vx: 0, fall: 0, phase: Float(b), amp: 1, freq: 0,
+            glints.append(Flake(pos: [binCenter(surfaces[s].c0 + b), crestY(si: s, bin: b)], vx: 0, fall: 0, phase: Float(surfaces[s].c0 + b), amp: 1, freq: 0,
                                 size: Float.random(in: 3...5, using: &rng), alpha: 1, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4,
                                 prof: UInt32(bitPattern: Int32(truncatingIfNeeded: surfaces[s].id))))
             return
@@ -177,6 +179,8 @@ extension SnowField {
     /// y of the drawn crest at local bin `b`: baseline + the 1-2-1 smoothed `shown` height (the contour in writePiles, minus its stable noise).
     func crestY(si: Int, bin b: Int) -> Float {
         let p = surfaces[si].pile, n = p.heights.count
+        guard n > 0 else { return surfaces[si].edgeY }
+        let b = min(max(b, 0), n - 1)
         let h = p.shown.count == n ? p.shown : p.heights
         let l = h[max(b - 1, 0)], r = h[min(b + 1, n - 1)]
         return surfaces[si].edgeY + p.base[b] + (l + 2 * h[b] + r) / 4

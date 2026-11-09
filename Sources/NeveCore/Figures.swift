@@ -295,8 +295,9 @@ extension SnowField {
         let s = surfaces[si], c = column(f.motion.xfer?.from.x ?? f.foot.x) - s.c0
         let visible = s.pile.visible[c]
         if visible {
-            if !f.fromBalls, avg < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
-            f.foot.y = s.edgeY + s.pile.base[c] + (meanShown(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) ?? avg)
+            let drawn = meanShown(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) ?? avg   // the foot and the collapse test read the same (drawn) snow
+            if !f.fromBalls, drawn < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
+            f.foot.y = s.edgeY + s.pile.base[c] + drawn
         }
         f.stageAge += dt
         let dd = (f.headless ? 1 : 0) - f.droop
