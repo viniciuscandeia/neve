@@ -220,3 +220,14 @@ private func clearField(speed: Float = 30) -> SnowField {
     advance(f, 20)
     #expect(f.pileVolume == 0 && f.debris.isEmpty)
 }
+
+@Test func meltFinishesEvenIfAnAirborneElementNeverExpires() {
+    let f = snowy()
+    advance(f, 1)
+    f.beginMelt(duration: 2)
+    advance(f, 2.1)
+    f.puffs.append(Flake(pos: [500, 400], vx: 0, fall: 0, phase: 0, amp: 0, freq: 0, size: 4, alpha: 1, kind: .debris, fade: 1, delay: 1e9, shape: 3))
+    #expect(!f.meltDone)
+    advance(f, 2.5)
+    #expect(f.meltDone && f.puffs.isEmpty)
+}
