@@ -193,14 +193,21 @@ public final class SnowField {
     /// Intro: every flake goes dormant, then wakes from above the top edge, one slot after another,
     /// so the active count ramps linearly from 0 to the intensity's target over `duration` seconds of stepping. Piles are kept.
     public func beginIntro(duration: Float) {
-        outro = false; outroRel = 1; melting = false
-        for i in figures.indices {
-            figures[i].melt = 1
-            if let k = figures[i].preMelt { figures[i].radii = k.radii; figures[i].built = k.built; figures[i].preMelt = nil }   // a resumed melt: stand tall again
-        }
-        snowmanCooldown = 0
-        for i in flakes.indices { flakes[i].kind = .dormant }
+        let wasQuiet = quiet
+        endOutro()
+        // Out of an outro / melt the flakes still fading out just fade back in (no pop); only dormant slots wake on the ramp. A fresh start goes dormant first.
+        for i in flakes.indices where !(wasQuiet && flakes[i].kind != .dormant) { flakes[i].kind = .dormant }
         introT = 0; introDur = max(duration, 0.01)
+    }
+
+    /// Ends an outro or melt without touching the flakes (Reduce Motion's plain fade-in: spawning resumes on its own). Visitors fade back in and a
+    /// sagged snowman eases back to its size (see stepFigure); `beginIntro` does this too.
+    public func endOutro() {
+        outro = false; outroRel = 1; melting = false
+        snowmanCooldown = 0
+        for i in figures.indices {
+            if let k = figures[i].preMelt, figures[i].built != k.built { figures[i].built = k.built; figures[i].stageAge = 0 }   // accessories come back: the newest eases in
+        }
     }
 
     /// Outro: spawning stops, flakes fade, balls and the snowman break, and every pile turns into heavy debris
@@ -221,6 +228,8 @@ public final class SnowField {
     /// frost, icicles, gifts + confetti, meltwater drops). Snowfall (flakes, intensity), cooldowns and the event director are left alone.
     public func clear() {
         carrots.removeAll(keepingCapacity: true)
+        chain = AvaChain(); cursorThrow = CursorThrow()   // a front still sliding / a windup in flight would act on snow that is gone
+        bankLevel = (Tuning.groundMaxHeight, Tuning.groundMaxHeight); bankT = 0; boundsDirty = true   // the ground ramp was earned by snow that is gone: rebuilt with the ground
         for g in figures where g.kind != .snowman { director.ended(g.kind, at: time) }   // visits end through the director: no infinite cooldown
         dockTrickle = DockTrickle(); sweepOwed = 0   // pending emission debts must not resurface as snow after clearing
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)

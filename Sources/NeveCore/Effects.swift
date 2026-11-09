@@ -125,15 +125,11 @@ extension SnowField {
         func weight(_ o: Int) -> Float { abs(o) == 4 ? 0.9 : 0.6 + 0.2 * Float(abs(o)) }
         var wsum: Float = 0
         for o in -4...4 { wsum += weight(o) }
-        var changed = false
-        for o in -4...4 {
-            let i = bin + o
-            guard i >= 0, i < surfaces[s].pile.heights.count, surfaces[s].pile.visible[i], surfaces[s].pile.cap[i] >= Tuning.minRoom else { continue }
-            let before = surfaces[s].pile.heights[i]
-            surfaces[s].pile.heights[i] = max(before, min(before + total * weight(o) / wsum, surfaces[s].pile.limit(i)))
-            if surfaces[s].pile.heights[i] != before { changed = true }
+        // Every column takes its share through `deposit` (ceiling, local relax, spill), so the rim never stands as a cliff against its neighbours.
+        for o in -4...4 where bin + o >= 0 && bin + o < surfaces[s].pile.heights.count {
+            let v = total * weight(o) / wsum
+            if surfaces[s].id == 0 { deposit(dock: s, bin: bin + o, volume: v) } else { deposit(surface: s, bin: bin + o, volume: v) }
         }
-        if changed { pilesDirty = true }
         for _ in 0..<Int.random(in: 3...6, using: &rng) {
             let sign: Float = Bool.random(using: &rng) ? 1 : -1
             _ = put(Flake(pos: [x + Float.random(in: -6...6, using: &rng), top + 1], vx: sign * Float.random(in: 20...60, using: &rng), fall: -Float.random(in: 80...150, using: &rng),
@@ -145,15 +141,24 @@ extension SnowField {
         avalancheImpact(surface: s, x: x)
     }
 
-    /// Sparkles on crests of piles >= 6pt: at most 6 alive, one new every 2s, 0 -> 1 -> 0 over 0.6s. Off for Reduce Motion, economy, low power.
+    /// Sparkles on crests of piles >= 6pt: at most 6 alive, one new every 2s, 0 -> 1 -> 0 over 0.6s. Off for Reduce Motion, economy, low power, the outro / melt:
+    /// then none are born and the live ones fade out over ~0.17 s. A glint rides the DRAWN crest of its surface (eased `shown`, smoothed like the contour; `prof` = surface id,
+    /// `amp` 1 = tied, `phase` = local bin) and fades when that surface is dragged or gone. `fade` < 1 marks a dying glint.
     func stepGlints(dt: Float) {
-        guard !calm, !economy, !lowPower, !quiet else { glints.removeAll(keepingCapacity: true); return }
+        let off = calm || economy || lowPower || quiet
         var i = glints.count - 1
         while i >= 0 {
             glints[i].delay -= dt
-            if glints[i].delay <= 0 { glints.swapAt(i, glints.count - 1); glints.removeLast() }
+            if glints[i].amp > 0 {
+                let id = Int(Int32(bitPattern: glints[i].prof))
+                if let si = index[id], id != draggingID { glints[i].pos.y = crestY(si: si, bin: Int(glints[i].phase)) } else { glints[i].fade = min(glints[i].fade, 0.99) }
+            }
+            if off { glints[i].fade = min(glints[i].fade, 0.99) }
+            if glints[i].fade < 1 { glints[i].fade -= dt * 6 }
+            if glints[i].delay <= 0 || glints[i].fade <= 0 { glints.swapAt(i, glints.count - 1); glints.removeLast() }
             i -= 1
         }
+        guard !off else { return }
         glintT += dt * 0.5 * musicGlint
         guard glintT >= 1, !surfaces.isEmpty else { return }
         glintT -= 1
@@ -162,10 +167,19 @@ extension SnowField {
             let s = Int.random(in: 0..<surfaces.count, using: &rng), b = Int.random(in: 0..<surfaces[s].pile.heights.count, using: &rng)
             let h = surfaces[s].pile.heights[b]
             guard h >= 6, surfaces[s].pile.visible[b], surfaces[s].id != draggingID else { continue }
-            glints.append(Flake(pos: [binCenter(surfaces[s].c0 + b), surfaces[s].edgeY + surfaces[s].pile.base[b] + h], vx: 0, fall: 0, phase: 0, amp: 0, freq: 0,
-                                size: Float.random(in: 3...5, using: &rng), alpha: 1, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4))
+            glints.append(Flake(pos: [binCenter(surfaces[s].c0 + b), crestY(si: s, bin: b)], vx: 0, fall: 0, phase: Float(b), amp: 1, freq: 0,
+                                size: Float.random(in: 3...5, using: &rng), alpha: 1, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4,
+                                prof: UInt32(bitPattern: Int32(truncatingIfNeeded: surfaces[s].id))))
             return
         }
+    }
+
+    /// y of the drawn crest at local bin `b`: baseline + the 1-2-1 smoothed `shown` height (the contour in writePiles, minus its stable noise).
+    func crestY(si: Int, bin b: Int) -> Float {
+        let p = surfaces[si].pile, n = p.heights.count
+        let h = p.shown.count == n ? p.shown : p.heights
+        let l = h[max(b - 1, 0)], r = h[min(b + 1, n - 1)]
+        return surfaces[si].edgeY + p.base[b] + (l + 2 * h[b] + r) / 4
     }
 }
 
@@ -229,8 +243,8 @@ extension SnowField {
         guard !quiet else { return nil }
         let half = f.blockThickness / 2
         var best: Float?
-        for dx in [Float(-0.4), 0, 0.4] as [Float] {
-            let c = column(f.pos.x + dx * f.size)
+        for k3 in 0..<3 {   // left, centre, right probe (no per-step array)
+            let c = column(f.pos.x + (Float(k3) - 1) * 0.4 * f.size)
             for k in Int(offsets[c])..<Int(offsets[c + 1]) {
                 let e = entries[k]
                 guard landable(Int(e.surface)) else { continue }

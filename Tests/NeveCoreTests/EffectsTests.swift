@@ -82,7 +82,7 @@ private func setHeights(_ f: SnowField, _ r: Range<Int>, _ h: Float) {
     setHeights(f, 0..<200, 10)
     for _ in 0..<600 { f.step(dt: 1 / 30); #expect(f.glints.count <= Tuning.maxGlints) }
     f.economy = true
-    f.step(dt: 1 / 30)
+    for _ in 0..<10 { f.step(dt: 1 / 30) }   // live glints fade out over ~0.17 s, none are born
     #expect(f.glints.isEmpty)
 }
 

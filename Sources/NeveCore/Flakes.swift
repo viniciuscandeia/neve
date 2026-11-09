@@ -129,7 +129,7 @@ extension SnowField {
         if introT >= introDur { introDur = 0 }
     }
 
-    func tryLand(x: Float, prevY: Float, newY: Float, volume: Float, fall: Float = 0, vol: Float = 0) -> Bool {
+    func tryLand(x: Float, prevY: Float, newY: Float, volume: Float, fall: Float = 0, vol: Float = 0, span: Float = 0) -> Bool {
         if quiet { return false }   // nothing lands, so nothing rebuilds: snow falls through
         let c = column(x)
         var best = -1
@@ -145,7 +145,12 @@ extension SnowField {
         if fall > Tuning.heavyFall, vol > Tuning.heavyVol { impact(surface: best, bin: c - surfaces[best].c0, x: x, top: bestTop, fall: fall, vol: vol) }
         else {
             let v = vol > 0 ? vol / Tuning.binWidth : volume
-            if surfaces[best].id == 0 { deposit(dock: best, bin: c - surfaces[best].c0, volume: v, powder: vol == 0) } else { deposit(surface: best, bin: c - surfaces[best].c0, volume: v, powder: vol == 0) }
+            // A landing slab (span = its width) lays its volume along that width, not on three bins: no spike.
+            let n = surfaces[best].pile.heights.count, b = c - surfaces[best].c0, half = Int(span * invBin / 2)
+            let lo = max(0, b - half), hi = min(n - 1, b + half), k = span > 2 * Tuning.binWidth && vol > 0 ? hi - lo + 1 : 1
+            for i in (k > 1 ? lo...hi : b...b) {
+                if surfaces[best].id == 0 { deposit(dock: best, bin: i, volume: v / Float(k), powder: vol == 0) } else { deposit(surface: best, bin: i, volume: v / Float(k), powder: vol == 0) }
+            }
         }
         return true
     }

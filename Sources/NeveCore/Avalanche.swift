@@ -3,9 +3,9 @@ import Foundation
 
 extension Tuning {
     static let avaFrontSpeed: Float = 150     // pt/s
-    static let avaFullFraction: Float = 0.85  // mean height over avaSpan / maxHeight
+    static let avaFullFraction: Float = 0.85  // mean height over avaSpan / mean limit there
     static let avaSpan: Float = 60
-    static let avaDriftFraction: Float = 0.9  // of maxDrift above maxHeight
+    static let avaDriftFraction: Float = 0.9  // a drift is full from this share of its boost up to its limit
     static let avaGroup: Float = 16           // one slab per 8 columns
     static let avaCooldown: Float = 60
     static let avaImpactRange: Float = 80
@@ -44,21 +44,23 @@ struct AvaChain {
 extension SnowField {
     var avalancheActive: Bool { !chain.fronts.isEmpty }
 
-    /// Where a window's pile is "full" within global x in [lo, hi]: mean over 60pt >= 85% of the maximum, or a drift >= 90% of maxDrift. Returns x.
+    /// Where a window's pile is "full" within global x in [lo, hi]: mean over 60pt >= 85% of the mean `limit` there (the wavy, tapered, drift-raised ceiling),
+    /// or a drift (boost >= half the maximum) within 10% of its limit. Returns x.
     func fullSpot(si: Int, lo: Float = -.infinity, hi: Float = .infinity) -> Float? {
-        let n = surfaces[si].pile.heights.count, c0 = surfaces[si].c0, mh = surfaces[si].pile.maxHeight
+        let p = surfaces[si].pile, n = p.heights.count, c0 = surfaces[si].c0
         let win = Int(Tuning.avaSpan * invBin)
         let b0 = max(0, lo.isFinite ? Int(lo * invBin) - c0 : 0), b1 = min(n - 1, hi.isFinite ? Int(hi * invBin) - c0 : n - 1)
         guard b0 <= b1 else { return nil }
-        var sum: Float = 0, best: Float = 0, bestAt = b0
+        var sum: Float = 0, cap: Float = 0, best: Float = 0, bestAt = b0
+        func lim(_ b: Int) -> Float { p.visible[b] ? max(p.limit(b), 0) : 0 }
         for b in b0...b1 {
-            let h = surfaces[si].pile.visible[b] ? surfaces[si].pile.heights[b] : 0
-            if h - mh >= Tuning.avaDriftFraction * Tuning.maxDrift { return binCenter(c0 + b) }
-            sum += h
-            if b - b0 >= win { sum -= surfaces[si].pile.visible[b - win] ? surfaces[si].pile.heights[b - win] : 0 }
-            if b - b0 >= win - 1, sum > best { best = sum; bestAt = b - win / 2 }
+            let h = p.visible[b] ? p.heights[b] : 0
+            if !p.boost.isEmpty, p.visible[b], p.boost[b] >= 0.5 * Tuning.maxDrift, h >= p.limit(b) - (1 - Tuning.avaDriftFraction) * p.boost[b] { return binCenter(c0 + b) }
+            sum += h; cap += lim(b)
+            if b - b0 >= win { sum -= p.visible[b - win] ? p.heights[b - win] : 0; cap -= lim(b - win) }
+            if b - b0 >= win - 1, cap > 0, sum / cap > best { best = sum / cap; bestAt = b - win / 2 }
         }
-        return best / Float(win) >= Tuning.avaFullFraction * mh ? binCenter(c0 + bestAt) : nil
+        return best >= Tuning.avaFullFraction ? binCenter(c0 + bestAt) : nil
     }
 
     private func canStart() -> Bool { !calm && chain.fronts.isEmpty && time >= chain.cooldownUntil }

@@ -135,7 +135,7 @@ extension SnowField {
         } else {
             b.pos = q
         }
-        if dt > 0 { b.vel = b.vel * 0.5 + (b.pos - balls[i].pos) / dt * 0.5 }
+        if dt > 0 { b.vel += ((b.pos - balls[i].pos) / dt - b.vel) * (1 - exp(-dt / 0.06)) }   // time-constant smoothing (60 ms): the throw does not depend on the mouse event rate
         balls[i] = b
     }
 
@@ -167,7 +167,7 @@ extension SnowField {
         }
         var gone = false
         for i in balls.indices where balls[i].melting {
-            balls[i].fade -= dt / 0.6
+            balls[i].fade -= dt * fadeK / 0.6
             if balls[i].fade <= 0 { gone = true }
         }
         if gone { balls.removeAll { $0.fade <= 0 } }
@@ -192,9 +192,7 @@ extension SnowField {
             }
             if dir != 0 { balls[i].pos.x += dir * 90 * dt; balls[i].rotation += dir * 90 * dt / balls[i].radius }
         }
-        var sum: Float = 0, n: Float = 0
-        for k in max(0, c - 2)...min(s.pile.heights.count - 1, c + 2) { sum += s.pile.heights[k]; n += 1 }
-        let y = s.edgeY + s.pile.base[c] + sum / n + balls[i].radius * SnowField.sink
+        let y = standY(si: si, x: balls[i].pos.x) + balls[i].radius * SnowField.sink   // the drawn snow, like the figures
         if abs(y - balls[i].pos.y) > 0.01 { balls[i].pos.y = y }
     }
 
@@ -232,7 +230,7 @@ extension SnowField {
         if !landed, hitFigures(&b) { landed = true; if b.melting { balls[i] = b; return } }
         if !landed, let (si, _, top) = supportTop(x: b.pos.x, fromY: prev.y),
            b.pos.y <= top + b.radius * SnowField.sink {
-            b.pos.y = top + b.radius * SnowField.sink
+            b.pos.y = standY(si: si, x: b.pos.x) + b.radius * SnowField.sink   // lands on the drawn snow: no hop when `rest` takes over
             b.state = .resting; b.surfaceID = surfaces[si].id; b.vel = .zero
         }
         if b.pos.y < -b.radius * 2 { balls[i].melting = true; balls[i].fade = 0; balls[i].state = .falling; return }

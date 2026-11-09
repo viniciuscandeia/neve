@@ -145,7 +145,9 @@ private func dripCount(_ f: SnowField) -> Int { f.drops.count }
     advance(f, 2)
     #expect(fig(f, id).built < Snowman.stageCount || fig(f, id).radii.x < r0.x)
     f.beginIntro(duration: 2)
-    #expect(fig(f, id).radii == r0 && fig(f, id).built == b0)
+    #expect(fig(f, id).built == b0 && fig(f, id).radii.x < r0.x)   // accessories return at once, the sag eases back (no snap)
+    advance(f, 2)
+    #expect(fig(f, id).radii == r0)
     // a partial stack that cannot demote must be removed when its window closes, not loop forever
     f.figures[f.figureIndex(id)!].built = 5
     f.update(windows: [])
