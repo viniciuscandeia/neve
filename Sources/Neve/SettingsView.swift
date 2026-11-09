@@ -15,7 +15,7 @@ struct SettingsEnv {
     let askAccessibility, clear, quit: () -> Void
 }
 
-/// Live status shown at the top of the popover; the controller keeps it current (updateStatus / syncOverlays).
+/// Live status shown at the top of the menu panel; the controller keeps it current (updateStatus / syncOverlays).
 @MainActor final class PanelState: ObservableObject {
     @Published var status = ""
     @Published var axMissing = false
@@ -46,29 +46,6 @@ private let stillOpt = Option(pref: .stillSnow, title: "Neve parada", symbol: "p
 private let intensitySymbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
 
 // MARK: popover (quick)
-
-private struct Tile: View {
-    let option: Option
-    @Binding var on: Bool
-    @Environment(\.colorSchemeContrast) private var contrast
-    var body: some View {
-        Button { on.toggle() } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: option.symbol).font(.system(size: 17, weight: .medium))
-                Text(option.title).font(.callout.weight(.medium)).lineLimit(2).multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
-            }
-            .padding(10)
-            .foregroundStyle(on ? AnyShapeStyle(onTileText) : AnyShapeStyle(.primary))
-            .tileBackground(on: on, contrast: contrast, radius: 12)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(option.title)
-        .accessibilityValue(on ? "ligado" : "desligado")
-        .accessibilityAddTraits(.isToggle)
-    }
-}
 
 private let onTileText = Color(nsColor: .alternateSelectedControlTextColor)
 
@@ -136,14 +113,6 @@ private struct Header: View {
                 .contentShape(Rectangle())
                 .onTapGesture { on.wrappedValue.toggle() }
             }
-            if panel.axMissing {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(axHint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    FooterRow("Permitir Acessibilidade…", "hand.raised", action: env.askAccessibility)
-                }
-                .padding(8)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
             if panel.metalMissing { Label("Este Mac não consegue desenhar a neve. Ela fica desativada.", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
         .padding(.horizontal, 4)
@@ -171,18 +140,18 @@ private struct MusicNote: View {
 }
 
 private struct FooterRow: View {
-    let title: String, symbol: String, chevron: Bool, shortcut: String?, action: () -> Void
+    let title: String, symbol: String, shortcut: String?, badge: Bool, action: () -> Void
     @State private var hover = false
-    init(_ title: String, _ symbol: String, chevron: Bool = false, shortcut: String? = nil, action: @escaping () -> Void) {
-        self.title = title; self.symbol = symbol; self.chevron = chevron; self.shortcut = shortcut; self.action = action
+    init(_ title: String, _ symbol: String, shortcut: String? = nil, badge: Bool = false, action: @escaping () -> Void) {
+        self.title = title; self.symbol = symbol; self.shortcut = shortcut; self.badge = badge; self.action = action
     }
     var body: some View {
         Button(action: action) {
             HStack {
                 Label(title, systemImage: symbol)
+                if badge { Circle().fill(Color.orange).frame(width: 6, height: 6).accessibilityHidden(true) }
                 Spacer()
                 if let shortcut { Text(shortcut).font(.caption).foregroundStyle(.secondary) }
-                if chevron { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
             }
             .padding(.vertical, 4).padding(.horizontal, 8)
             .background(hover ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -193,40 +162,27 @@ private struct FooterRow: View {
     }
 }
 
-/// The popover: Control-Center-style tiles. Sized by its content (the hosting controller reports preferredContentSize).
+/// The menu panel: Nevar, Quantidade and three actions; every other option lives in the Ajustes window. Sized by its content.
 struct QuickSettingsView: View {
     let env: SettingsEnv
+    @ObservedObject var panel: PanelState
 
-    private func switchRow(_ title: String, _ on: Binding<Bool>) -> some View {
-        HStack { Text(title).font(.callout); Spacer(); Toggle(title, isOn: on).labelsHidden().toggleStyle(.switch).controlSize(.small) }
-    }
+    init(env: SettingsEnv) { self.env = env; panel = env.panel }
 
     var body: some View {
-        let tiles = figures + [economyOpt, ambientOpt] + (env.reduceMotion ? [stillOpt] : []) + (MusicTap.supported && !env.reduceMotion ? [musicOpt] : [])
         VStack(spacing: 12) {
-            Header(panel: env.panel, env: env)
-            Divider()
-            VStack(spacing: 6) {
-                IntensityTile(store: env.store)
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-                    ForEach(tiles, id: \.pref) { o in PrefBinding(o.pref, env.store) { Tile(option: o, on: $0) } }
-                }
-                if MusicTap.supported && !env.reduceMotion { MusicNote(panel: env.panel, reduceMotion: false).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4) }
-            }
-            VStack(spacing: 6) {
-                PrefBinding(.behindWindows, env.store) { switchRow("Atrás das janelas", $0) }
-                PrefBinding(.behindLarge, env.store) { switchRow("Atrás de janelas grandes", $0) }
-            }
-            .padding(.horizontal, 4)
+            Header(panel: panel, env: env)
+            IntensityTile(store: env.store)
             Divider()
             VStack(spacing: 2) {
                 FooterRow("Limpar neve", "eraser", shortcut: "⌘K", action: env.clear).keyboardShortcut("k")
-                FooterRow("Ajustes…", "gearshape", shortcut: "⌘,", action: env.openWindow).keyboardShortcut(",")
+                FooterRow("Ajustes…", "gearshape", shortcut: "⌘,", badge: panel.axMissing, action: env.openWindow).keyboardShortcut(",")
+                    .accessibilityHint(panel.axMissing ? "Falta a permissão de Acessibilidade, opcional." : "")
                 FooterRow("Sair", "power", shortcut: "⌘Q", action: env.quit).keyboardShortcut("q")
             }
         }
         .padding(12)
-        .frame(width: 320)
+        .frame(width: 280)
     }
 }
 
@@ -284,7 +240,7 @@ struct SettingsWindowView: View {
                     PrefBinding(.pointerPush, env.store) { b in
                         VStack(alignment: .leading, spacing: 2) {
                             Toggle(isOn: b) { Label("Cursor empurra os flocos", systemImage: "cursorarrow.motionlines") }
-                            Text("Desligar economiza CPU").font(.caption).foregroundStyle(.secondary)
+                            Text("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     if env.reduceMotion { toggle(stillOpt) }
