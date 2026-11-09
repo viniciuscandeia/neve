@@ -546,3 +546,16 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     #expect(abs(middle - 40) < 0.5)
     #expect(corner > middle + 5, "under the corner arc the ceiling rises (\(corner) vs \(middle))")
 }
+
+/// A ball resting under a window's rounded corner must fit across its whole width: the tall gap right under the corner arc is not enough
+/// when the window's flat underside a few points inward is lower than the ball.
+@Test func ballUnderAWindowCornerChecksItsWholeWidth() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 18, 400, 300)])   // bottom edge 18pt up, radius 22: the ceiling rises to ~31pt right under the corner
+    var b = Snowball(id: 900, pos: SIMD2(302, 12), radius: 12, surfaceID: Tuning.groundID)   // needs more than 18pt, fits only under the arc's edge
+    b.state = .resting
+    f.nextBallID = 901
+    f.balls.append(b)
+    for _ in 0..<120 { f.step(dt: 1.0 / 60) }
+    #expect(f.balls.first { $0.id == 900 }!.pos.x < 300, "rolls out from under the corner instead of poking into the window")
+}

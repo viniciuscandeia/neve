@@ -75,8 +75,11 @@ extension SnowField {
                 // The bank column beside a Dock bar end sits exactly at the filled corner's height (no smoothing / noise): bank and Dock pile share one contour point.
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
                 // Packed up to a window's underside: drawn exactly at it (no smoothing / noise pulling it down), so the snow hugs the window's rounded corner.
-                if s.pile.cap[i].isFinite, h[i] >= s.pile.cap[i] - 0.05 { return ceiling(i) }
-                return min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
+                // Blended over the last 1.5pt (no pop when a column fills up to the window).
+                let plain = min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
+                guard s.pile.cap[i].isFinite else { return plain }
+                let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
+                return plain + (ceiling(i) - plain) * k
             }
             var b = 0
             while b < cnt {

@@ -109,7 +109,7 @@ extension SnowField {
                 if let reach, r.intersects(reach) { s.cover = rects[0..<i].filter { $0.intersects(s.frame) } }
                 built.append(s); continue
             }
-            if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, front: i, old: &old, spawned: &spawned) { built.append(s) }
+            if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, radii: windows.map(\.radius), front: i, old: &old, spawned: &spawned) { built.append(s) }
             spawned += flushRuns()   // runs never span two surfaces
         }
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
@@ -223,7 +223,7 @@ extension SnowField {
         return u
     }
 
-    func buildSurface(id: Int, frame: CGRect, edgeY: Float, radius: CGFloat, rects: [CGRect], front: Int,
+    func buildSurface(id: Int, frame: CGRect, edgeY: Float, radius: CGFloat, rects: [CGRect], radii: [CGFloat], front: Int,
                               old: inout [Surface], spawned: inout Int) -> Surface? {
         let bw = Tuning.binWidth
         let c0 = max(0, Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)))
@@ -246,7 +246,7 @@ extension SnowField {
             for j in 0..<front {
                 let r = rects[j]
                 if r.contains(CGPoint(x: x, y: y)) { hidden = true; hideTop[b] = Float(r.maxY); break }
-                if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radius)) }
+                if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radii[j])) }   // the front window's own radius (the Dock bar's is larger)
             }
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
