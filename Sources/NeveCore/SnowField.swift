@@ -76,7 +76,8 @@ public final class SnowField {
     public var calendarDay: (month: Int, day: Int) = (0, 0)   // injected by the app (tests set Dec 24): picks the sleigh frequency
     var scene: SceneState?               // NEVE_SCENE script (Scene.swift): nil = a normal run
     var giftState = GiftState()          // gifts + confetti (Gifts.swift)
-    var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
+    var carveSpray: Float = 0            // cut snow (pt^2) waiting to spray as debris (CursorThrow.swift)
+    var cursorThrow = CursorThrow()     // snowman throws at the held-still cursor (CursorThrow.swift)
     /// Profiling only (nil = free): seconds clock; time spent in `stepFlakes` accumulates in `flakeSeconds` (reader zeroes it) over `flakeSteps` calls.
     public var timer: (() -> Double)?
     public var flakeSeconds = 0.0, flakeSteps = 0
