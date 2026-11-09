@@ -41,3 +41,13 @@ private func snow(_ seed: UInt64 = 5) -> SnowField {
     #expect(maxWv > 20)       // the wind does move them
     #expect(maxStep < 5)      // but never snaps (per 1/60 s frame)
 }
+
+@Test func flakeTimerOffChangesNothingAndOnAccumulates() {
+    var t = 0.0
+    let a = snow(), b = snow()
+    b.timer = { t += 0.001; return t }
+    advance(a, 2, fps: 30); advance(b, 2, fps: 30)
+    #expect(a.flakes.map(\.pos) == b.flakes.map(\.pos))
+    #expect(a.flakeSeconds == 0 && a.flakeSteps == 0)
+    #expect(b.flakeSeconds > 0 && b.flakeSteps > 0)
+}

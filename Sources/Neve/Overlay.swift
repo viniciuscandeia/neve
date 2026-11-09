@@ -156,6 +156,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         apply(prefs)
         setLowPower(ProcessInfo.processInfo.isLowPowerModeEnabled)
         field.setIntensity(prefs.intensity, immediate: true)
+        if Perf.on { field.timer = Perf.seconds }
         intro()
     }
 

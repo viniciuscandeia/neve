@@ -79,6 +79,9 @@ public final class SnowField {
     var scene: SceneState?               // NEVE_SCENE script (Scene.swift): nil = a normal run
     var giftState = GiftState()          // gifts + confetti (Gifts.swift)
     var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
+    /// Profiling only (nil = free): seconds clock; time spent in `stepFlakes` accumulates in `flakeSeconds` (reader zeroes it) over `flakeSteps` calls.
+    public var timer: (() -> Double)?
+    public var flakeSeconds = 0.0, flakeSteps = 0
     public var optionHeld = false        // the overlay reports the ⌥ key every frame
     var carrots: [Carrot] = []           // stolen noses lying on a pile or falling (Figures+Rabbit.swift)
     var shotLand: (p: SIMD2<Float>, t: Float)?, impactAt: (x: Float, y: Float, t: Float)?   // last landings (robin startle)
@@ -257,7 +260,7 @@ public final class SnowField {
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         stepMusic(dt: dt)
         wind = calm ? 0 : windGain * windShape() + musicKick
-        stepFlakes(dt: dt)
+        if let timer { let t0 = timer(); stepFlakes(dt: dt); flakeSeconds += timer() - t0; flakeSteps += 1 } else { stepFlakes(dt: dt) }
         stepPeel(dt: dt)
         stepIce(dt: dt)
         stepAvalanche(dt: dt)
