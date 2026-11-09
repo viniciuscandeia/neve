@@ -9,20 +9,23 @@ public struct PenguinLook {
     public var angle: Float = 0     // body rotation, rad; negative = tipped forward (onto the belly)
     public var flap: Float = 0      // flipper swing -1...1
     public var fade: Float = 1
-    public init(foot: SIMD2<Float>, facing: Float = 1, scale: Float = 1, hop: Float = 0, angle: Float = 0, flap: Float = 0, fade: Float = 1) {
-        self.foot = foot; self.facing = facing; self.scale = scale; self.hop = hop; self.angle = angle; self.flap = flap; self.fade = fade
+    public var lie: Float = 0       // 0...1: how far onto the belly; the pivot moves to the belly contact and the body drops onto the snow
+    public var sink: Float = 0      // pt the lying body sits below the foot line (into the groove)
+    public init(foot: SIMD2<Float>, facing: Float = 1, scale: Float = 1, hop: Float = 0, angle: Float = 0, flap: Float = 0, fade: Float = 1, lie: Float = 0, sink: Float = 0) {
+        self.foot = foot; self.facing = facing; self.scale = scale; self.hop = hop; self.angle = angle; self.flap = flap; self.fade = fade; self.lie = lie; self.sink = sink
     }
 }
 
 extension Rig {
     static let penguinBack = C(0.12, 0.13, 0.16, 1), penguinBelly = C(0.97, 0.98, 1, 1), penguinOrange = C(0.96, 0.52, 0.12, 1)
 
-    /// Penguin: dark back, white belly, orange beak and feet, coal eye, two flippers; the body rotates about its middle.
+    /// Penguin: dark back, white belly, orange beak and feet, coal eye, two flippers; the body rotates about its middle, and about the belly contact (dropped onto the snow) as it lies down.
     public static func penguin(_ l: PenguinLook, contrast: Bool, into w: inout PrimWriter) {
         let m = l.facing, s = l.scale, al = l.fade
         guard al > 0.01 else { return }
-        let piv = l.foot + V(0, l.hop + 9 * s), a = m * l.angle
-        func p(_ x: Float, _ y: Float) -> V { rot(l.foot + V(m * x * s, l.hop + y * s), piv, a) }
+        let piv = l.foot + V(m * 6.3 * l.lie * s, l.hop + (9 + l.lie) * s), a = m * l.angle
+        let off = V(-m * 5 * l.lie * s, -l.lie * (10 + l.sink) * s)   // lying: the belly point (pivot) goes to the snow, the body re-centres over the foot
+        func p(_ x: Float, _ y: Float) -> V { rot(l.foot + V(m * x * s, l.hop + y * s), piv, a) + off }
         func r(_ x: Float, _ y: Float) -> V { V(x * s, y * s) }
         let back = Rig.a(penguinBack, al), white = Rig.a(penguinBelly, al), org = Rig.a(penguinOrange, al), cl = Rig.a(coal, al)
         w.ellipse(center: l.foot + V(0, 0.4 * s), radii: V(7 * s, 1.3 * s), color: Rig.a(shadow, 0.35 * al), soft: 1.6)

@@ -6,7 +6,11 @@ extension Tuning {
     static let penguinRock: Float = 8 * .pi / 180   // rad of body rock while waddling, at `penguinRockHz`
     static let penguinRockHz: Float = 2.5
     static let penguinSlide: Float = 90         // pt/s belly-slide start speed
-    static let penguinDecel: Float = 25         // pt/s^2
+    static let penguinDecelBase: Float = 8      // pt/s^2 on a skim of snow ...
+    static let penguinDecelDepth: Float = 1.5   // ... plus this per pt of snow depth ahead of the belly (deep snow brakes harder)
+    static let penguinBare: Float = 0.8         // pt: less snow than this ahead of the belly and the slide ends (it stands up)
+    static let penguinSink: Float = 0.3         // share of the groove depth the lying body sits below the drawn snow
+    static let penguinBermDeep: Float = 6       // piles at least this tall cut deep enough to throw chunks; shallower ones bank nearly all
     static let penguinSlideEnd: Float = 15      // pt/s: stands up below this
     static let penguinFlop: Float = -80 * .pi / 180
     static let penguinStretch: Float = 120      // pt ahead that must carry snow (mean h >= penguinMinH) for a slide
@@ -29,6 +33,9 @@ struct PenguinState {
     var rockT: Float = 0
     var sinceSlide: Float = 0
     var ref: Float = 0              // pile height the groove is cut from (at slide start)
+    var tilt: Float = 0             // extra body rotation (rad) following the local slope of the drawn snow
+    var sink: Float = 0             // pt the lying body sits below the drawn snow (the groove)
+    var puffD: Float = 0            // belly travel (pt) since the last trail puff
     var spray: Float = 0            // plowed area (pt^2) still owed as debris
     var duck: Float = 0             // seconds of cursor-duck hop left
     var lastBall = 0                // ball it last launched from (no double launch)
@@ -38,14 +45,29 @@ struct PenguinState {
 
 extension SnowField {
     /// Pile top under x, raised by a resting user ball (the ramp): also what the penguin's feet follow.
-    func penguinSupport(si: Int, x: Float) -> Float {
-        var y = standY(si: si, x: x)
+    func penguinSupport(si: Int, x: Float, span: Int = 3) -> Float {
+        var y = penguinSurface(si: si, x: x, span: span)
         let sid = surfaces[si].id
         for b in balls where b.state == .resting && b.parent == nil && !b.melting && b.surfaceID == sid {
             let dx = x - b.pos.x
             if abs(dx) < b.radius { y = max(y, b.pos.y + (b.radius * b.radius - dx * dx).squareRoot()) }
         }
         return y
+    }
+
+    /// Mean of the DRAWN snow height (`shown`; the real heights until the pile was first drawn) over cols +-span of x.
+    private func penguinSnow(si: Int, x: Float, span: Int) -> Float {
+        let p = surfaces[si].pile, a = p.shown.count == p.heights.count ? p.shown : p.heights
+        let c = min(max(column(x) - surfaces[si].c0, 0), a.count - 1), lo = max(0, c - span), hi = min(a.count - 1, c + span)
+        var sum: Float = 0
+        for b in lo...hi { sum += a[b] }
+        return sum / Float(hi - lo + 1)
+    }
+
+    /// y of the drawn snow top at x (what the belly rests on).
+    func penguinSurface(si: Int, x: Float, span: Int) -> Float {
+        let s = surfaces[si]
+        return s.edgeY + s.pile.base[min(max(column(x) - s.c0, 0), s.pile.base.count - 1)] + penguinSnow(si: si, x: x, span: span)
     }
 
     private func penguinRun(si: Int, x: Float) -> (lo: Float, hi: Float)? {
@@ -97,15 +119,21 @@ extension SnowField {
         }
     }
 
-    /// Plows a shallow trench under the belly (see `Pile.plow`); the area not banked in berms comes back as a forward spray of debris.
-    private func plowPath(si: Int, x: Float, dir d: Float, _ p: inout PenguinState, y: Float) {
-        let w: Float = 6, ref = p.ref   // the level when the slide began: the berm and spray piled ahead must not raise the cut
+    /// Plows a shallow U trench under the belly (see `Pile.plow`): berms bank behind the dent at the start (both sides) and ahead of the blade while it runs, leaving rims at both ends; the rest of the removed area flies on as chunks
+    /// from the front of the belly at snow level (arc ~ speed) with a powder puff each, plus a trail of puffs. Snow is conserved.
+    private func plowPath(si: Int, x: Float, dir d: Float, _ p: inout PenguinState, w: Float = 6, depth: Float, moved: Float, ramp: Float = 1, side: Float = 0) {
+        let ref = p.ref   // the level when the slide began: the berm and spray piled around must not raise the cut
         guard ref > 0.3 else { return }
-        let sprayed = surfaces[si].pile.plow(centerX: x, halfWidth: w, depth: min(Tuning.penguinGroove, 0.35 * ref) * min(p.t / 0.2, 1), ref: ref, berm: Tuning.penguinBerm, side: d, maxStep: 1)
+        let share = ref >= Tuning.penguinBermDeep ? Tuning.penguinBerm : 0.8   // shallow cuts bank nearly everything: no chunks
+        let sprayed = surfaces[si].pile.plow(centerX: x, halfWidth: w, depth: min(depth, 0.35 * ref) * ramp, ref: ref, berm: share, side: side, maxStep: depth > Tuning.penguinGroove ? .infinity : 1)
         if sprayed > 0 { pilesDirty = true; p.spray += sprayed }
+        let front = x + d * 7, top = penguinSurface(si: si, x: front, span: 1) + 1
+        p.puffD += moved
+        if p.puffD >= 6 { p.puffD = 0; addPuff(x: front, y: top + Float.random(in: 0...2, using: &rng)) }
         while p.spray >= Tuning.penguinPuff {
             let size = Tuning.penguinPuff / (Tuning.depositScale * Tuning.binWidth)   // lands as exactly the area it took
-            guard addDebris(x: x + d * 4, y: y + 14, vx: d * (max(p.speed, 0) + Float.random(in: 30...150, using: &rng)), fall: Float.random(in: 0...30, using: &rng), size: size) else { break }
+            guard addDebris(x: front, y: top, vx: d * (max(p.speed, 0) * 0.7 + Float.random(in: 20...90, using: &rng)), fall: Float.random(in: 0...15, using: &rng), size: size) else { break }
+            addPuff(x: front, y: top)
             p.spray -= Tuning.penguinPuff
         }
     }
@@ -136,9 +164,10 @@ extension SnowField {
             if p.t >= 0.4 { p.stage = .waddle; p.t = 0 }
         case .waddle, .stand:
             if p.stage == .stand {
-                let u = min(p.t / 0.2, 1)
+                let u = min(p.t / 0.3, 1)
                 p.angle = Tuning.penguinFlop * (1 - u * (2 - u))
-                if u >= 1 { p.stage = .waddle; p.t = 0; p.angle = 0 }
+                p.tilt *= max(0, 1 - 10 * dt); p.sink *= max(0, 1 - 10 * dt)
+                if u >= 1 { p.stage = .waddle; p.t = 0; p.angle = 0; p.tilt = 0; p.sink = 0 }
             }
             f.foot.x += d * Tuning.penguinWaddle * dt
             if p.life <= 0, !p.leaving {
@@ -153,13 +182,25 @@ extension SnowField {
         case .flop:
             let u = min(p.t / 0.2, 1)
             p.angle = Tuning.penguinFlop * u * (2 - u)
-            if u >= 1 { p.stage = .slide; p.t = 0; p.speed = Tuning.penguinSlide; p.slides += 1; p.ref = meanHeight(si: si, col: column(f.foot.x), span: 1) ?? 0 }
+            if u >= 1 {
+                p.stage = .slide; p.t = 0; p.speed = Tuning.penguinSlide; p.slides += 1; p.ref = meanHeight(si: si, col: column(f.foot.x), span: 1) ?? 0; p.puffD = 0
+                plowPath(si: si, x: f.foot.x, dir: d, &p, w: 7, depth: 1.5 * Tuning.penguinGroove, moved: 0)   // the belly lands: a deeper dent ...
+                for k in 0..<2 { addPuff(x: f.foot.x + Float(k * 2 - 1) * 6, y: penguinSurface(si: si, x: f.foot.x, span: 1) + 1) }   // ... and a puff
+            }
         case .slide:
-            p.speed -= Tuning.penguinDecel * dt
+            let ahead = penguinSnow(si: si, x: f.foot.x + d * 8, span: 1)
+            p.speed -= (Tuning.penguinDecelBase + Tuning.penguinDecelDepth * ahead) * dt
             f.foot.x += d * max(p.speed, 0) * dt
-            plowPath(si: si, x: f.foot.x, dir: d, &p, y: f.foot.y)
-            p.groove += abs(f.foot.x - prevX)
-            if p.speed <= Tuning.penguinSlideEnd { p.stage = .stand; p.t = 0; p.sinceSlide = 0 }
+            let moved = abs(f.foot.x - prevX), ramp = min(p.t / 0.2, 1)
+            plowPath(si: si, x: f.foot.x, dir: d, &p, depth: Tuning.penguinGroove, moved: moved, ramp: ramp, side: d)
+            p.groove += moved
+            let s0 = penguinSurface(si: si, x: f.foot.x - 4 * d, span: 1), s1 = penguinSurface(si: si, x: f.foot.x + 4 * d, span: 1), sm = penguinSurface(si: si, x: f.foot.x, span: 1)
+            let target = min(max(atan2(s1 - s0, 8), -0.4), 0.4)
+            p.tilt += (target - p.tilt) * min(1, 12 * dt)
+            p.sink = min(Tuning.penguinSink * max(p.ref - penguinSnow(si: si, x: f.foot.x, span: 1), 0), 1) * ramp
+            let rough = abs(penguinSurface(si: si, x: f.foot.x + 3, span: 0) + penguinSurface(si: si, x: f.foot.x - 3, span: 0) - 2 * sm)
+            f.pose.hop += min(rough, 1) * 0.4 * sinf(30 * p.t)
+            if p.speed <= Tuning.penguinSlideEnd || ahead < Tuning.penguinBare { p.stage = .stand; p.t = 0; p.sinceSlide = 0 }
         case .sink:
             let u = min(p.t / 0.45, 1)
             f.foot.x += d * 8 * dt
@@ -183,8 +224,8 @@ extension SnowField {
                 return true
             }
         }
-        let target = penguinSupport(si: si, x: f.foot.x)
-        f.foot.y = target > f.foot.y ? f.foot.y + (target - f.foot.y) * min(1, 18 * dt) : target
+        let target = penguinSupport(si: si, x: f.foot.x, span: p.stage == .slide || p.stage == .flop || p.stage == .stand ? 1 : 3)
+        f.foot.y = target > f.foot.y && p.stage != .slide ? f.foot.y + (target - f.foot.y) * min(1, 18 * dt) : target   // `shown` is already eased: the slide follows it exactly
         if p.duck > 0, p.stage != .rise { f.pose.hop += 5 * f.scale * sin(.pi * (1 - p.duck / 0.3)) }
         f.at = .surface(id: sid, x: f.foot.x)
         if p.stage != .rise, p.stage != .sink { f.fade = 1 }
@@ -224,7 +265,10 @@ extension SnowField {
     public func penguinLook(of f: Figure) -> PenguinLook {
         let p = f.penguin
         let rock = p.stage == .waddle ? Tuning.penguinRock * sin(2 * .pi * Tuning.penguinRockHz * p.rockT) : 0
-        let flap: Float = p.stage == .waddle ? sin(2 * .pi * Tuning.penguinRockHz * p.rockT) : p.stage == .slide || p.stage == .flop ? -1 : p.stage == .air ? 1 : 0
-        return PenguinLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, angle: p.angle + rock, flap: flap, fade: f.fade * f.melt)
+        let flap: Float = p.stage == .waddle ? sin(2 * .pi * Tuning.penguinRockHz * p.rockT)
+            : p.stage == .slide ? -0.8 + 0.2 * sin(2 * .pi * 7 * p.rockT)   // tucked back with a light flutter
+            : p.stage == .flop ? -1 : p.stage == .stand ? sin(.pi * min(p.t / 0.3, 1)) : p.stage == .air ? 1 : 0   // stand: a flipper push
+        let lie: Float = p.stage == .flop || p.stage == .slide || p.stage == .stand ? min(max(p.angle / Tuning.penguinFlop, 0), 1) : 0
+        return PenguinLook(foot: f.foot, facing: f.facing, scale: f.scale, hop: f.pose.hop, angle: p.angle + p.tilt + rock, flap: flap, fade: f.fade * f.melt, lie: lie, sink: p.sink)
     }
 }

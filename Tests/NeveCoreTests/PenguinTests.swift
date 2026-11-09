@@ -166,7 +166,7 @@ private func run(_ f: SnowField, limit: Float = 60, until done: () -> Bool) -> B
         prev = h
     }
     #expect(sliding && abs(x1 - x0) > 40)
-    #expect(maxDrop < 3)   // eased in over a few pt of travel: no column pops
+    #expect(maxDrop < 5)   // the belly landing digs a deeper dent at once (1.5x the groove); after that it eases in over a few pt of travel: no column pops
     let c0 = f.surfaces[f.index[1]!].c0, lo = f.column(min(x0, x1) + 8) - c0, hi = f.column(max(x0, x1) - 8) - c0
     let h = heights(f), depth = (lo...hi).map { 12 - h[$0] }
     #expect(depth.min()! > 0.5 && depth.max()! <= Tuning.penguinGroove + 0.01)
@@ -175,3 +175,51 @@ private func run(_ f: SnowField, limit: Float = 60, until done: () -> Bool) -> B
     #expect(abs(after - before) < Tuning.penguinPuff + 0.03 * before)
 }
 
+
+/// Runs one slide on a field; returns the slide's start / end x and the field.
+private func slideRun(_ f: SnowField, each: (Figure) -> Void = { _ in }) -> (x0: Float, x1: Float) {
+    var sliding = false, x0: Float = 0, x1: Float = 0
+    #expect(f.startPenguin())
+    run(f) {
+        guard let p = penguins(f).first else { return true }
+        if p.penguin.stage == .slide { if !sliding { x0 = p.foot.x }; sliding = true; x1 = p.foot.x; each(p) }
+        return sliding && p.penguin.stage != .slide
+    }
+    return (x0, x1)
+}
+
+@Test func penguinRestsOnTheDrawnSnowNotTheRealHeights() {
+    let f = field()
+    f.surfaces[f.index[1]!].pile.shown = f.surfaces[f.index[1]!].pile.heights.map { $0 + 3 }   // drawn 3 pt higher than the real heights
+    var worst: Float = 0
+    let r = slideRun(f) { p in
+        let si = f.index[1]!
+        worst = max(worst, abs(p.foot.y - p.penguin.sink - f.penguinSurface(si: si, x: p.foot.x, span: 1)))
+    }
+    #expect(abs(r.x1 - r.x0) > 20 && worst < 1)
+    #expect(f.surfaces[f.index[1]!].edgeY + 15 - 0.01 < 1e6)   // sanity: drawn level (15) is what the foot followed, not 12
+    let p = penguins(f).first
+    if let p { #expect(p.penguin.sink <= 1) }
+}
+
+@Test func penguinBrakesHarderInDeepSnowAndStopsOnABareWindow() {
+    let deep = slideRun(field(height: 20)), thin = slideRun(field(height: 3.5))
+    #expect(abs(thin.x1 - thin.x0) > abs(deep.x1 - deep.x0) + 20)
+    // snow only on the left of x = 450: whichever way it slides, it never carries on over the bare part
+    let f = field()
+    let sid = f.index[1]!, c0 = f.surfaces[sid].c0
+    for b in f.surfaces[sid].pile.heights.indices where Float(c0 + b) * Tuning.binWidth > 450 { f.surfaces[sid].pile.heights[b] = 0 }
+    let r = slideRun(f)
+    #expect(max(r.x0, r.x1) < 450 + 16)
+}
+
+@Test func penguinGrooveHasBermsOnBothSidesAndSprayPlusBermConserveTheCut() {
+    var pile = Pile(columns: 200, inset: 0)
+    for b in pile.heights.indices { pile.heights[b] = 10 }
+    let before = pile.heights.reduce(0, +) * Tuning.binWidth
+    let sprayed = pile.plow(centerX: 200, halfWidth: 7, depth: 3.5, ref: 10, berm: 0.4)
+    let after = pile.heights.reduce(0, +) * Tuning.binWidth
+    #expect(sprayed > 0 && abs((after + sprayed) - before) < 0.01)   // cut = banked + sprayed
+    let left = pile.heights[Int((200 - 8) / Tuning.binWidth)], right = pile.heights[Int((200 + 8) / Tuning.binWidth)]
+    #expect(left > 10 && right > 10)
+}
