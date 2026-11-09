@@ -27,7 +27,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let dock = DockWatcher()
     private let watcher = WindowWatcher()
     private var slowTimer: Timer?
-    private var lastScreensCheck = Date.distantPast
+    private var lastScreensCheck = -Double.infinity   // monotonic (CACurrentMediaTime): a wall-clock jump must not stall the checks
     /// The one defaults store: a per-instance suite for dev builds, so concurrent instances never share prefs.
     private let ud = neveInstance.flatMap { UserDefaults(suiteName: "io.github.viniciuscandeia.neve.dev.\($0)") } ?? .standard
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
@@ -80,30 +80,31 @@ final class AppController: NSObject, NSApplicationDelegate {
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.refreshRunState() } }
         ws.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
-        // Global mouse monitors need no Accessibility permission; without it, window polling speeds up to 10Hz while the button is down (drags).
+        // Global mouse monitors need no Accessibility permission; the poll scheduler samples at ~25 Hz while a window drag is under way (with or without AX).
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] e in
             MainActor.assumeIsolated { self?.mouseEvent(e.type) }
         }
         dock.onChange = { [weak self] in self?.refreshDock() }
-        watcher.onAppear = { [weak self] in self?.transitionPoll() }
         for n in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification,
                   NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification] {
             ws.addObserver(self, selector: #selector(transitionPollNotification), name: n, object: nil)
         }
+        ws.addObserver(self, selector: #selector(settlePollNotification), name: NSWorkspace.didHideApplicationNotification, object: nil)
         watcher.onChange = { [weak self] in self?.transitionPoll() }   // an AX event is a transition: the window may still be animating
+        watcher.onSettle = { [weak self] in self?.settlePoll() }       // minimize / hide animations outlast the burst: one more read afterwards
         syncOverlays()
     }
 
     private func displayID(_ s: NSScreen) -> Int { (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0 }
 
     /// Leaving / entering fullscreen reshuffles the menu bar and Dock mid-Space-animation: per screen, ignore visibleFrame ~1s after.
-    private var settleUntil: [Int: Date] = [:]
-    private func settling(_ o: Overlay) -> Bool { o.isFullscreen || Date() < settleUntil[displayID(o.screen), default: .distantPast] }
+    private var settleUntil: [Int: Double] = [:]   // CACurrentMediaTime
+    private func settling(_ o: Overlay) -> Bool { o.isFullscreen || CACurrentMediaTime() < settleUntil[displayID(o.screen), default: -.infinity] }
 
     /// Real configuration changes (screens added / removed, frame or scale) apply at once, per screen;
     /// only visibleFrame-only changes (Dock, menu bar) wait for a transitioning screen to settle.
     @objc private func screensChanged() {
-        lastScreensCheck = Date()
+        lastScreensCheck = CACurrentMediaTime()
         let wanted = wantedScreens
         let ids = Set(wanted.map(displayID))
         let changed = Set(overlays.map { displayID($0.screen) }) != ids
@@ -173,7 +174,10 @@ final class AppController: NSObject, NSApplicationDelegate {
             applyPrefs()
             requestPoll()   // empties / refills the surface list
             updateStatus()
-        case .behindLarge, .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps, .pointerPush: applyPrefs()
+        case .behindLarge:
+            applyPrefs()
+            requestPoll()   // the occluders / coverage follow the option now, not at the next window change
+        case .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps, .pointerPush: applyPrefs()
         }
     }
 
@@ -350,7 +354,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// With Accessibility trust, window events drive updates and the timer is a 2s safety poll; without it, a 0.5s poll (10Hz while the mouse is down).
+    /// With Accessibility trust, window events drive updates and the timer is a 2s safety poll; without it, a 0.5s poll (drags are sampled by the scheduler).
     /// Plus a 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
     private func scheduleTimers() {
         slowTimer?.invalidate()
@@ -367,8 +371,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         let idle = fullscreenIdle
         idleWatch = idle
         timerGap = safetyGap()
-        let t = Timer(timeInterval: idle ? 1 : (watcher.active ? timerGap : mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
-        t.tolerance = idle ? 0.2 : (mouseDown && !watcher.active ? 0.03 : 0.1)
+        let t = Timer(timeInterval: idle ? 1 : (watcher.active ? timerGap : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
+        t.tolerance = idle ? 0.2 : 0.1
         RunLoop.main.add(t, forMode: .common)
         timer = t
         if slow && !idle {
@@ -387,7 +391,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
         if !userIdle && !idleMelting && !ambient && sceneKind == nil && since >= idleSecs { startIdleMelt() }
         else if (userIdle || idleMelting) && since < max(2, timerGap + 0.5) { wakeFromIdle() }
-        if Date().timeIntervalSince(lastScreensCheck) >= 0.5 { requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
+        if CACurrentMediaTime() - lastScreensCheck >= 0.5 { requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         requestPoll()   // the safety poll
         if watcher.active, !idleWatch, safetyGap() != timerGap { scheduleSafety(slow: false) }   // quiet for 10 s: 2 s -> 5 s
     }
@@ -420,44 +424,39 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private let scenarioHeavy = ProcessInfo.processInfo.environment["NEVE_SCENARIO"] == "heavy"
-    private var lastStage = Date.distantPast
+    private var lastStage = -Double.infinity
 
     @objc private func pollWindows() {
         let t0 = Perf.now()
         defer { Perf.addPoll(t0) }
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
+        let mouse = NSEvent.mouseLocation   // read with the bounds: the drag offset is the mouse's move over the SAME interval as the window's
         guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber))) else {
             sched.didRead(ok: false, changed: false, frameMoved: false)   // CGWindowList failed: keep the last snapshot, retry shortly
             return
         }
         // Drag bookkeeping: the target is the one window whose move matches the mouse's over this same interval.
-        let mouse = NSEvent.mouseLocation
         let changed = raw != lastRead
         let moved = mouseDown && raw.contains { w in lastRead.first { $0.number == w.number }.map { $0.frame != w.frame } ?? false }
-        if !mouseDown { dragID = nil }
-        else if moved {
-            dragID = dragTarget(prev: lastRead, cur: raw, mouseDelta: CGVector(dx: mouse.x - lastReadMouse.x, dy: mouse.y - lastReadMouse.y))
-            if let d = dragID { exemptID = d }
-        }
-        if let e = exemptID, !raw.contains(where: { $0.number == e }) { exemptID = nil }
+        let screenFrames = NSScreen.screens.map(\.frame)
+        drag.read(down: mouseDown, moved: moved, prev: lastRead, cur: raw, mouseDelta: CGVector(dx: mouse.x - lastReadMouse.x, dy: mouse.y - lastReadMouse.y), screens: screenFrames)
         sched.didRead(ok: true, changed: changed, frameMoved: moved)
         lastRead = raw; lastReadMouse = mouse
         var windows = raw
-        let screenFrames = NSScreen.screens.map(\.frame)
         // Show-desktop leaves a sliver on-screen: treat as gone. A window the user dragged mostly off-screen keeps its snow.
-        windows.removeAll { $0.number != exemptID && mostlyOffscreen($0.frame, screens: screenFrames) }
+        windows.removeAll { $0.number != drag.exempt && mostlyOffscreen($0.frame, screens: screenFrames) }
         let covering = windows.map(\.frame)
         let coverList = windows   // real windows: coverage / compaction also work in behind mode
         if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
         else if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
         for o in overlays {
             let fs = covering.contains { o.covers($0) }
-            if fs != o.isFullscreen { settleUntil[displayID(o.screen)] = Date().addingTimeInterval(1) }
+            if fs != o.isFullscreen { settleUntil[displayID(o.screen)] = CACurrentMediaTime() + 1 }
             o.setFullscreen(fs)
-            if !o.isFullscreen { o.update(windows: windows, covering: coverList, dragTarget: dragID) }   // under fullscreen the list is just that app: keep piles untouched
+            if !o.isFullscreen { o.update(windows: windows, covering: coverList, dragTarget: drag.target, mouse: lastReadMouse) }   // under fullscreen the list is just that app: keep piles untouched
         }
-        if scenarioHeavy, Date().timeIntervalSince(lastStage) >= 20 { lastStage = Date(); overlays.forEach { $0.stage(.heavy) } }   // perf A/B load
+        if scenarioHeavy, CACurrentMediaTime() - lastStage >= 20 { lastStage = CACurrentMediaTime(); overlays.forEach { $0.stage(.heavy) } }   // perf A/B load
         if fullscreenIdle != idleWatch {
             scheduleTimers()
             if !fullscreenIdle { refreshDock() }
@@ -465,7 +464,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     // MARK: scene mode (NEVE_SCENE)
-    private let launched = Date()   // NEVE_SCENE_WAIT=<secs>: the script starts that long after launch (time to start a recording)
+    private let launched = CACurrentMediaTime()   // NEVE_SCENE_WAIT=<secs>: the script starts that long after launch (time to start a recording)
     private var stage: SceneStage?, sceneTimer: Timer?, sceneBegun = false, scenePoll = 0
 
     /// Scene mode: only the scene windows count, no Dock; a 60 Hz timer moves the windows by scene time and polls them every other tick.
@@ -486,7 +485,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let windows = k == .demo ? (readWindows(primaryHeight: primary.frame.height, scene: stage?.numbers ?? []) ?? []) : []
         for o in overlays {
             o.update(windows: windows)
-            if !sceneBegun, Date().timeIntervalSince(launched) >= (Double(ProcessInfo.processInfo.environment["NEVE_SCENE_WAIT"] ?? "") ?? 0), k == .fight || windows.count == 3 {
+            if !sceneBegun, CACurrentMediaTime() - launched >= (Double(ProcessInfo.processInfo.environment["NEVE_SCENE_WAIT"] ?? "") ?? 0), k == .fight || windows.count == 3 {
                 sceneBegun = true; o.beginScene(k)
                 // NEVE_SCENE_MARK=file: unix time of scene second 0, to line a screen recording up with the script
                 if let m = ProcessInfo.processInfo.environment["NEVE_SCENE_MARK"] { try? "\(Date().timeIntervalSince1970)".write(toFile: m, atomically: true, encoding: .utf8) }
@@ -536,11 +535,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func transitionPollNotification() { transitionPoll() }
+    @objc private func settlePollNotification() { settlePoll() }
 
     // MARK: poll scheduling. Every window read goes through `sched`: coalesced, 30/s at most, bursts bounded (see PollScheduler).
     private var sched = PollScheduler(), schedTimer: Timer?, timerGap = PollScheduler.safetyGap
     private var lastRead: [WindowInfo] = [], lastReadMouse = NSEvent.mouseLocation
-    private var dragID: Int?, exemptID: Int?, downOnDesktop = false, lastDragReq = 0.0
+    private var drag = DragTracker(), downOnDesktop = false, lastDragReq = 0.0
 
     private func requestPoll(_ r: PollReasons = .windows) {
         guard polling, !userIdle else { return }
@@ -554,13 +554,22 @@ final class AppController: NSObject, NSApplicationDelegate {
         arm()
     }
 
+    /// A minimize / hide animates for a while: besides the burst, one more read ~0.6 s later catches the final state.
+    private func settlePoll() {
+        guard polling, !userIdle else { return }
+        sched.settleRead(now: CACurrentMediaTime())
+        arm()
+    }
+
     private func mouseEvent(_ type: NSEvent.EventType) {
         let now = CACurrentMediaTime()
         switch type {
         case .leftMouseDown:
             mouseDown = true
-            downOnDesktop = !lastRead.contains { $0.frame.contains(NSEvent.mouseLocation) }   // click on the wallpaper = show-desktop: no AX event
-            if polling, !userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop) }
+            let p = NSEvent.mouseLocation
+            downOnDesktop = !lastRead.contains { $0.frame.contains(p) }   // click on the wallpaper = show-desktop: no AX event
+            drag.pressed(at: p, windows: lastRead)   // a press outside the exempt (dragged-offscreen) window ends its exemption
+            if polling, !userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead)) }
         case .leftMouseUp:
             mouseDown = false
             if polling, !userIdle { sched.mouseUp(now: now, onDesktop: downOnDesktop) }
@@ -569,7 +578,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             lastDragReq = now
             sched.mouseDragged()
         }
-        if !watcher.active, type != .leftMouseDragged { scheduleTimers() }
         arm()
     }
 

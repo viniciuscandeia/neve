@@ -34,7 +34,6 @@ extension SnowField {
         windowsStale = false
         defer { stamps.removeAll(keepingCapacity: true); for w in windows { stamps[w.number] = clock } }
         guard windows != lastWindows || boundsDirty else {
-            if draggingID != nil { draggingID = nil; pilesDirty = true }
             for i in surfaces.indices {   // an identical snapshot decays velocity with elapsed time instead of zeroing it
                 let v = surfaces[i].vel * exp(-windowDt(surfaces[i].id) / Tuning.velSmoothing)
                 surfaces[i].vel = v.x * v.x + v.y * v.y < 0.25 ? .zero : v
@@ -96,7 +95,6 @@ extension SnowField {
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
         spawned += flushRuns()
         for s in old { spawned += knockOff(s) }   // gone surfaces
-        draggingID = moved
         for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns() }
         surfaces = built
         index.removeAll(keepingCapacity: true)
