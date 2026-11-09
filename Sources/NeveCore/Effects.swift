@@ -143,7 +143,7 @@ extension SnowField {
 
     /// Sparkles on crests of piles >= 6pt: at most 6 alive, one new every 2s, 0 -> 1 -> 0 over 0.6s. Off for Reduce Motion, economy, low power, the outro / melt:
     /// then none are born and the live ones fade out over ~0.17 s. A glint rides the DRAWN crest of its surface (eased `shown`, smoothed like the contour; `prof` = surface id,
-    /// `amp` 1 = tied, `phase` = GLOBAL column; the local bin is recomputed against c0 each frame, out of range = fades) and fades when that surface is dragged or gone. `fade` < 1 marks a dying glint.
+    /// `amp` 1 = tied, `vol` = the surface's frame minX at birth (moved without a drag = fades), `phase` = GLOBAL column; the local bin is recomputed against c0 each frame, out of range = fades) and fades when that surface is dragged or gone. `fade` < 1 marks a dying glint.
     func stepGlints(dt: Float) {
         let off = calm || economy || lowPower || quiet
         var i = glints.count - 1
@@ -151,7 +151,7 @@ extension SnowField {
             glints[i].delay -= dt
             if glints[i].amp > 0 {
                 let id = Int(Int32(bitPattern: glints[i].prof))
-                if let si = index[id], id != draggingID, case let b = Int(glints[i].phase) - surfaces[si].c0, b >= 0, b < surfaces[si].pile.heights.count {
+                if let si = index[id], id != draggingID, glints[i].vol == Float(surfaces[si].frame.minX), case let b = Int(glints[i].phase) - surfaces[si].c0, b >= 0, b < surfaces[si].pile.heights.count {
                     glints[i].pos = [binCenter(surfaces[si].c0 + b), crestY(si: si, bin: b)]
                 } else { glints[i].fade = min(glints[i].fade, 0.99) }
             }
@@ -170,7 +170,7 @@ extension SnowField {
             let h = surfaces[s].pile.heights[b]
             guard h >= 6, surfaces[s].pile.visible[b], surfaces[s].id != draggingID else { continue }
             glints.append(Flake(pos: [binCenter(surfaces[s].c0 + b), crestY(si: s, bin: b)], vx: 0, fall: 0, phase: Float(surfaces[s].c0 + b), amp: 1, freq: 0,
-                                size: Float.random(in: 3...5, using: &rng), alpha: 1, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4,
+                                size: Float.random(in: 3...5, using: &rng), alpha: 1, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, vol: Float(surfaces[s].frame.minX), delay: Tuning.glintLife, shape: 4,
                                 prof: UInt32(bitPattern: Int32(truncatingIfNeeded: surfaces[s].id))))
             return
         }

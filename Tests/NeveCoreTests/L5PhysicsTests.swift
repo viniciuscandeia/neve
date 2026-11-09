@@ -127,9 +127,13 @@ private func liveFlakes(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .d
     let (f, i) = wide()
     let n = f.surfaces[i].pile.heights.count
     f.surfaces[i].pile.heights = [Float](repeating: 10, count: n); f.surfaces[i].pile.shown = [Float](repeating: 3, count: n)
-    f.glints.append(Flake(pos: [500, 0], vx: 0, fall: 0, phase: Float(f.surfaces[i].c0 + n / 2), amp: 1, freq: 0, size: 4, alpha: 1, kind: .debris, fade: 1, delay: 0.6, shape: 4, prof: 1))
+    f.glints.append(Flake(pos: [500, 0], vx: 0, fall: 0, phase: Float(f.surfaces[i].c0 + n / 2), amp: 1, freq: 0, size: 4, alpha: 1, kind: .debris, fade: 1, vol: Float(f.surfaces[i].frame.minX), delay: 0.6, shape: 4, prof: 1))
     f.stepGlints(dt: 1 / 60)
     #expect(abs(f.glints[0].pos.y - (f.surfaces[i].edgeY + 3)) < 0.01)
+    #expect(f.glints[0].fade == 1)
+    f.glints[0].vol += 40   // the window slid since the glint was born (tiling / zoom, no drag)
+    f.stepGlints(dt: 1 / 60)
+    #expect(f.glints[0].fade < 1)
 }
 
 @Test func throwVelocityDoesNotDependOnTheEventRate() {

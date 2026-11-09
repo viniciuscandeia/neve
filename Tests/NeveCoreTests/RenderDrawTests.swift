@@ -65,3 +65,16 @@ private func ramp(top: Float, base: Float, width: Float) -> (UnsafeMutablePointe
     f.liftSeam(r, &s, &c3)
     #expect(s.last.t - 10 <= 0.3 * 8 + 0.001)
 }
+
+@Test func seamLiftStaysUnderTheLowerPilesCeiling() {
+    let f = makeField()
+    f.update(windows: [win(1, 0, 300, 400, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for b in f.surfaces[i].pile.cap.indices { f.surfaces[i].pile.cap[b] = 12 - f.surfaces[i].edgeY - f.surfaces[i].pile.base[b] }   // a third window caps it at y = 12
+    let (p, a0) = ramp(top: 10, base: 0, width: 200)
+    defer { p.deallocate() }
+    var a = a0, c = a0
+    c.first.t = 34
+    f.liftSeam(p, &a, &c)
+    #expect((0..<40).map { p[$0].top1 }.max()! <= 12.001 && a.last.t <= 12.001)
+}

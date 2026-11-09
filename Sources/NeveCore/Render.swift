@@ -289,16 +289,25 @@ extension SnowField {
         let w = min(20, low.last.x - low.first.x)
         let lift = min(abs(d), 6, 0.3 * w)
         guard lift > 0.01 else { return }
-        liftRun(p, low.segs, lift, atEnd: lowIsA, edge: end.x, width: w)
-        if lowIsA { a.last.t += lift } else { c.first.t += lift }
+        // Never above the lower pile's own ceiling (a third window in front caps it): same formula as writePiles' `ceiling`.
+        var ceil: (Float) -> Float = { _ in .infinity }
+        if let si = index[low.id] {
+            let s = surfaces[si]
+            ceil = { x in
+                let i = min(max(Int((x * self.invBin).rounded(.down)) - s.c0, 0), s.pile.cap.count - 1)
+                return s.pile.cap.isEmpty ? .infinity : s.edgeY + s.pile.base[i] + s.pile.cap[i]
+            }
+        }
+        liftRun(p, low.segs, lift, atEnd: lowIsA, edge: end.x, width: w, ceiling: ceil)
+        if lowIsA { a.last.t = min(a.last.t + lift, max(a.last.t, ceil(a.last.x))) } else { c.first.t = min(c.first.t + lift, max(c.first.t, ceil(c.first.x))) }
     }
 
     /// Adds up to `d` to the tops of the segments within `width` of one end of a run (full at the end, 0 at the far
     /// side of the ramp), so the bridge to the neighbouring window's pile has no step.
-    func liftRun(_ p: UnsafeMutablePointer<PileSeg>, _ r: Range<Int>, _ d: Float, atEnd: Bool, edge: Float, width w: Float) {
+    func liftRun(_ p: UnsafeMutablePointer<PileSeg>, _ r: Range<Int>, _ d: Float, atEnd: Bool, edge: Float, width w: Float, ceiling: (Float) -> Float = { _ in .infinity }) {
         func f(_ x: Float) -> Float { d * max(0, 1 - abs(edge - x) / w) }
         for i in r {
-            p[i].top0 += f(p[i].x0); p[i].top1 += f(p[i].x1)
+            p[i].top0 = min(p[i].top0 + f(p[i].x0), max(p[i].top0, ceiling(p[i].x0))); p[i].top1 = min(p[i].top1 + f(p[i].x1), max(p[i].top1, ceiling(p[i].x1)))
             p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3)
         }
     }
