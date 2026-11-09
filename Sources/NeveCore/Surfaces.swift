@@ -33,7 +33,6 @@ extension SnowField {
         pollDt = dt
         defer { stamps.removeAll(keepingCapacity: true); for w in windows { stamps[w.number] = clock } }
         guard windows != lastWindows || boundsDirty else {
-            if draggingID != nil { draggingID = nil; pilesDirty = true }
             if windowsStale, time >= staleUntil { windowsStale = false }   // an unchanged list right after a switch may be the pre-switch one: only a changed one settles it, or time
             for i in surfaces.indices {   // an identical snapshot decays velocity with elapsed time instead of zeroing it
                 let v = surfaces[i].vel * exp(-windowDt(surfaces[i].id) / Tuning.velSmoothing)
@@ -77,7 +76,6 @@ extension SnowField {
         var old = before
         var built: [Surface] = []
         var spawned = 0
-        moved = nil
         // Reused surfaces keep their piles, but `cover` (what the Dock hides of a window's foot) follows the Dock: refresh it where the Dock was, is or is going.
         var reach = rects.indices.first { windows[$0].number == 0 }.map { rects[$0] }
         if only != nil { for r in [dockPrev, dockTarget?.offsetBy(dx: -ox, dy: -oy)] { if let r { reach = reach.map { $0.union(r) } ?? r } } }
@@ -109,7 +107,6 @@ extension SnowField {
         }
         for s in old { spawned += knockOff(s) }   // gone surfaces
         overhang = overhang.filter { k, _ in built.contains { $0.id == k } }
-        draggingID = moved
         for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns() }
         surfaces = built
         index.removeAll(keepingCapacity: true)
@@ -289,7 +286,6 @@ extension SnowField {
                 let wdt = windowDt(id)
                 let a = exp(-wdt / Tuning.velSmoothing)
                 vel = prev.vel * a + d / wdt * (1 - a)
-                if moved == nil { moved = id }
                 carry(shift: shift)
                 spawned += shed(&pile, c0: c0, edgeY: edgeY, frame: frame, fraction: SnowField.perUpdate(SnowField.shedFraction(v: vel, prev: prev.vel), dt: wdt), velocity: vel)
             } else {   // resized: snow stays where it is in x, unless the window kept its width and only slid (zoom, tiling): then it rides along. The part no longer over the window falls

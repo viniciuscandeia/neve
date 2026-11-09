@@ -42,6 +42,7 @@ private func pileField() -> SnowField {
 
 @Test func draggedWindowsPileIsNotSwept() {
     let f = pileField()
+    f.setDragTarget(1)
     f.update(windows: [win(1, 230, 300, 300, 200)])   // same size, moved: being dragged
     #expect(f.draggingID == 1)
     let before = f.pile(id: 1)!.heights

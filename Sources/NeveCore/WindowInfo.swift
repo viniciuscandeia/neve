@@ -50,7 +50,9 @@ public func mostlyOffscreen(_ frame: CGRect, screens: [CGRect], minVisible: CGFl
 
 /// The window the user is dragging: the unique one that moved by what the mouse moved over the SAME interval (global points,
 /// |Δwindow − Δmouse| < `tol`), at a constant size. Zero or several compatible windows -> nil (no extrapolation, no exemptions).
-public func dragTarget(prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVector, tol: CGFloat = 8) -> Int? {
+/// The default tolerance grows with the mouse's own delta (a fast drag lags / leads the window by a fraction of it): 8 pt or 30 % of the delta.
+public func dragTarget(prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVector, tol: CGFloat? = nil) -> Int? {
+    let tol = tol ?? max(8, 0.3 * hypot(mouseDelta.dx, mouseDelta.dy))
     var found: Int?
     for w in cur where w.number > 0 {
         guard let p = prev.first(where: { $0.number == w.number }),
@@ -61,6 +63,37 @@ public func dragTarget(prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVect
         found = w.number
     }
     return found
+}
+
+/// Whether a press at `p` could start a window drag or resize: inside a window's top strip (title bar / toolbar) or on its edge band.
+/// Anything else (text selection in a window body, a click on the desktop) is no reason to poll the window list while the button is held.
+public func dragPlausible(at p: CGPoint, windows: [WindowInfo], titleStrip: CGFloat = 60, edge: CGFloat = 8) -> Bool {
+    windows.contains { w in
+        w.number > 0 && w.frame.insetBy(dx: -edge, dy: -edge).contains(p)
+            && (p.y >= w.frame.maxY - titleStrip || !w.frame.insetBy(dx: edge, dy: edge).contains(p))
+    }
+}
+
+/// The dragged window and the "exempt from show-desktop" window, one source of truth for the poll. The target is the window whose move matched
+/// the mouse's (see `dragTarget`); it is kept until the button is released unless ANOTHER window clearly matches. The exempt window
+/// (dragged mostly off screen on purpose: it keeps its snow) is cleared by a press outside it, when it is mostly back on screen, or when it is gone.
+public struct DragTracker: Sendable {
+    public private(set) var target: Int?, exempt: Int?
+    public init() {}
+
+    public mutating func pressed(at p: CGPoint, windows: [WindowInfo]) {
+        if let e = exempt, !(windows.first { $0.number == e }?.frame.contains(p) ?? false) { exempt = nil }
+    }
+
+    /// One window read. `moved` = some frame changed since `prev`; `mouseDelta` = mouse movement over the same interval.
+    public mutating func read(down: Bool, moved: Bool, prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVector, screens: [CGRect]) {
+        if !down { target = nil }
+        else if moved, let d = dragTarget(prev: prev, cur: cur, mouseDelta: mouseDelta) { target = d; exempt = d }
+        if let e = exempt {
+            if let w = cur.first(where: { $0.number == e }), mostlyOffscreen(w.frame, screens: screens) { return }
+            exempt = nil
+        }
+    }
 }
 
 public struct PollReasons: OptionSet, Sendable {
@@ -78,6 +111,7 @@ public struct PollScheduler: Sendable {
     public static let minGap = 1.0 / 30, burstGap = 0.05, dragGap = 0.04, guardTime = 0.25, hardCap = 1.5, maxRetries = 3
     public private(set) var pending: PollReasons = []
     public private(set) var held = false, dragging = false
+    private var plausible = true, extraAt: Double?
     private var lastRead = -Double.infinity, burstStart = -Double.infinity, burstOn = false, identical = 0, failures = 0, lastEvent: Double?
     public static let safetyGap = 2.0, safetyGapQuiet = 5.0, quietAfter = 10.0
     public init() {}
@@ -95,11 +129,17 @@ public struct PollScheduler: Sendable {
         return ax && now - last >= Self.quietAfter ? Self.safetyGapQuiet : Self.safetyGap
     }
 
-    public mutating func mouseDown(now: Double, onDesktop: Bool) {
+    /// One extra read `settleDelay` after a minimize / hide: the animation outlasts the burst, and the pile would hang in the air until the safety poll.
+    public static let settleDelay = 0.6
+    public mutating func settleRead(now: Double) { extraAt = now + Self.settleDelay }
+
+    /// `dragPlausible`: the press could start a window drag; if not, held-button movement asks for no reads until a frame actually moves.
+    public mutating func mouseDown(now: Double, onDesktop: Bool, dragPlausible: Bool = true) {
         held = true
+        plausible = dragPlausible
         if onDesktop { transition(now: now) } else { request(.windows) }
     }
-    public mutating func mouseDragged() { if held { request(.windows) } }
+    public mutating func mouseDragged() { if held, plausible || dragging { request(.windows) } }
     public mutating func mouseUp(now: Double, onDesktop: Bool) {
         held = false
         if dragging { dragging = false; transition(now: now) }
@@ -115,6 +155,7 @@ public struct PollScheduler: Sendable {
         var want = Double.infinity
         if !pending.isEmpty { want = lastRead + Self.minGap }
         if burstActive(now: now) { want = min(want, lastRead + (dragging ? Self.dragGap : Self.burstGap)) }
+        if let e = extraAt { want = min(want, e) }
         return want < .infinity ? max(want, lastRead + Self.minGap) : nil
     }
 
@@ -123,6 +164,7 @@ public struct PollScheduler: Sendable {
         guard let due = nextDue(now: now), now >= due - 0.0005 else { return nil }
         var r = pending
         if burstActive(now: now) { r.insert(.windows) }
+        if let e = extraAt, now >= e - 0.0005 { r.insert(.windows); extraAt = nil }
         pending = []; lastRead = now
         return r
     }

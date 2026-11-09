@@ -4,17 +4,14 @@ import os
 import NeveCore
 
 /// Event-driven window tracking: one AXObserver per regular app reports window move / resize / minimize / create / destroy / hide.
-/// Events only mark "dirty"; `onChange` fires at most every 1/30 s, so the caller does one CGWindowList read per burst
-/// (AX says *that* something changed; window order and numbers still come from CGWindowList).
+/// Each event calls `onChange` (the caller's PollScheduler coalesces: one CGWindowList read per burst; AX says *that* something changed,
+/// window order and numbers still come from CGWindowList). Minimize / hide events also call `onSettle`: the animation outlasts the burst.
 @MainActor
 final class WindowWatcher {
     private(set) var active = false
     var onChange: (@MainActor () -> Void)?
-    var onAppear: (@MainActor () -> Void)?   // a window was created / focused / shown: it animates in, so the caller bursts polls
+    var onSettle: (@MainActor () -> Void)?
     private var observers: [pid_t: AXObserver] = [:]
-    private var pending = false
-    private var lastFire = Date.distantPast
-    private static let minInterval = 1.0 / 30
     private nonisolated static let log = Logger(subsystem: "io.github.viniciuscandeia.neve", category: "watcher")
     private nonisolated static let appEvents = [kAXWindowMovedNotification, kAXWindowResizedNotification, kAXWindowMiniaturizedNotification,
                                     kAXWindowDeminiaturizedNotification, kAXWindowCreatedNotification, kAXApplicationHiddenNotification,
@@ -31,6 +28,7 @@ final class WindowWatcher {
         if on {
             ws.addObserver(self, selector: #selector(launched(_:)), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
             ws.addObserver(self, selector: #selector(terminated(_:)), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
+            ws.addObserver(self, selector: #selector(activated(_:)), name: NSWorkspace.didActivateApplicationNotification, object: nil)
             for app in NSWorkspace.shared.runningApplications { attach(app) }   // non-blocking: the serial queue works through them
         } else {
             ws.removeObserver(self)
@@ -43,9 +41,14 @@ final class WindowWatcher {
         guard let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
         attach(app)
     }
+    /// Apps that turn `.regular` after launch (Electron, Java, Qt) were skipped at launch: they get their observer when first activated.
+    @objc private func activated(_ n: Notification) {
+        guard let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, observers[app.processIdentifier] == nil else { return }
+        attach(app)
+    }
     @objc private func terminated(_ n: Notification) {
         if let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { detach(app.processIdentifier) }
-        mark()
+        onChange?()
     }
 
     private func attach(_ app: NSRunningApplication, attempt: Int = 1, generation: Int? = nil) {
@@ -117,23 +120,8 @@ final class WindowWatcher {
                 _ = AXObserverAddNotification(o, element, kAXUIElementDestroyedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())
             }
         }
-        if name == kAXWindowCreatedNotification || name == kAXFocusedWindowChangedNotification || name == kAXApplicationShownNotification { onAppear?() }
-        mark()
-    }
-
-    /// Coalesce: at most one `onChange` per `minInterval`, however many events arrive.
-    private func mark() {
-        guard !pending else { return }
-        pending = true
-        let wait = max(0, Self.minInterval - Date().timeIntervalSince(lastFire))
-        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.pending = false
-                self.lastFire = Date()
-                self.onChange?()
-            }
-        }
+        if name == kAXWindowMiniaturizedNotification || name == kAXApplicationHiddenNotification { onSettle?() }
+        onChange?()
     }
 }
 

@@ -156,7 +156,6 @@ public final class SnowField {
     }
     var seams: [SeamLink] = []    // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
     var peeledVolume: Float = 0   // drift snow let go so far (tests)
-    var moved: Int?   // scratch for updateSurfaces/buildSurface
 
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).
     public func setIntensity(_ v: Intensity, immediate: Bool = false) {

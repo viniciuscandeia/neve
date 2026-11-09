@@ -37,13 +37,33 @@ extension Array {
     }
 }
 
-/// Display-link rate choice. Calm (nothing fast for 0.5 s): economy 20 fps, otherwise 30. Busy: 60 (30...60), except under Low Power / a shrunk
-/// window, which stay at 30. Economy never exceeds 30: busy economy 30.
+/// Display-link rate choice. Calm (nothing fast for `holdDown`): economy 20 fps, otherwise 30. Busy: 60 (30...60), except under Low Power / a shrunk
+/// window, which stay at 30. Economy never exceeds 30: busy economy 30. Every rate is the panel's maximum divided by a whole number
+/// (`snap`), so 30 / 20 / 60 also fit 120, 144, 75 and 50 Hz displays.
 public enum FrameRate {
-    public static func range(lowPower: Bool, economy: Bool, shrunk: Bool, calm: Bool) -> (min: Float, max: Float, preferred: Float) {
-        if economy { return calm ? (20, 20, 20) : (30, 30, 30) }
-        if lowPower || shrunk || calm { return (30, 30, 30) }
-        return (30, 60, 60)
+    /// Stepping down waits this long after the last fast moment (stepping up is immediate): gentle triggers near a threshold must not flip 60 <-> 30.
+    public static let holdDown = 2.5
+
+    /// `target` fps made to divide `maxFPS`: the highest `maxFPS / k` that is at most 25 % above the target (75 Hz busy stays 75, 144 Hz gives 72 / 36 / 24).
+    public static func snap(_ target: Float, maxFPS: Int) -> Float {
+        guard maxFPS > 0 else { return target }
+        let m = Float(maxFPS)
+        var k: Float = 1
+        while m / k > target * 1.25 + 0.001 { k += 1 }
+        return m / k
+    }
+
+    public static func range(lowPower: Bool, economy: Bool, shrunk: Bool, calm: Bool, maxFPS: Int = 60) -> (min: Float, max: Float, preferred: Float) {
+        func r(_ a: Float, _ b: Float, _ c: Float) -> (min: Float, max: Float, preferred: Float) { (snap(a, maxFPS: maxFPS), snap(b, maxFPS: maxFPS), snap(c, maxFPS: maxFPS)) }
+        if economy { return calm ? r(20, 20, 20) : r(30, 30, 30) }
+        if lowPower || shrunk || calm { return r(30, 30, 30) }
+        return r(30, 60, 60)
+    }
+
+    /// Cursor speed (pt/s) from a move over the REAL elapsed time (never the clamped simulation step: a stall would inflate it).
+    /// `slowmo` < 1 stretches simulated time, so the pointer is scaled with it. dt is floored (two frames can share a timestamp: 0/0 would be NaN).
+    public static func pointerVelocity(dx: Float, dy: Float, realDt: Double, slowmo: Float = 1) -> SIMD2<Float> {
+        SIMD2(dx, dy) / Float(max(realDt * Double(slowmo), 1.0 / 240))
     }
 }
 

@@ -109,9 +109,10 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
     #expect(zip(f.pile(id: 1)!.heights, old).dropFirst(3).dropLast(3).allSatisfy { abs($0 - $1) < 0.01 })   // ends are re-tapered
     #expect(f.pile(id: 1)!.c0 == 80)               // pile now sits over x 160...460
     #expect(f.edgeVisible(id: 1, x: 300) && !f.edgeVisible(id: 1, x: 120))
+    #expect(f.draggingID == nil)   // a move alone does not make a drag: only the mouse-confirmed target does (setDragTarget)
+    f.setDragTarget(1)
+    f.update(windows: [win(1, 160, 200, 300, 200)])   // identical snapshot (Dock rebuild, other screen): the target survives
     #expect(f.draggingID == 1)
-    f.update(windows: [win(1, 160, 200, 300, 200)])   // window rests: drag ends
-    #expect(f.draggingID == nil)
 }
 
 @Test func veryFastMoveShedsMostOfThePileAsDebris() {

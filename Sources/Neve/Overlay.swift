@@ -56,7 +56,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var lastTimestamp: CFTimeInterval = 0
     // MARK: P3-C frame-rate policy
     private var stillPaused = false, dirty = true       // still snow: the link sleeps once the picture is settled; `dirty` = something changed since the last frame
-    private var fastUntil: CFTimeInterval = 0, slow = false   // adaptive fps: 30 fps once nothing fast happened for 0.5 s
+    private var fastUntil: CFTimeInterval = 0, slow = false   // adaptive fps: 30 fps once nothing fast happened for FrameRate.holdDown
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
@@ -204,15 +204,18 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Space switch: no deposits on window surfaces until the next snapshot reconciles.
     func markStale() { field.markStale() }
     /// `covering`: the real windows for coverage / compaction when `windows` (the surfaces) is deliberately empty (behind-windows mode).
-    func update(windows: [WindowInfo], covering: [WindowInfo]? = nil, dragTarget: Int? = nil) {
+    /// `dragTarget`: the mouse-confirmed dragged window, the one source for pile segments, figures and balls. `mouse`: the pointer read at the same
+    /// instant as the window bounds (the per-frame drag offset is measured from it).
+    func update(windows: [WindowInfo], covering: [WindowInfo]? = nil, dragTarget: Int? = nil, mouse: CGPoint? = nil) {
         let now = CACurrentMediaTime()
+        field.setDragTarget(dragTarget)
         field.update(windows: windows, now: now)   // each window's dt = its own time since its last sample
         confirmedDrag = dragTarget
         growBuffers()
         let changed = windows != lastWindows
-        if changed { lastWindows = windows; fastUntil = now + 0.5; wake() }
+        if changed { lastWindows = windows; fastUntil = now + FrameRate.holdDown; wake() }
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
-        pollMouse = NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
+        pollMouse = mouse ?? NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
         measureCover(covering ?? windows)   // MARK: P3-0
     }
@@ -402,7 +405,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, calm: slow)
+        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, calm: slow, maxFPS: screen.maximumFramesPerSecond)
         return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
@@ -474,14 +477,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         dirty = false
         var t0 = Perf.now()
         let now = time, resumed = lastTimestamp == 0
-        let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 0.06)   // 20 fps (economy, calm) steps 0.05
+        let realDt = lastTimestamp == 0 ? 1.0 / 60 : now - lastTimestamp   // real elapsed time: pointer speed and sweep use it, never the clamped step
+        let dt = min(realDt, 0.06)   // 20 fps (economy, calm) steps 0.05
         lastTimestamp = now
         advanceCover(now)   // MARK: P3-0
         frameDt = Float(dt)
-        field.music = prefs.music ? MusicTap.shared.read() : .silent
-        if !still { field.step(dt: Float(dt) * Self.slowmo) }
-        perf?.add(.step, t0); t0 = Perf.now()
-        // Cursor wipe: one sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
+        // Cursor first, simulation after: the flakes, figures and piles of this frame already see this frame's pointer.
+        // One sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
         let cursor = sceneKind == nil ? NSEvent.mouseLocation : CGPoint(x: -1e5, y: -1e5)   // scenes ignore the real cursor: the same story every time
         let option = sceneKind == nil && NSEvent.modifierFlags.contains(.option)
         let o = frame.origin
@@ -490,17 +492,19 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         // Interactive only where there is snow or a snowball (and ⌥ is down): everywhere else clicks pass through.
         let interactive = held != nil || (option && frame.contains(cursor) && field.hitTest(point: here))
         if window.ignoresMouseEvents == interactive { window.ignoresMouseEvents = !interactive }
-        if !resumed, !still, let prev = lastCursor, prev != cursor, NSEvent.pressedMouseButtons & 1 == 0, !option, held == nil {
-            field.sweep(from: CGPoint(x: prev.x - o.x, y: prev.y - o.y), to: CGPoint(x: cursor.x - o.x, y: cursor.y - o.y), dt: Float(dt))
-        }
-        let local = SIMD2(Float(cursor.x - frame.origin.x), Float(cursor.y - frame.origin.y))
-        let moved = lastCursor.map { SIMD2(Float(cursor.x - $0.x), Float(cursor.y - $0.y)) / Float(max(dt, 1.0 / 240)) } ?? .zero   // dt can be 0 (same timestamp twice): 0/0 would put NaN in every flake near the pointer
+        let prevCursor = lastCursor ?? cursor
+        let sweeping = !resumed && !still && lastCursor != nil && prevCursor != cursor && NSEvent.pressedMouseButtons & 1 == 0 && !option && held == nil
+        let from = CGPoint(x: prevCursor.x - o.x, y: prevCursor.y - o.y)
+        if sweeping { field.sweep(from: from, to: here, dt: Float(max(realDt * Double(Self.slowmo), 1.0 / 240))) }
+        let moved = FrameRate.pointerVelocity(dx: Float(cursor.x - prevCursor.x), dy: Float(cursor.y - prevCursor.y), realDt: realDt, slowmo: Self.slowmo)
         field.optionHeld = option
         refreshDay(now: now)
-        field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
-        let lastCursorPrev = lastCursor ?? cursor
+        field.setPointer(frame.contains(cursor) ? SIMD2(Float(here.x), Float(here.y)) : nil, velocity: resumed ? .zero : moved)
         lastCursor = cursor
         perf?.add(.input, t0); t0 = Perf.now()
+        field.music = prefs.music ? MusicTap.shared.read() : .silent
+        if !still { field.step(dt: Float(dt) * Self.slowmo) }
+        perf?.add(.step, t0); t0 = Perf.now()
         let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
         // A dragged window follows the mouse 1:1: its pile segments, figures and balls shift by the mouse delta since the last poll (a shader uniform).
         // After release the last offset is held until the next poll reconciles with the real bounds.
@@ -514,8 +518,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         perf?.busyNow(field.busyReasons)
         perf?.frame(field, "paused=\(link?.isPaused ?? true) occluded=\(occluded) slow=\(slow)")
         // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
-        // A fast cursor only needs 60 fps when something reacts to it (flake push / pile groove); with the toggle off nothing does.
-        if (prefs.pointerPush && moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: lastCursorPrev, to: cursor)) || held != nil || field.isBusy { fastUntil = now + 0.5 }
+        // A fast cursor needs 60 fps when something reacts to it: snow / a ball / a figure in the sweep's path (whatever the toggle says: the sweep cuts piles
+        // regardless), or, with "Cursor empurra" on, the falling flakes it pushes. The cheap screen test comes first.
+        let fastCursor = moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: prevCursor, to: cursor)
+            && (prefs.pointerPush || (sweeping && field.snowNear(from: from, to: here)))
+        if fastCursor || held != nil || field.isBusy { fastUntil = now + FrameRate.holdDown }
         let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
