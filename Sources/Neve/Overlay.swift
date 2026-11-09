@@ -54,13 +54,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var prefs: OverlayPrefs
     private var still = false   // Reduce Motion + "Neve parada": no flakes drawn or stepped, piles kept
     private var lastTimestamp: CFTimeInterval = 0
-    // MARK: P3-C frame-rate policy
+    // MARK: frame-rate policy
     private var stillPaused = false, dirty = true       // still snow: the link sleeps once the picture is settled; `dirty` = something changed since the last frame
     private var fastUntil: CFTimeInterval = 0, slow = false   // adaptive fps: 30 fps once nothing fast happened for FrameRate.holdDown
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
-    // MARK: P3-0 maximized window (Coverage.swift)
+    // MARK: maximized window (Coverage.swift)
     private let root = CALayer()                       // screen-local coordinates: bounds.origin = the live rect's origin while shrunk
     private var cover = CompactState()
     private var coverFraction: Float = 0, liveLocal: CGRect?   // from the last window poll
@@ -217,7 +217,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
         pollMouse = mouse ?? NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
-        measureCover(covering ?? windows)   // MARK: P3-0
+        measureCover(covering ?? windows)  
     }
     /// Poll rate, outside the frame path: size the prim / pile buffers from the demand (old ones stay alive in any in-flight command buffer).
     private func growBuffers() {
@@ -234,7 +234,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
     }
 
-    // MARK: P3-0 maximized window: snow only in the visible strip
+    // MARK: maximized window: snow only in the visible strip
 
     /// Windows -> coverage of the usable area, the live rect and the shader occluders (poll rate; cheap).
     private var coverKey: (windows: [WindowInfo], vis: CGRect, behindLarge: Bool)?
@@ -342,12 +342,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
     /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.
     func intro() {
-        if !reduceMotion { resume() } else { outroGen += 1; field.endOutro() }
+        if !reduceMotion { resume() } else { outroGen += 1; outroDone = nil; field.endOutro() }
     }
     /// Back from the idle pause (or a melt): no flake on screen, new ones fall in from above the top edge (Reduce Motion too).
     func resume() {
         outroGen += 1
-        meltDone = nil
+        meltDone = nil; outroDone = nil
         field.beginIntro(duration: 2.5)
     }
     private var meltDone: (@MainActor () -> Void)?
@@ -365,17 +365,20 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Reduce Motion / still snow: just a 0.4s fade.
     func outro(_ done: @escaping @MainActor () -> Void) {
         outroGen += 1
+        outroDone = done
         let gen = outroGen, fade = reduceMotion || still
         if !fade { field.collapseAll(spread: 0.3) }
         DispatchQueue.main.asyncAfter(deadline: .now() + (fade ? 0 : 1.0)) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.outroGen == gen else { return }
                 NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; self.window.animator().alphaValue = 0 }) {
-                    MainActor.assumeIsolated { if self.outroGen == gen { done() } }
+                    MainActor.assumeIsolated { if self.outroGen == gen { self.finishOutro() } }
                 }
             }
         }
     }
+    private var outroDone: (@MainActor () -> Void)?
+    private func finishOutro() { let d = outroDone; outroDone = nil; d?() }
     func dropPiles() { field.dropPiles(); wake() }
     func setLowPower(_ on: Bool) {
         lowPower = on
@@ -405,7 +408,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, calm: slow, maxFPS: screen.maximumFramesPerSecond)
+        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, quiet: slow, maxFPS: screen.maximumFramesPerSecond)
         return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
@@ -460,6 +463,10 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         link = nil
         window.orderOut(nil)
         window.contentView = nil
+        // A pending melt / outro would never finish once this overlay is gone: complete it now so the controller's countdown still ends.
+        outroGen += 1
+        let m = meltDone; meltDone = nil; m?()
+        finishOutro()
     }
 
     /// The SDK declares this nonisolated. The link is added to RunLoop.main, so it always fires on the main thread:
@@ -480,7 +487,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let realDt = lastTimestamp == 0 ? 1.0 / 60 : now - lastTimestamp   // real elapsed time: pointer speed and sweep use it, never the clamped step
         let dt = min(realDt, 0.06)   // 20 fps (economy, calm) steps 0.05
         lastTimestamp = now
-        advanceCover(now)   // MARK: P3-0
+        advanceCover(now)  
         frameDt = Float(dt)
         // Cursor first, simulation after: the flakes, figures and piles of this frame already see this frame's pointer.
         // One sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
@@ -517,7 +524,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         render(drawable)
         perf?.busyNow(field.busyReasons)
         perf?.frame(field, "paused=\(link?.isPaused ?? true) occluded=\(occluded) slow=\(slow)")
-        // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
+        // Adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
         // A fast cursor needs 60 fps when something reacts to it: snow / a ball / a figure in the sweep's path (whatever the toggle says: the sweep cuts piles
         // regardless), or, with "Cursor empurra" on, the falling flakes it pushes. The cheap screen test comes first.
         let fastCursor = moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: prevCursor, to: cursor)
@@ -599,7 +606,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func render(_ drawable: CAMetalDrawable) {
-        let g = shrunk ?? CGRect(origin: .zero, size: frame.size)   // MARK: P3-0
+        let g = shrunk ?? CGRect(origin: .zero, size: frame.size)  
         // A drawable made before a resize has the old size: skip it (the next one matches).
         perf?.bump(.renders)
         guard drawable.texture.width == Int((g.width * scale).rounded()), drawable.texture.height == Int((g.height * scale).rounded()) else { perf?.bump(.skipSize); return }

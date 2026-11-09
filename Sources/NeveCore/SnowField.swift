@@ -63,7 +63,7 @@ public final class SnowField {
     var skyEnd = 0          // slots [0, skyEnd) of the sky pool / [skyCount, skyCount+bgEnd) of the background pool
     var bgEnd = 0           // may be live or spawning; everything beyond is dormant, so step/write skip it
     var intensity = Intensity.media
-    // MARK: P3-0 live region (Coverage.swift): flakes spawn / wrap inside [liveX0, liveX1], just above liveTop; limits scale with areaScale
+    // MARK: live region (Coverage.swift): flakes spawn / wrap inside [liveX0, liveX1], just above liveTop; limits scale with areaScale
     var liveX0: Float = 0, liveX1: Float = 0, liveTop: Float = 0
     var areaScale: Float = 1
     var lowPower = false

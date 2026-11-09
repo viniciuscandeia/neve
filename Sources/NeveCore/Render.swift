@@ -39,6 +39,11 @@ public struct PrimWriter {
         p[n] = q
         n += 1
     }
+    /// Multiplies the alpha of the prims written since index `start` (a whole figure fading out).
+    public mutating func fade(from start: Int, by k: Float) {
+        guard k < 1 else { return }
+        for i in start..<n { p[i].color.w *= max(k, 0) }
+    }
     public mutating func ellipse(center: SIMD2<Float>, radii: SIMD2<Float>, rotation: Float = 0, color: SIMD4<Float>, soft: Float = 0) {
         var q = Prim(); q.kind = 0; q.a = center; q.b = radii; q.c = SIMD2(rotation, 0); q.color = color; q.soft = soft
         put(q)

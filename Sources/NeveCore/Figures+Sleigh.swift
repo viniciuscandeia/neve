@@ -94,7 +94,7 @@ extension SnowField {
 
     /// Flies across, bobbing; drops its gifts as it passes their release points; throws 3 glints a second from the tail. False when removed.
     func stepSleigh(_ i: Int, _ dt: Float) -> Bool {
-        guard sleighEnabled, walkEnabled, !calm, !quiet else { removeFigure(i); return false }
+        guard sleighEnabled, walkEnabled, !calm else { removeFigure(i); return false }
         var f = figures[i]
         var s = f.sleigh
         f.phaseT += dt
@@ -103,14 +103,14 @@ extension SnowField {
         f.foot.x += d * Tuning.sleighSpeed * dt
         f.foot.y = s.y0 + Tuning.sleighBob * sin(2 * .pi * s.t / Tuning.sleighBobPeriod)
         let release = f.foot.x - d * Tuning.sleighRelease * s.scale
-        while s.next < s.count, (release - s.drops[s.next]) * d >= 0 {
+        while !quiet, s.next < s.count, (release - s.drops[s.next]) * d >= 0 {
             dropGift(at: SIMD2(release, f.foot.y - 8 * s.scale), dir: d)
             s.next += 1
         }
         s.trail += dt
         if s.trail >= 1 / 3 {
             s.trail -= 1 / 3
-            if glints.count < Tuning.maxGlints, !economy, !lowPower {
+            if !quiet, glints.count < Tuning.maxGlints, !economy, !lowPower {
                 let p = SIMD2(f.foot.x - d * (Tuning.sleighHalfLength + 4) * s.scale, f.foot.y + Float.random(in: -8...8, using: &rng))
                 glints.append(Flake(pos: p, vx: 0, fall: 0, phase: 0, amp: 0, freq: 0, size: Float.random(in: 4...6, using: &rng), alpha: 1, kind: .debris,
                                     seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4))
@@ -123,6 +123,6 @@ extension SnowField {
     }
 
     public func sleighLook(of f: Figure) -> SleighLook {
-        SleighLook(pos: f.foot, facing: f.facing, scale: f.sleigh.scale, deer: f.sleigh.deer, t: f.sleigh.t)
+        SleighLook(pos: f.foot, facing: f.facing, scale: f.sleigh.scale, deer: f.sleigh.deer, t: f.sleigh.t, fade: f.melt)
     }
 }

@@ -73,16 +73,16 @@ import Testing
     for hz in [120, 144, 75, 60, 50] {
         for calm in [true, false] {
             for economy in [true, false] {
-                let r = FrameRate.range(lowPower: false, economy: economy, shrunk: false, calm: calm, maxFPS: hz).preferred
+                let r = FrameRate.range(lowPower: false, economy: economy, shrunk: false, quiet: calm, maxFPS: hz).preferred
                 let k = Float(hz) / r
                 #expect(abs(k - k.rounded()) < 0.001, "\(hz) Hz -> \(r)")
             }
         }
     }
-    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: false, maxFPS: 120).preferred == 60)
-    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: true, maxFPS: 120).preferred == 30)
-    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: true, maxFPS: 120).preferred == 24)
-    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: false, maxFPS: 144).preferred == 72)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, quiet: false, maxFPS: 120).preferred == 60)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, quiet: true, maxFPS: 120).preferred == 30)
+    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, quiet: true, maxFPS: 120).preferred == 24)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, quiet: false, maxFPS: 144).preferred == 72)
     #expect(FrameRate.holdDown >= 2)
 }
 

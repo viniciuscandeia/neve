@@ -1,21 +1,6 @@
 import NeveCore
 import Foundation
 
-/// UserDefaults keys of the on / off options. Defaults on: Nevar, Boneco de neve, Andam e brigam, Visitantes, Trenó, Quadros adaptativos, Cursor empurra os flocos; the rest off.
-enum Pref: String, CaseIterable {
-    case enabled, economy, ambient, behindWindows, behindLarge, stillSnow, snowman, walk, visitors, sleigh, showInCaptures, adaptiveFps, music, pointerPush
-    var defaultValue: Bool { [.enabled, .snowman, .walk, .visitors, .sleigh, .adaptiveFps, .pointerPush].contains(self) }
-}
-
-/// Which Bool prefs differ between two snapshots (drives `AppController.prefChanged`).
-func changedPrefs(old: [Pref: Bool], new: [Pref: Bool]) -> [Pref] { changedKeys(old: old, new: new) }
-
-/// The user options an overlay renders; the controller owns them (UserDefaults) and pushes them to every overlay.
-struct OverlayPrefs: Equatable {
-    var economy = false, behind = false, behindLarge = false, still = false, snowman = true, walk = true, visitors = true, sleigh = true, showInCaptures = false, adaptive = true, music = false, pointerPush = true
-    var intensity = Intensity.media
-}
-
 /// Everything the app reads from the OS / environment for the simulation; NeveCore does no I/O.
 let osWindowRadius = Tuning.windowRadius(for: ProcessInfo.processInfo.operatingSystemVersion)
 

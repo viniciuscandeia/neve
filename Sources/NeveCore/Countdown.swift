@@ -1,0 +1,7 @@
+/// Counts `n` completions; `hit()` is true exactly once, on the last one (extra hits are ignored).
+public struct Countdown {
+    private var left: Int
+    public init(_ n: Int) { left = max(n, 0) }
+    public var isDone: Bool { left == 0 }
+    public mutating func hit() -> Bool { guard left > 0 else { return false }; left -= 1; return left == 0 }
+}

@@ -47,8 +47,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
         // Scene mode: fixed options (Mostrar em capturas ON, everything alive), whatever the user saved; nothing is written back.
-        if let k = sceneKind { return OverlayPrefs(economy: false, behind: false, behindLarge: false, still: false, snowman: true, walk: true, visitors: true, sleigh: true, showInCaptures: true, adaptive: false, music: false, pointerPush: true, intensity: k == .demo ? .forte : .media) }
-        return OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), music: flag(.music), pointerPush: flag(.pointerPush), intensity: Intensity.saved(ud))
+        if let k = sceneKind { var p = OverlayPrefs(); p.showInCaptures = true; p.adaptive = false; p.intensity = k == .demo ? .forte : .media; return p }
+        var p = OverlayPrefs(flag); p.intensity = Intensity.saved(ud); return p
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -323,11 +323,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard !shown.isEmpty else { return done() }
         outroing = true
         let gen = outroGen
-        var left = shown.count
+        var left = Countdown(shown.count)
         for o in shown {
             o.outro { [weak self] in
-                left -= 1
-                guard left == 0, let self, self.outroGen == gen else { return }
+                guard left.hit(), let self, self.outroGen == gen else { return }
                 self.outroing = false
                 done()
             }
@@ -446,12 +445,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         idleMelting = true
         meltGen += 1
         let gen = meltGen
-        var left = overlays.count
-        guard left > 0 else { idleMelting = false; userIdle = true; return refreshRunState() }
+        var left = Countdown(overlays.count)
+        guard !left.isDone else { idleMelting = false; userIdle = true; return refreshRunState() }
         for o in overlays {
             o.melt { [weak self] in
-                left -= 1
-                guard left == 0, let self, self.meltGen == gen, self.idleMelting else { return }
+                guard left.hit(), let self, self.meltGen == gen, self.idleMelting else { return }
                 self.idleMelting = false
                 self.userIdle = true
                 self.refreshRunState()
@@ -654,7 +652,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func screensWoke() { screensAsleep = false; refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
     @objc private func sessionBecameActive() { sessionInactive = false; refreshRunState() }
-    @objc private func refreshRunStateNotification() { refreshRunState() }
     @objc private func accessibilityChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         syncMusic()

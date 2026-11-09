@@ -30,7 +30,6 @@ extension SnowField {
         snowmanCooldown = .infinity
         fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); carrots.removeAll(keepingCapacity: true)
         for i in icicles.indices { icicles[i].dying = true }
-        if let k = figures.firstIndex(where: { $0.kind == .sleigh }) { removeFigure(k) }
     }
 
     func stepMelt(dt: Float) {

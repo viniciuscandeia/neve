@@ -37,7 +37,7 @@ extension Array {
     }
 }
 
-/// Display-link rate choice. Calm (nothing fast for `holdDown`): economy 20 fps, otherwise 30. Busy: 60 (30...60), except under Low Power / a shrunk
+/// Display-link rate choice. Quiet (nothing fast for `holdDown`): economy 20 fps, otherwise 30. Busy: 60 (30...60), except under Low Power / a shrunk
 /// window, which stay at 30. Economy never exceeds 30: busy economy 30. Every rate is the panel's maximum divided by a whole number
 /// (`snap`), so 30 / 20 / 60 also fit 120, 144, 75 and 50 Hz displays.
 public enum FrameRate {
@@ -53,10 +53,10 @@ public enum FrameRate {
         return m / k
     }
 
-    public static func range(lowPower: Bool, economy: Bool, shrunk: Bool, calm: Bool, maxFPS: Int = 60) -> (min: Float, max: Float, preferred: Float) {
+    public static func range(lowPower: Bool, economy: Bool, shrunk: Bool, quiet: Bool, maxFPS: Int = 60) -> (min: Float, max: Float, preferred: Float) {
         func r(_ a: Float, _ b: Float, _ c: Float) -> (min: Float, max: Float, preferred: Float) { (snap(a, maxFPS: maxFPS), snap(b, maxFPS: maxFPS), snap(c, maxFPS: maxFPS)) }
-        if economy { return calm ? r(20, 20, 20) : r(30, 30, 30) }
-        if lowPower || shrunk || calm { return r(30, 30, 30) }
+        if economy { return quiet ? r(20, 20, 20) : r(30, 30, 30) }
+        if lowPower || shrunk || quiet { return r(30, 30, 30) }
         return r(30, 60, 60)
     }
 

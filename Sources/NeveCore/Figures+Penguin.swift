@@ -55,13 +55,10 @@ extension SnowField {
         return y
     }
 
-    /// Mean of the DRAWN snow height (`shown`; the real heights until the pile was first drawn) over cols +-span of x.
+    /// Mean of the DRAWN snow height at x (columns clamped to the pile), via `meanShown`.
     private func penguinSnow(si: Int, x: Float, span: Int) -> Float {
-        let p = surfaces[si].pile, a = p.shown.count == p.heights.count ? p.shown : p.heights
-        let c = min(max(column(x) - surfaces[si].c0, 0), a.count - 1), lo = max(0, c - span), hi = min(a.count - 1, c + span)
-        var sum: Float = 0
-        for b in lo...hi { sum += a[b] }
-        return sum / Float(hi - lo + 1)
+        let c0 = surfaces[si].c0
+        return meanShown(si: si, col: min(max(column(x) - c0, 0), surfaces[si].pile.heights.count - 1) + c0, span: span) ?? 0
     }
 
     /// y of the drawn snow top at x (what the belly rests on).

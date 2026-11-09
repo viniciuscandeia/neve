@@ -206,7 +206,7 @@ struct SettingsWindowView: View {
         PrefBinding(o.pref, env.store) { b in Toggle(isOn: b) { Label(o.title, systemImage: o.symbol) } }
     }
 
-    private enum Tab: String, CaseIterable { case geral = "Geral", bonecos = "Bonecos", desempenho = "Desempenho", sistema = "Sistema", brincar = "Dicas" }
+    private enum Tab: String, CaseIterable { case geral = "Geral", bonecos = "Bonecos", desempenho = "Desempenho", sistema = "Sistema", dicas = "Dicas" }
     @State private var tab = Tab.geral
 
     var body: some View {
@@ -248,7 +248,7 @@ struct SettingsWindowView: View {
                     PrefBinding(.showInCaptures, env.store) { b in Toggle(isOn: b) { Label("Aparecer em capturas de tela", systemImage: "camera") } }
                     AccessRow(panel: env.panel, ask: env.askAccessibility)
                     if !env.isDev { Toggle(isOn: env.login) { Label("Abrir ao iniciar sessão", systemImage: "power.circle") } }
-                case .brincar:
+                case .dicas:
                     Label { HStack(spacing: 4) { Text("Segure"); Kbd("⌥"); Text("e arraste a neve para fazer bolas.") } } icon: { Image(systemName: "hand.draw") }
                     Label("Arraste uma janela devagar: a neve vai junto.", systemImage: "macwindow.on.rectangle")
                 }

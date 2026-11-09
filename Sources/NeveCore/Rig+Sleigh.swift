@@ -7,8 +7,9 @@ public struct SleighLook {
     public var scale: Float = 1
     public var deer = 2                // 2...4 reindeer in single file ahead of the sleigh
     public var t: Float = 0            // seconds since take-off: gallop phase
-    public init(pos: SIMD2<Float>, facing: Float = 1, scale: Float = 1, deer: Int = 2, t: Float = 0) {
-        self.pos = pos; self.facing = facing; self.scale = scale; self.deer = deer; self.t = t
+    public var fade: Float = 1         // 1 -> 0 as the snow goes (outro / melt)
+    public init(pos: SIMD2<Float>, facing: Float = 1, scale: Float = 1, deer: Int = 2, t: Float = 0, fade: Float = 1) {
+        self.pos = pos; self.facing = facing; self.scale = scale; self.deer = deer; self.t = t; self.fade = fade
     }
 }
 
@@ -19,7 +20,8 @@ extension Rig {
 
     /// Red sleigh with gold runner, Santa (red suit, white trim), 2...4 reindeer with twig antlers, harness line. Local x forward, y up.
     public static func sleigh(_ l: SleighLook, contrast: Bool, into w: inout PrimWriter) {
-        let m = l.facing, s = l.scale
+        let m = l.facing, s = l.scale, start = w.n
+        defer { w.fade(from: start, by: l.fade) }
         let sh = a(contrast ? shadowHC : shadow, contrast ? 0.85 : 0.5), ol = a(contrast ? shadowHC : shadow, contrast ? 0.9 : 0.5)
         func p(_ x: Float, _ y: Float) -> V { l.pos + V(m * x * s, y * s) }
         func r(_ a: Float, _ b: Float) -> V { V(a * s, b * s) }

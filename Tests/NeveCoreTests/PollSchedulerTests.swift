@@ -202,13 +202,13 @@ private func velocities(bMoves: Bool) -> [Float] {
 }
 
 @Test func frameRateSteps() {
-    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: true).preferred == 20)
-    #expect(FrameRate.range(lowPower: true, economy: true, shrunk: true, calm: true).preferred == 20)
-    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: true).preferred == 30)
-    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: false).preferred == 30)   // economy never exceeds 30
-    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: false).preferred == 60)
-    #expect(FrameRate.range(lowPower: true, economy: false, shrunk: false, calm: false).preferred == 30)
-    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: true, calm: false).preferred == 30)
+    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, quiet: true).preferred == 20)
+    #expect(FrameRate.range(lowPower: true, economy: true, shrunk: true, quiet: true).preferred == 20)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, quiet: true).preferred == 30)
+    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, quiet: false).preferred == 30)   // economy never exceeds 30
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, quiet: false).preferred == 60)
+    #expect(FrameRate.range(lowPower: true, economy: false, shrunk: false, quiet: false).preferred == 30)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: true, quiet: false).preferred == 30)
 }
 
 @Test func fastCursorOnlyConcernsNearbyScreens() {
@@ -224,4 +224,40 @@ private func velocities(bMoves: Bool) -> [Float] {
     #expect(!near(b, (500, 1000), (2500, 1000)))        // passes above
     #expect(near(b, (950, 400), (960, 400)))            // within margin (60)
     #expect(!near(b, (900, 400), (920, 400)))           // beyond margin
+}
+
+@Test func countdownFiresOnceOnTheLastHit() {
+    var c = Countdown(2)
+    #expect(!c.isDone)
+    let a = c.hit(), b = c.hit(), x = c.hit()
+    #expect(!a && b && !x)
+    #expect(Countdown(0).isDone)
+}
+
+@Test func prefDefaultsAgree() {
+    let p = OverlayPrefs()
+    #expect(p.snowman == Pref.snowman.defaultValue && p.walk == Pref.walk.defaultValue && p.visitors == Pref.visitors.defaultValue && p.sleigh == Pref.sleigh.defaultValue)
+    #expect(p.adaptive == Pref.adaptiveFps.defaultValue && p.pointerPush == Pref.pointerPush.defaultValue && p.music == Pref.music.defaultValue)
+    #expect(p.economy == Pref.economy.defaultValue && p.behind == Pref.behindWindows.defaultValue && p.behindLarge == Pref.behindLarge.defaultValue)
+    #expect(p.still == Pref.stillSnow.defaultValue && p.showInCaptures == Pref.showInCaptures.defaultValue)
+    #expect(OverlayPrefs { _ in true }.economy && !OverlayPrefs { _ in false }.snowman)
+    #expect(Pref.pointerPush.rawValue == "pointerPush" && Pref.behindWindows.rawValue == "behindWindows")   // stored keys
+}
+
+@Test func flakePackSurvivesNonFiniteInputs() {
+    for bad in [Float.nan, .infinity, -.infinity] {
+        _ = Flake.pack(thickness: bad, left: bad, mid: bad, right: bad)
+    }
+    #expect(Flake.pack(thickness: .infinity, left: 0, mid: 0, right: 0) & 511 == 511)
+    #expect(Flake.pack(thickness: .nan, left: .nan, mid: 0, right: 0) & 511 == 1)
+}
+
+@Test func sleighFadesWithTheSnow() {
+    func alphaSum(_ fade: Float) -> Float {
+        let p = UnsafeMutablePointer<Prim>.allocate(capacity: 300); defer { p.deallocate() }
+        var w = PrimWriter(p, capacity: 300)
+        Rig.sleigh(SleighLook(pos: SIMD2(100, 700), fade: fade), contrast: false, into: &w)
+        return (0..<w.n).reduce(0) { $0 + p[$1].color.w }
+    }
+    #expect(abs(alphaSum(0.5) - alphaSum(1) * 0.5) < 0.01)
 }

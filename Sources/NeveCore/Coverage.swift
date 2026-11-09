@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Maximized-window mode (P3-0): how much of the usable screen windows hide, and the strip that stays live.
+// Maximized-window mode: how much of the usable screen windows hide, and the strip that stays live.
 
 /// `fraction` of `area` hidden by `windows` (grid of cols x rows sampled at cell centres) and the bounding box of the uncovered cells (nil = none).
 public func coverage(of windows: [CGRect], in area: CGRect, cols: Int = 48, rows: Int = 30) -> (fraction: Float, uncovered: CGRect?) {

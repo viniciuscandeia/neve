@@ -188,8 +188,8 @@ extension SnowField {
 extension Flake {
     /// Packed profile: bits 0-8 thickness in half-points, then left / middle / right height as 5-bit fractions of it (the shader draws the crest from them).
     static func pack(thickness t: Float, left: Float, mid: Float, right: Float) -> UInt32 {
-        func q(_ r: Float) -> UInt32 { UInt32(min(max(r, 0), 1) * 31 + 0.5) }
-        return UInt32(min(max(t * 2, 1), 511)) | q(left) << 9 | q(mid) << 14 | q(right) << 19
+        func q(_ r: Float) -> UInt32 { r.isNaN ? 0 : UInt32(min(max(r, 0), 1) * 31 + 0.5) }   // NaN would trap the conversion; ±inf clamps
+        return UInt32(t.isNaN ? 1 : min(max(t * 2, 1), 511)) | q(left) << 9 | q(mid) << 14 | q(right) << 19
     }
     var blockThickness: Float { Float(prof & 511) * 0.5 }
 }
