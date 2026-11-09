@@ -211,6 +211,8 @@ public final class SnowField {
     /// frost, icicles, gifts + confetti, meltwater drops). Snowfall (flakes, intensity), cooldowns and the event director are left alone.
     public func clear() {
         carrots.removeAll(keepingCapacity: true)
+        for g in figures where g.kind != .snowman { director.ended(g.kind, at: time) }   // visits end through the director: no infinite cooldown
+        dockTrickle = DockTrickle(); sweepOwed = 0   // pending emission debts must not resurface as snow after clearing
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         figuresVersion &+= 1
         if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }

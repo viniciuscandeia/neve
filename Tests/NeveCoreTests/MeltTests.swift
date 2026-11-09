@@ -174,3 +174,47 @@ private func dripCount(_ f: SnowField) -> Int { f.drops.count }
     #expect(f.gifts.isEmpty && f.figures.isEmpty && f.drops.isEmpty && f.iceWin.isEmpty && f.icicles.isEmpty && f.debris.isEmpty && f.pileVolume == 0)
     #expect(f.snowmanCooldown == 123)
 }
+
+// MARK: clear() vs. director visits and emission debts
+
+private func clearField(speed: Float = 30) -> SnowField {
+    let f = SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: 0,
+                      config: SimConfig(directorSpeed: speed), seed: 3)
+    f.update(windows: [win(1, 200, 300, 500, 200)])
+    for si in f.surfaces.indices { for b in f.surfaces[si].pile.heights.indices { f.surfaces[si].pile.heights[b] = 12 } }
+    f.visitorsEnabled = true
+    return f
+}
+
+@Test func clearDuringDirectorVisitLeavesFiniteCooldownAndVisitsResume() {
+    let f = clearField()
+    var kind: FigureKind?
+    for _ in 0..<20_000 {
+        directorRun(f, seconds: 1, visit: 1e9)
+        if let g = f.figures.first(where: { $0.kind != .snowman }) { kind = g.kind; break }
+    }
+    let k = try! #require(kind)
+    #expect(f.director.cooldownUntil[Int(k.rawValue)] == .infinity)
+    f.clear()
+    let cd = f.director.cooldownUntil[Int(k.rawValue)]
+    #expect(cd.isFinite && f.figures.isEmpty)
+    let started = f.director.started
+    directorRun(f, seconds: 20_000)
+    #expect(f.director.started > started)
+}
+
+@Test func clearKeepsAlreadyFiniteCooldowns() {
+    let f = clearField()
+    f.director.cooldownUntil[Int(FigureKind.penguin.rawValue)] = 1234
+    f.clear()
+    #expect(f.director.cooldownUntil[Int(FigureKind.penguin.rawValue)] == 1234)
+}
+
+@Test func clearDropsPendingDockVolumeAndSweepDebt() {
+    let f = clearField()
+    f.dockTrickle.vol = (20, 20); f.sweepOwed = 300
+    f.clear()
+    #expect(f.dockTrickle.vol == (0, 0) && f.sweepOwed == 0)
+    advance(f, 20)
+    #expect(f.pileVolume == 0 && f.debris.isEmpty)
+}
