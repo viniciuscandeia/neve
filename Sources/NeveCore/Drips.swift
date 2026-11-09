@@ -93,7 +93,7 @@ extension SnowField {
                 let t = min(d.age / Drop.swell, 1)   // swells, hanging a little lower as it fills
                 p[n] = Instance(pos: d.pos - [0, d.size * 0.3 * t], size: d.size * t, alpha: 0.7, seed: 0, rot: 0, kind: 5)
             case .falling:
-                p[n] = Instance(pos: d.pos, size: d.size, alpha: 0.7, seed: 0, rot: 0, kind: 5)
+                p[n] = Instance(pos: d.pos, size: d.size, alpha: 0.7, seed: 0, rot: 0, kind: 5, vel: d.vel)
             case .splash:
                 p[n] = Instance(pos: d.pos, size: d.size, alpha: 0.85 * (1 - d.age / Drop.splashLife), seed: 0, rot: 0, kind: 5)
             }

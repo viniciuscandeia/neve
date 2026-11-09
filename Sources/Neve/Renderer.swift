@@ -42,8 +42,8 @@ struct Gpu {
 let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
-struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop
-struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; };
+struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; float2 vel; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop
+struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; float2 tail; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
@@ -55,10 +55,28 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     float2 l = corner * i.size * 0.5 * float2(1.0, k == 2 ? aspect : 1.0) * (pr > 0u ? 1.15 : 1.0);   // chunks: a margin for the soft, irregular edge
     float c = cos(i.rot), sn = sin(i.rot);
     float2 p = i.pos + float2(c * l.x - sn * l.y, sn * l.x + c * l.y);
+    // Motion streak (flakes, clumps, drops): stretch the quad backwards along the velocity, head at the current position.
+    // smear = distance covered in ~1/60 s, capped at k * size; below 0.3pt the quad is untouched (no extra cost for slow flakes).
+    float2 uv = corner, tail = float2(0.0);
+    float alphaK = 1.0;
+    float speed = length(i.vel);
+    float smear = (k <= 1u || k == 5u) ? min(speed * (1.0 / 60.0), i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
+    if (smear >= 0.3) {
+        float2 dir = i.vel / speed, perp = float2(-dir.y, dir.x);
+        float h = i.size * 0.5;
+        float a = corner.x > 0.0 ? h : -(h + smear);
+        float2 d = dir * a + perp * (corner.y * h);
+        p = i.pos + d;
+        uv = float2(c * d.x + sn * d.y, -sn * d.x + c * d.y) / h;   // back into the shape's own (un-rotated) frame
+        float2 t = -dir * smear;
+        tail = float2(c * t.x + sn * t.y, -sn * t.x + c * t.y) / h;
+        alphaK = i.size / (i.size + smear * 0.6);   // keep the total brightness
+    }
     VOut o;
     o.position = float4(p / viewSize * 2.0 - 1.0, 0.0, 1.0);
-    o.uv = corner;
-    o.alpha = i.alpha;
+    o.uv = uv;
+    o.tail = tail;
+    o.alpha = i.alpha * alphaK;
     o.size = i.size;
     o.seed = i.seed;
     o.wpos = p;
@@ -82,8 +100,12 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     for (int k = 0; k < 4; k++) hide = max(hide, max(occMask(in.wpos, occ.r[k]) * occ.s.x, in.seed >= 2.0 ? occMask(in.wpos, occ.r[4 + k]) : 0.0));
     if (hide >= 1.0) discard_fragment();
     int kind = int(in.kind + 0.5);
+    float2 u0 = in.uv;   // distance to the streak's segment instead of to a point; head opaque, tail fainter
+    float sg = 1.0;
+    float tt2 = dot(in.tail, in.tail);
+    if (tt2 > 0.0) { float tt = clamp(dot(u0, in.tail) / tt2, 0.0, 1.0); u0 -= in.tail * tt; sg = mix(1.0, 0.3, tt); }
     if (kind == 5) {   // meltwater drop: teardrop (point up), bluish translucent, white specular dot
-        float2 u = in.uv;
+        float2 u = u0;
         float t = (u.y + 1.0) * 0.5;
         float w = t < 0.4 ? 0.7 * sqrt(max(1.0 - pow((0.4 - t) / 0.4, 2.0), 0.0)) : 0.7 * (1.0 - t) / 0.6;
         float e = max(0.12, 1.5 * fwidth(u.x));
@@ -92,12 +114,12 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         float rim = 1.0 - smoothstep(0.06, 0.24, w - abs(u.x));   // thin darker-blue outline so it reads on any wallpaper
         float3 c = mix(float3(0.62, 0.80, 0.97), float3(0.25, 0.40, 0.65), rim);
         c = mix(c, float3(1.0), spec);
-        a *= in.alpha * (1.0 - hide);
+        a *= in.alpha * sg * (1.0 - hide);
         return float4(c * a, a);
     }
     if (kind > 0) {
         float3 body = \(Palette.msl(Palette.snow)), shadow = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
-        float2 u = in.uv;
+        float2 u = u0;
         // Light stays fixed while the shape turns: shading masks use the un-rotated position (world offset / half-size), clamped to the quad.
         float rc = cos(in.rot), rs = sin(in.rot);
         float2 ul = float2(rc * u.x - rs * u.y, rs * u.x + rc * u.y);
@@ -138,21 +160,21 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
             a = min(a, 1.0);
             c = float3(1.0, 0.97, 0.88);
         }
-        a *= in.alpha * (1.0 - hide);
+        a *= in.alpha * sg * (1.0 - hide);
         return float4(c * a, a);
     }
-    float d = length(in.uv);
+    float d = length(u0);
     // Flakes >= ~5pt: faint 6-fold crystal hint + a little per-flake irregularity. Small ones stay round dots.
     float big = smoothstep(3.5, 5.5, in.size);
     if (big > 0.0) {
-        float th = atan2(in.uv.y, in.uv.x) + seed * 6.2832;
+        float th = atan2(u0.y, u0.x) + seed * 6.2832;
         float wob = cos(6.0 * th) * 0.13 + cos(3.0 * th + seed * 17.0) * 0.07 * fract(seed * 7.0);
         d *= 1.0 - big * (wob + 0.04);
     }
     float core = 1.0 - smoothstep(0.1, 0.45, d);
     float3 rim = mix(\(Palette.msl(Palette.rim)), float3(0.40, 0.50, 0.70), contrast);
     rim = mix(mix(float3(0.78, 0.85, 0.95), rim, contrast), rim, smoothstep(2.5, 6.0, in.size));   // small flakes: lighter rim (kept as-is under Increase Contrast)
-    float a = (1.0 - smoothstep(1.0 - max(0.45, 1.5 * fwidth(d)), 1.0, d)) * in.alpha * (1.0 - hide);
+    float a = (1.0 - smoothstep(1.0 - max(0.45, 1.5 * fwidth(d)), 1.0, d)) * in.alpha * sg * (1.0 - hide);
     return float4(mix(rim, float3(1.0), core) * a, a);
 }
 """

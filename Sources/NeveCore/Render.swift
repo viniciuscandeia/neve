@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// GPU instance, 32 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop.
+/// GPU instance, 40 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop.
 public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
@@ -9,6 +9,7 @@ public struct Instance {
     var seed: Float
     var rot: Float = 0
     var kind: UInt32 = 0
+    var vel: SIMD2<Float> = .zero   // pt/s, for the motion streak (0 = none)
 }
 
 /// One SDF primitive for the Metal pass, 64 bytes; layout mirrors the Metal struct.
@@ -64,7 +65,7 @@ extension SnowField {
             if f.kind != .dormant {
                 // Crystals (> 4pt) turn and sway like a pendulum; small dots stay round. Reduce Motion: fixed angle.
                 let rot: Float = f.size > 4 ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
-                p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0), rot: rot); n += 1
+                p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0), rot: rot, vel: calm ? .zero : f.vel); n += 1
             }   // seed >= 2: background flake (shader occlusion by large windows)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading
@@ -78,7 +79,7 @@ extension SnowField {
         }
         for f in debris {   // falling chunk: its packed profile rides in kind's upper 24 bits (the shader draws the crest and the broken edges from it)
             let k = f.amp > 0 && f.prof > 0 ? 2 | f.prof << 8 : UInt32(f.shape)
-            p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed, rot: f.rot, kind: k); n += 1
+            p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed, rot: f.rot, kind: k, vel: calm ? .zero : [f.vx, -f.fall]); n += 1
         }
         return n
     }
