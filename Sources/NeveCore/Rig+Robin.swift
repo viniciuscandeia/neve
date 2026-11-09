@@ -24,7 +24,7 @@ extension Rig {
         guard al > 0.01 else { return }
         func p(_ x: Float, _ y: Float) -> V { l.foot + V(m * x * s + l.wiggle * y * s * 0.12, l.hop + y * s) }
         func r(_ a: Float, _ b: Float) -> V { V(a * s, b * s) }
-        let sh = a(contrast ? shadowHC : shadow, (contrast ? 0.85 : 0.5) * al), back = a(robinBack, al), br = a(robinBreast, al), wg = a(robinWing, al), cl = a(coal, al)
+        let sh = a(contrast ? shadowHC : shadow, (contrast ? 0.85 : 0.5) * al * al), back = a(robinBack, al), br = a(robinBreast, al), wg = a(robinWing, al), cl = a(coal, al)
         if !l.flying { w.ellipse(center: l.foot + V(0, 0.4 * s), radii: r(4.5, 1.0), color: a(shadow, 0.35 * al), soft: 1.2) }
         w.ellipse(center: p(0.4, 4.4 - 0.1 * 3.8), radii: r(5.0, 3.8), color: sh, soft: 0.5 * s)   // below the body
         rim(p(0, 4.4), r(4.4, 3.3), al, s, into: &w)

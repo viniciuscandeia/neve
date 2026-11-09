@@ -21,7 +21,8 @@ extension SnowField {
             f.phase -= dt   // swept-off snow cannot land back for a moment (see sweep)
             f.vx -= (f.vx - wind * 0.15) * 0.5 * dt
             f.fall = min(f.fall + Tuning.debrisGravity * dt, Tuning.debrisTerminal)
-            f.pos.x += f.vx * dt
+            // A held slab keeps the 0.3x slide of its hold and speeds up over 0.15 s after release (`phase` counts -seconds since release): no lurch.
+            f.pos.x += f.vx * dt * (f.amp > 0 ? 0.3 + 0.7 * min(1, -f.phase / 0.15) : 1)
             f.pos.y -= f.fall * dt
             f.rot += f.spin * dt
             if f.amp > 0 {   // intact block: breaks only when it hits something
@@ -29,12 +30,13 @@ extension SnowField {
                 f.amp += dt   // seconds aloft (+1)
                 let fragile = !calm && f.amp > 1.15 && f.size < 40 && Float.random(in: 0..<1, using: &rng) < (f.size < 24 ? 1.0 : 0.2) * dt
                 if let top { breakSlab(f, top: top) } else if fragile { breakSlab(f, top: f.pos.y, air: true) }
-                if top != nil || fragile || f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w { debris[i] = debris[debris.count - 1]; debris.removeLast() }
+                if top != nil || fragile || f.pos.y < -f.size || f.pos.x < -f.size / 2 || f.pos.x > w + f.size / 2 { debris[i] = debris[debris.count - 1]; debris.removeLast() }
                 else { trailPowder(&f, dt: dt); debris[i] = f }
                 i -= 1; continue
             }
-            if f.pos.y < -f.size || f.pos.x < 0 || f.pos.x > w
-                || (f.phase <= 0 && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale, fall: f.fall, vol: f.vol)) {
+            let off = f.pos.x < -f.size / 2 || f.pos.x > w + f.size / 2   // gone only when it is fully past the screen edge
+            if f.pos.y < -f.size || off
+                || (f.phase <= 0 && f.pos.x >= 0 && f.pos.x <= w && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale, fall: f.fall, vol: f.vol, span: f.shape == 2 ? f.size : 0)) {
                 debris[i] = debris[debris.count - 1]
                 debris.removeLast()
             } else {

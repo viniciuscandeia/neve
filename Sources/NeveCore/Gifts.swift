@@ -23,7 +23,8 @@ public struct Gift {
     public internal(set) var land: Float = 1              // seconds since touching down (squash + bounce for the first 0.27 s)
     public var scale: Float = 1                           // snowman scale at drop time
     public var size: Float { Tuning.giftSize * scale }
-    public var fade: Float { min(max(1 - (rest - Tuning.giftLife), 0), 1) }
+    var out: Float = 1                                    // 1 -> 0 over 0.4 s when the snow goes (outro, half-way through a melt)
+    public var fade: Float { min(max(1 - (rest - Tuning.giftLife), 0), 1) * out }
     public var falling: Bool { surface == nil }
 }
 
@@ -44,7 +45,7 @@ extension SnowField {
     public var gifts: [Gift] { giftState.gifts }
 
     func dropGift(at p: SIMD2<Float>, dir: Float) {
-        guard giftState.gifts.count < Tuning.maxGifts else { return }
+        guard giftState.gifts.count < Tuning.maxGifts, !quiet else { return }
         giftState.gifts.append(Gift(pos: p, vel: SIMD2(dir * Tuning.sleighSpeed, 0), surface: nil, rot: 0, spin: Float.random(in: -3...3, using: &rng) , color: UInt8.random(in: 0...2, using: &rng), scale: snowmanScale))
     }
 
@@ -52,7 +53,7 @@ extension SnowField {
     private func giftRest(_ g: Gift) -> Float { g.size * (0.5 - Tuning.giftSink) }
 
     func stepGifts(dt: Float) {
-        if outro || (melting && meltT >= meltDur * 0.5) { giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true); return }
+        let leaving = outro || (melting && meltT >= meltDur * 0.5)   // gifts fade; confetti is short-lived and fades by itself
         var i = giftState.confetti.count - 1
         while i >= 0 {
             var c = giftState.confetti[i]
@@ -67,6 +68,7 @@ extension SnowField {
             defer { i -= 1 }
             var g = giftState.gifts[i]
             if g.opened >= 0 { g.opened += dt }
+            if leaving { g.out -= dt * fadeK / 0.4; if g.out <= 0 { giftState.gifts.remove(at: i); continue } }
             if let sid = g.surface {
                 guard let si = index[sid], column(g.pos.x) - surfaces[si].c0 >= 0, column(g.pos.x) - surfaces[si].c0 < surfaces[si].pile.heights.count,
                       surfaces[si].pile.visible[column(g.pos.x) - surfaces[si].c0] else { g.surface = nil; g.vel = .zero; g.spin = 0; giftState.gifts[i] = g; continue }   // the pile is gone: it falls on
@@ -81,7 +83,7 @@ extension SnowField {
                 g.rot += g.spin * dt
                 g.pos.x = min(max(g.pos.x, 5), size.x - 5)
                 if let (si, _, top) = supportTop(x: g.pos.x, fromY: prev.y), g.pos.y <= top + giftRest(g) {
-                    g.pos.y = top + giftRest(g); g.land = 0
+                    g.pos.y = standY(si: si, x: g.pos.x) + giftRest(g); g.land = 0
                     g.surface = surfaces[si].id; g.vel = .zero; g.spin = 0
                     g.rot = Float.random(in: -0.25...0.25, using: &rng)
                     if !calm, !silent { addPuff(x: g.pos.x, y: top + 2) }
@@ -106,8 +108,12 @@ extension SnowField {
         guard let i = giftUnder(SIMD2(Float(p.x), Float(p.y))), giftState.gifts[i].opened < 0 else { return false }
         giftState.gifts[i].opened = 0
         let c = giftState.gifts[i].pos
-        glints.removeFirst(max(0, glints.count - 2))   // keep room: at most maxGlints alive
-        for _ in 0..<4 where glints.count < Tuning.maxGlints {
+        guard !calm, !economy, !lowPower else { return true }   // glints are off in these modes (stepGlints would drop them the same frame)
+        // Make room (at most maxGlints alive): the oldest sparkles fade quickly instead of being wiped.
+        var live = glints.filter { $0.fade >= 1 }.count
+        for k in glints.indices where live > Tuning.maxGlints - 4 && glints[k].fade >= 1 { glints[k].fade = 0.99; live -= 1 }   // < 1 = dying (stepGlints)
+        for _ in 0..<4 where live < Tuning.maxGlints {
+            live += 1
             glints.append(Flake(pos: c + SIMD2(Float.random(in: -9...9, using: &rng), Float.random(in: 0...12, using: &rng)), vx: 0, fall: 0, phase: 0, amp: 0, freq: 0,
                                 size: Float.random(in: 4...7, using: &rng), alpha: 1, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, delay: Tuning.glintLife, shape: 4))
         }

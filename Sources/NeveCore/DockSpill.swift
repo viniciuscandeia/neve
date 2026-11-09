@@ -30,7 +30,8 @@ extension SnowField {
     /// under Reduce Motion the volume goes straight into the bank column.
     func stepDockSpill(dt: Float) {
         guard let si = index[0], let gi = index[Tuning.groundID] else { dockTrickle = DockTrickle(); return }
-        for left in [true, false] {
+        for side in 0..<2 {   // (no per-frame array literal)
+            let left = side == 0
             let v = left ? dockTrickle.vol.0 : dockTrickle.vol.1
             var w = (left ? dockTrickle.wait.0 : dockTrickle.wait.1) - dt
             defer { if left { dockTrickle.wait.0 = w } else { dockTrickle.wait.1 = w } }

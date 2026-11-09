@@ -5,7 +5,11 @@ extension SnowField {
     /// Idle melt in progress (or finished: see `meltDone`). `beginIntro` ends it, keeping whatever snow is left.
     public var isMelting: Bool { melting }
     /// The melt has run its full time: everything is gone, rendering may pause.
-    public var meltDone: Bool { melting && meltT >= meltDur }
+    /// Airborne debris, dust, glints and meltwater are let finish first (finishMelt keeps them), so nothing vanishes in the last frame.
+    public var meltDone: Bool { melting && meltT >= meltDur && debris.isEmpty && puffs.isEmpty && glints.isEmpty && drops.isEmpty }
+    /// Speed-up of every fade-out while melting, so the latest one (a ball / snowman / gift starting at 40-55% of a short Reduce Motion melt)
+    /// is still done when the melt ends. 1 for a normal melt, and outside melting.
+    var fadeK: Float { melting ? max(1, 1.34 / meltDur) : 1 }
     /// Total pile snow (pt^2), all surfaces.
     public var pileVolume: Float {
         var v: Float = 0
@@ -46,11 +50,7 @@ extension SnowField {
         while i >= 0 {
             defer { i -= 1 }
             guard i < figures.count else { continue }
-            if figures[i].kind != .snowman {
-                figures[i].melt -= dt
-                if figures[i].melt <= 0 { removeFigure(i) }
-                continue
-            }
+            if figures[i].kind != .snowman { continue }   // visitors fade in stepFigures
             guard figures[i].phase != .collapsing else { continue }
             if p >= 0.55 {   // the rest fades out (0.4 s)
                 endFights(of: figures[i].id)
@@ -65,9 +65,11 @@ extension SnowField {
         for k in balls.indices where !balls[k].melting && balls[k].state != .held && meltT >= meltDur * 0.4 * Self.hash01(balls[k].id) { balls[k].melting = true }
     }
 
-    /// Whatever is left (frost lips, a held ball, stray debris) goes at once.
+    /// Whatever is left (frost lips, a held ball) goes at once; airborne debris, dust, glints and drops finish their flight (nothing lands while melting).
     private func finishMelt() {
+        let air = (debris, puffs, glints, drops)
         clear()
+        (debris, puffs, glints, drops) = air
         for i in flakes.indices { flakes[i].kind = .dormant }
         pilesDirty = true
     }

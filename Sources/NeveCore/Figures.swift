@@ -70,6 +70,17 @@ extension SnowField {
     public var canSpawnFigure: Bool { snowmanCount < Tuning.maxFigures }   // visitors (rabbit...) have their own cap in the EventDirector
     var snowmanCount: Int { var n = 0; for f in figures where f.kind == .snowman { n += 1 }; return n }
 
+    /// What is drawn: like `meanHeight`, but over the eased `shown` heights (falls back to the real ones until the pile has been drawn).
+    /// Actors stand on this, so they ride the visible snow instead of sinking into / floating over it while it eases; physics stays on `heights`.
+    func meanShown(si: Int, col: Int, span: Int) -> Float? {
+        let p = surfaces[si].pile, c = col - surfaces[si].c0
+        guard p.shown.count == p.heights.count, c >= 0, c < p.shown.count else { return meanHeight(si: si, col: col, span: span) }
+        let lo = max(0, c - span), hi = min(p.shown.count - 1, c + span)
+        var sum: Float = 0
+        for b in lo...hi { sum += p.shown[b] }
+        return sum / Float(hi - lo + 1)
+    }
+
     func figureIndex(_ id: Int) -> Int? { figures.firstIndex { $0.id == id } }
 
     /// What the rig needs to draw the figure (foot = bottom of the base ball, before hop).
@@ -110,7 +121,7 @@ extension SnowField {
         guard canSpawnFigure, let si = index[sid] else { return nil }
         let s = surfaces[si], c = column(x)
         var top = y ?? s.edgeY
-        if y == nil, let avg = meanHeight(si: si, col: c, span: 3) { top = s.edgeY + s.pile.base[c - s.c0] + avg }
+        if y == nil, let avg = meanShown(si: si, col: c, span: 3) { top = s.edgeY + s.pile.base[c - s.c0] + avg }
         var f = Figure(id: nextFigureID, kind: .snowman, foot: SIMD2(x, top), radii: radii, fromBalls: fromBalls)
         nextFigureID += 1
         f.built = built
@@ -167,7 +178,7 @@ extension SnowField {
     /// accessories for 0.4 s first (and starts the rebuild cooldown); a user-built one is gone at once.
     public func shatter(_ id: Int, velocity v: SIMD2<Float> = .zero) {
         guard let j = figureIndex(id), figures[j].phase != .collapsing else { return }
-        if figures[j].kind != .snowman { removeFigure(j); return }
+        if figures[j].kind != .snowman { if !quiet { removeFigure(j) }; return }   // in the outro / melt visitors fade (stepFigures)
         let f = figures[j], a = anchors(of: f)
         if !silent {
             for k in 0..<ballCount(f) {
@@ -242,6 +253,12 @@ extension SnowField {
         if !animate, !fights.isEmpty || !shots.isEmpty { fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true) }
         var i = 0
         while i < figures.count {
+            if figures[i].kind != .snowman {   // visitors fade out with the snow (outro 0.4 s, melt 1 s) and fade back if it returns
+                if quiet {
+                    figures[i].melt -= dt * fadeK / (outro ? 0.4 : 1)
+                    if figures[i].melt <= 0 { removeFigure(i); continue }
+                } else if figures[i].melt < 1 { figures[i].melt = min(1, figures[i].melt + dt / 0.4) }
+            }
             guard stepFigure(i, dt, animate: animate) else { continue }
             i += 1
         }
@@ -263,10 +280,14 @@ extension SnowField {
         var f = figures[i]
         f.phaseT += dt
         if f.phase == .collapsing {
-            f.fade -= dt / 0.4
+            f.fade -= dt * fadeK / 0.4
             if f.fade <= 0 { removeFigure(i); return false }
             figures[i] = f
             return true
+        }
+        if let k = f.preMelt, !melting {   // the melt was cut short (snow is back): the sagged snowman rises again instead of snapping up
+            f.radii += (k.radii - f.radii) * min(1, dt / 0.3)
+            if abs(f.radii.x - k.radii.x) < 0.05 { f.radii = k.radii; f.preMelt = nil }
         }
         guard var sid = f.surfaceID, let si = index[sid], let avg = meanHeight(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) else {
             return lose(i)   // its surface is gone
@@ -275,7 +296,7 @@ extension SnowField {
         let visible = s.pile.visible[c]
         if visible {
             if !f.fromBalls, avg < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
-            f.foot.y = s.edgeY + s.pile.base[c] + avg
+            f.foot.y = s.edgeY + s.pile.base[c] + (meanShown(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) ?? avg)
         }
         f.stageAge += dt
         let dd = (f.headless ? 1 : 0) - f.droop

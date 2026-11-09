@@ -64,10 +64,10 @@ public enum Rig {
     /// Ball body: shadow, (contrast outline), body, lit disc, optional rolling speckles, crest. Radii may be squashed.
     static func body(_ c: V, _ r: V, alpha: Float, contrast: Bool, rotation: Float, speckles: Bool, into w: inout PrimWriter) {
         let u = (r.x + r.y) / 2
-        w.ellipse(center: c + V(0, -0.1 * u), radii: r, color: a(contrast ? shadowHC : shadow, (contrast ? 0.8 : 0.45) * alpha), soft: 0.16 * u)
+        w.ellipse(center: c + V(0, -0.1 * u), radii: r, color: a(contrast ? shadowHC : shadow, (contrast ? 0.8 : 0.45) * alpha * alpha), soft: 0.16 * u)   // alpha^2: behind a fading body the shadow must go first, or it shows through as a grey ring
         var rr = r
         if contrast {
-            w.ellipse(center: c, radii: r * 1.04, color: a(shadowHC, alpha))
+            w.ellipse(center: c, radii: r * 1.04, color: a(shadowHC, alpha * alpha))
             rr = r * 0.96
         }
         w.ellipse(center: c, radii: rr, color: a(snow, alpha))

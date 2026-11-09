@@ -50,7 +50,7 @@ extension SnowField {
     /// y of the pile top at x on surface index `si` (what a standing figure's foot rests on).
     func standY(si: Int, x: Float) -> Float {
         let s = surfaces[si], c = column(x)
-        return s.edgeY + s.pile.base[min(max(c - s.c0, 0), s.pile.base.count - 1)] + (meanHeight(si: si, col: c, span: 3) ?? 0)
+        return s.edgeY + s.pile.base[min(max(c - s.c0, 0), s.pile.base.count - 1)] + (meanShown(si: si, col: c, span: 3) ?? 0)
     }
 
     private func mouth(_ f: Figure) -> SIMD2<Float> {

@@ -33,7 +33,7 @@ extension Rig {
         guard al > 0.01 else { return }
         func p(_ x: Float, _ y: Float) -> V { l.foot + V(m * x * s * sx, l.hop + y * s * sy) }
         func r(_ a: Float, _ b: Float) -> V { V(a * s * sx, b * s * sy) }
-        let sh = Rig.a(contrast ? shadowHC : shadow, (contrast ? 0.85 : 0.5) * al), fur = Rig.a(rabbitFur, al), pink = Rig.a(earPink, al), cl = Rig.a(coal, al)
+        let sh = Rig.a(contrast ? shadowHC : shadow, (contrast ? 0.85 : 0.5) * al * al), fur = Rig.a(rabbitFur, al), pink = Rig.a(earPink, al), cl = Rig.a(coal, al)
         w.ellipse(center: l.foot + V(0, 0.4 * s), radii: V(7.5 * s, 1.4 * s), color: Rig.a(shadow, 0.35 * al), soft: 1.6)   // stays on the ground while it hops
         // Ears: (base, tip) in local points; the near one twitches, both lay back when running.
         func ear(_ bx: Float, _ by: Float, _ tx: Float, _ ty: Float, twitch: Float) {

@@ -339,7 +339,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var outroGen = 0   // bumped by intro() / outro(): a stale outro step does nothing
     /// Snow starts gradually (no flakes pre-scattered): launch and "Nevar" turned back on. Reduce Motion keeps the plain window fade-in.
     func intro() {
-        if !reduceMotion { resume() } else { outroGen += 1 }
+        if !reduceMotion { resume() } else { outroGen += 1; field.endOutro() }
     }
     /// Back from the idle pause (or a melt): no flake on screen, new ones fall in from above the top edge (Reduce Motion too).
     func resume() {
