@@ -63,3 +63,60 @@ private func snow(_ seed: UInt64 = 5) -> SnowField {
     #expect(a.flakeSeconds == 0 && a.flakeSteps == 0)
     #expect(b.flakeSeconds > 0 && b.flakeSteps > 0)
 }
+
+// Rare large out-of-focus foreground flakes (.near, Instance kind 6).
+private func nearField(_ i: Intensity = .media) -> SnowField {
+    let f = SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: 400, seed: 9)
+    f.setIntensity(i, immediate: true)
+    return f
+}
+
+@Test func nearFlakesAreAboutTwoPercentOfSky() {
+    for i in [Intensity.media, .nevasca] {
+        let f = nearField(i)
+        advance(f, 25, fps: 30)
+        let near = f.flakes.filter { $0.kind == .near }, sky = f.flakes.filter { $0.kind == .sky }.count + near.count
+        #expect(near.count == Int((Float(f.skyLimit) * 0.02).rounded()) && near.count >= 3)
+        #expect(abs(Float(near.count) / Float(sky) - 0.02) < 0.01)
+        #expect(near.allSatisfy { (8...13).contains($0.size) && $0.fall >= 75 && $0.fall <= 100 && abs($0.alpha - 0.28) < 0.05 })
+    }
+}
+
+@Test func nearFlakesNeverDeposit() {
+    let g = nearField()
+    advance(g, 15, fps: 30)
+    let nearIdx = g.flakes.indices.filter { g.flakes[$0].kind == .near }
+    #expect(!nearIdx.isEmpty)
+    let before = g.surfaces.reduce(0) { $0 + $1.pile.heights.reduce(0, +) }
+    for i in nearIdx { g.flakes[i].pos.y = 95 }   // just above the ground line
+    g.flakes = g.flakes.map { var h = $0; if h.kind == .sky || h.kind == .background { h.kind = .dormant }; return h }
+    g.skyLimit = 0; g.bgLimit = 0
+    g.skyEnd = g.skyCount; g.bgEnd = g.flakes.count - g.skyCount
+    advance(g, 0.2, fps: 30)
+    #expect(g.surfaces.reduce(0) { $0 + $1.pile.heights.reduce(0, +) } == before)
+}
+
+@Test func nearFlakesOffUnderCalmEconomyLowPower() {
+    for mode in 0..<3 {
+        let f = nearField()
+        advance(f, 5, fps: 30)
+        #expect(f.flakes.contains { $0.kind == .near })
+        if mode == 0 { f.setCalm(true) } else if mode == 1 { f.economy = true } else { f.setLowPower(true) }
+        advance(f, 3, fps: 30)
+        #expect(!f.flakes.contains { $0.kind == .near })
+        advance(f, 20, fps: 30)
+        #expect(!f.flakes.contains { $0.kind == .near })
+    }
+}
+
+@Test func nearFlakesWriteSoftDiscInstances() {
+    let f = nearField()
+    advance(f, 15, fps: 30)
+    let buf = UnsafeMutablePointer<Instance>.allocate(capacity: f.flakes.count + 4096)
+    defer { buf.deallocate() }
+    let n = f.writeInstances(to: buf)
+    let k6 = (0..<n).map { buf[$0] }.filter { $0.kind == 6 }
+    #expect(k6.count == f.flakes.filter { $0.kind == .near }.count && k6.count >= 3)
+    #expect(k6.allSatisfy { (8...13).contains($0.size) && $0.alpha > 0.1 && $0.alpha < 0.4 && $0.vel == .zero })
+    #expect(MemoryLayout<Instance>.stride == 40)
+}

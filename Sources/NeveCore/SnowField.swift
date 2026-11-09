@@ -41,6 +41,7 @@ public final class SnowField {
     let numCols: Int
     let invBin = 1 / Tuning.binWidth
     let skyCount: Int      // sky pool size; the rest of `flakes` is background
+    var nearLimit = 0       // sky slots [0, nearLimit) respawn as out-of-focus `.near` flakes (set each step)
     var skyLimit = 0        // active counts for the current intensity
     var bgLimit = 0
     var skyEnd = 0          // slots [0, skyEnd) of the sky pool / [skyCount, skyCount+bgEnd) of the background pool

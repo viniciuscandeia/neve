@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public enum FlakeKind: UInt8 { case sky, background, debris, dormant }
+public enum FlakeKind: UInt8 { case sky, background, debris, dormant, near }   // near: rare big out-of-focus foreground flakes (never land)
 
 /// Plain-old-data flake (no references).
 public struct Flake {
@@ -40,6 +40,12 @@ extension SnowField {
                          phase: phase, amp: Float.random(in: 5...15, using: &rng) * swayAmp(s), freq: Float.random(in: 0.8...2, using: &rng) * swayFreq(s),
                          size: s, alpha: max(0.35, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .background,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
+        case .near:
+            let s = Float.random(in: 8...13, using: &rng)
+            return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: Float.random(in: 75...100, using: &rng),
+                         phase: phase, amp: Float.random(in: 30...55, using: &rng) * swayAmp(s), freq: Float.random(in: 0.35...0.7, using: &rng) * swayFreq(s),
+                         size: s, alpha: Tuning.nearAlpha + Float.random(in: -0.04...0.04, using: &rng), kind: .near,
+                         seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         default:
             let s = Float.random(in: 2.5...7, using: &rng)
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
@@ -59,6 +65,9 @@ extension SnowField {
     /// 0..<1 position of slot `i` among the active ones of its pool (the order they wake in during the intro).
     func introRank(_ i: Int) -> Float { i < skyCount ? Float(i) / Float(skyLimit) : Float(i - skyCount) / Float(bgLimit) }
 
+    /// Kind a respawn in slot `i` takes: the first `nearLimit` sky slots hold the rare out-of-focus flakes.
+    func slotKind(_ i: Int) -> FlakeKind { i >= skyCount ? .background : i < nearLimit ? .near : .sky }
+
     func isActive(_ i: Int) -> Bool { i < skyCount ? i < skyLimit : i - skyCount < bgLimit }
 
     /// Smooth gusts: slow sines with unrelated periods; sign flips over several seconds.
@@ -71,17 +80,19 @@ extension SnowField {
     func stepFlakes(dt: Float) {
         let gt = Float((time * 0.35).truncatingRemainder(dividingBy: 2 * .pi))   // gust phase, once per call
         let x0 = liveX0 - 10, w = liveX1 - liveX0 + 20
+        nearLimit = calm || economy || lowPower ? 0 : Int((Float(skyLimit) * Tuning.nearFraction).rounded())   // off in the economy modes (still snow never steps)
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
         for n in 0..<(skyEnd + bgEnd) {
             let i = n < skyEnd ? n : skyCount + n - skyEnd
             var f = flakes[i]
             if f.kind == .dormant {
-                if isActive(i), !quiet, introDur > 0 ? introRank(i) < introT / introDur : Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(i < skyCount ? .sky : .background, anywhere: false) }
+                if isActive(i), !quiet, introDur > 0 ? introRank(i) < introT / introDur : Float.random(in: 0..<1, using: &rng) < dt * 0.3 { flakes[i] = spawn(slotKind(i), anywhere: false) }
                 continue
             }
             let prevY = f.pos.y
-            f.fade = quiet ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
-            if quiet, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
+            let q = quiet || (f.kind == .near && i >= nearLimit)   // near flakes fade out when their layer switches off
+            f.fade = q ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
+            if q, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             let p0 = f.pos
             f.phase += f.freq * dt
             // Wind: a gust field varying across the screen and in time; flakes relax toward it (heavier = slower to respond).
@@ -106,9 +117,9 @@ extension SnowField {
             if f.pos.x < x0 { f.pos.x += w } else if f.pos.x > x0 + w { f.pos.x -= w }
             else if dt > 0 { f.vel = (f.pos - p0) / dt }   // a wrap would fake a screen-wide jump: keep the previous velocity
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
-                f = spawn(.sky, anywhere: false)
+                f = spawn(slotKind(i), anywhere: false)
             } else if f.pos.y < -f.size {
-                f = spawn(f.kind, anywhere: false)
+                f = spawn(slotKind(i), anywhere: false)
             }
             if !isActive(i), f.pos.y > liveTop { f.kind = .dormant }   // just respawned: retire
             flakes[i] = f

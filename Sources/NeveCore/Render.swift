@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// GPU instance, 40 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop.
+/// GPU instance, 40 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc.
 public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
@@ -64,8 +64,8 @@ extension SnowField {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
             if f.kind != .dormant {
                 // Crystals (> 4pt) turn and sway like a pendulum; small dots stay round. Reduce Motion: fixed angle.
-                let rot: Float = f.size > 4 ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
-                p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0), rot: rot, vel: calm ? .zero : f.vel); n += 1
+                let rot: Float = f.size > 4 && f.kind != .near ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
+                p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : 0, vel: calm || f.kind == .near ? .zero : f.vel); n += 1
             }   // seed >= 2: background flake (shader occlusion by large windows)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading

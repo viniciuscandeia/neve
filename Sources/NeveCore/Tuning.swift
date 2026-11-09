@@ -59,6 +59,8 @@ public enum Tuning {
     static let penguinPuff: Float = 8               // plowed area (pt^2) per spray puff
     static let depositScale: Float = 1.2    // pile volume per flake size
     static let wind: Float = 6
+    static let nearFraction: Float = 0.02   // out-of-focus foreground flakes: share of the active sky count
+    static let nearAlpha: Float = 0.28
     static let maxDebris = 1200
     static let maxPuffs = 24
     static let maxGlints = 6
