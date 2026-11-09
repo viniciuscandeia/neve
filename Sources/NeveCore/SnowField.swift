@@ -64,9 +64,7 @@ public final class SnowField {
     var pileWritten = -1, pileEasing = false
     var pileEnds: [PileEnd] = []
     /// Everyone standing on a surface (at most `Tuning.maxFigures`): the auto snowman, snowmen made of user balls; see Figures.swift.
-    /// `figuresVersion` changes whenever one moves, poses, appears or leaves.
     public internal(set) var figures: [Figure] = []
-    public internal(set) var figuresVersion = 0
     var nextFigureID = 1
     public internal(set) var fights: [Fight] = []     // snowball fights; see Fights.swift
     public internal(set) var shots: [Shot] = []
@@ -92,9 +90,8 @@ public final class SnowField {
     public var snowmanEnabled = true { didSet { if !snowmanEnabled { dropAutoFigure() } } }
     var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next auto build may start
     var snowmanScan: Float = 0
-    /// Loose snowballs the user rolled; see Snowball.swift. `ballsVersion` changes whenever one moves / grows / fades.
+    /// Loose snowballs the user rolled; see Snowball.swift.
     public internal(set) var balls: [Snowball] = []
-    public internal(set) var ballsVersion = 0
     var nextBallID = 1
     var pointer: SIMD2<Float>?
     var pointerVel: SIMD2<Float> = .zero
@@ -170,9 +167,7 @@ public final class SnowField {
     public func markStale() { windowsStale = true }
     public func dropPiles() {
         silentUntil = time + 1.5
-        let n = balls.count
         balls.removeAll { $0.state != .held && $0.surfaceID != nil && $0.surfaceID != Tuning.groundID }   // windows vanish: so do balls on them
-        if balls.count != n { ballsVersion &+= 1 }
         dropWindowFigures()
         for i in surfaces.indices where surfaces[i].id != Tuning.groundID { surfaces[i].pile.empty() }   // the ground is not tied to a window
         pilesDirty = true
@@ -186,7 +181,6 @@ public final class SnowField {
             figures[i].melt = 1
             if let k = figures[i].preMelt { figures[i].radii = k.radii; figures[i].built = k.built; figures[i].preMelt = nil }   // a resumed melt: stand tall again
         }
-        figuresVersion &+= 1
         snowmanCooldown = 0
         for i in flakes.indices { flakes[i].kind = .dormant }
         introT = 0; introDur = max(duration, 0.01)
@@ -201,7 +195,6 @@ public final class SnowField {
         for i in figures.indices.reversed() where i < figures.count { shatter(figures[i].id) }   // stacks go at once, the auto one fades
         snowmanCooldown = .infinity
         while !balls.isEmpty { pop(balls.count - 1, .zero) }
-        ballsVersion &+= 1
         outroT = 0; outroSpread = max(spread, 0.001); outroRel = -1
         if spread <= 0 { releasePiles(from: -1, to: 1); outroRel = 1 }
         pilesDirty = true
@@ -214,8 +207,7 @@ public final class SnowField {
         for g in figures where g.kind != .snowman { director.ended(g.kind, at: time) }   // visits end through the director: no infinite cooldown
         dockTrickle = DockTrickle(); sweepOwed = 0   // pending emission debts must not resurface as snow after clearing
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
-        figuresVersion &+= 1
-        if !balls.isEmpty { balls.removeAll(); ballsVersion &+= 1 }
+        if !balls.isEmpty { balls.removeAll() }
         for i in surfaces.indices { surfaces[i].pile.empty() }
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)

@@ -69,7 +69,6 @@ extension SnowField {
         if !pose { c.up = max(0, c.up - dt / 0.35) }   // arm comes down after the throw / when cancelled
         if let k = figureIndex(c.who) {
             figures[k].pose.flutter.up = c.up * c.up * (3 - 2 * c.up)
-            figuresVersion &+= 1
         }
     }
 

@@ -73,7 +73,6 @@ extension SnowField {
                 f.penguin.life = Float.random(in: 20...40, using: &director.rng)
                 f.facing = f.penguin.dir
                 figures.append(f)
-                figuresVersion &+= 1
                 return true
             }
         }
@@ -94,7 +93,7 @@ extension SnowField {
             let c = SIMD2(figures[i].foot.x, figures[i].foot.y + 9 * figures[i].scale), dx = bx - ax, dy = by - ay
             let t = min(max(((c.x - ax) * dx + (c.y - ay) * dy) / max(dx * dx + dy * dy, 1e-6), 0), 1)
             let ex = ax + t * dx - c.x, ey = ay + t * dy - c.y, rad = r + 10 * figures[i].scale
-            if ex * ex + ey * ey <= rad * rad, figures[i].penguin.duck <= 0 { figures[i].penguin.duck = 0.3; figuresVersion &+= 1 }
+            if ex * ex + ey * ey <= rad * rad, figures[i].penguin.duck <= 0 { figures[i].penguin.duck = 0.3 }
         }
     }
 

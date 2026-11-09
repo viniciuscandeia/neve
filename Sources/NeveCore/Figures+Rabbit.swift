@@ -81,7 +81,6 @@ extension SnowField {
             r.facing = -side
             r.critter.target = w.id; r.critter.side = side
             figures.append(r)
-            figuresVersion &+= 1
             return true
         }
         return false
@@ -91,7 +90,7 @@ extension SnowField {
     func clearCritters() {
         var i = figures.count - 1
         while i >= 0 {
-            if figures[i].kind != .snowman { removeFigure(i) } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter(); figuresVersion &+= 1 }
+            if figures[i].kind != .snowman { removeFigure(i) } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter() }
             i -= 1
         }
         carrots.removeAll(keepingCapacity: true)
@@ -159,7 +158,6 @@ extension SnowField {
                 let a = anchors(of: figures[k])
                 c.carrotFrom = SIMD2(a.head.x + figures[k].facing * figures[k].radii.z * 1.1, a.head.y)
                 c.shots = Int.random(in: 2...3, using: &director.rng); c.shotT = 0.45
-                figuresVersion &+= 1
             }
         case .snatch:
             let u = min(c.stageT / 0.4, 1), e = u * u * (3 - 2 * u)
@@ -190,7 +188,6 @@ extension SnowField {
         var to = SIMD2(f.foot.x + vx * dur, f.foot.y + 5 * f.scale)
         if !hit { to = SIMD2(to.x + (Bool.random(using: &director.rng) ? 1 : -1) * Float.random(in: 22...45, using: &director.rng), f.foot.y); to.x = storyMiss(to.x, rabbitX: f.foot.x) }
         shots.append(Shot(pos: from, from: from, to: to, peak: 12 + 0.12 * d, dur: dur, hit: hit, head: false, target: f.id, surface: f.surfaceID ?? Tuning.groundID, radius: 3.6 * snowmanScale))
-        figuresVersion &+= 1
     }
 
     /// A snowball hit the rabbit: it drops the carrot (if it holds it) and bolts.
@@ -203,7 +200,6 @@ extension SnowField {
         figures[j].critter.hopping = false
         carrots.append(Carrot(pos: m, vel: SIMD2(-figures[j].facing * 25, 110), surface: sid, owner: owner.id, size: owner.scale))
         figures[k].critter.fetchX = m.x
-        figuresVersion &+= 1
     }
 
     /// Nose regrowth of a snowman `f` that lost its carrot (snowfall time).
@@ -252,7 +248,6 @@ extension SnowField {
                 c.pos = c.from + (nose - c.from) * (u * u * (3 - 2 * u))
                 if u >= 1 {
                     figures[o].carrot = true; figures[o].critter.fetchX = nil; figures[o].critter.regrow = 0
-                    figuresVersion &+= 1
                     carrots.remove(at: k)
                     continue
                 }
