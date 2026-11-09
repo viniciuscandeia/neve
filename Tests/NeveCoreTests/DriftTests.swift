@@ -57,12 +57,14 @@ private func wall(_ p: Pile) -> Int { p.visible.firstIndex { !$0 }! - 1 }   // l
 
 @Test func driftCollapsesWhenTheFrontWindowLeaves() {
     let f = scene(front: win(2, 200, 300, 300, 160))
-    let excess = f.pile(id: 1)!.heights.map { max($0 - Tuning.maxPileHeight, 0) }.reduce(0, +)
+    let p0 = f.pile(id: 1)!
+    func ceil(_ b: Int) -> Float { Tuning.maxPileHeight * p0.wobble[b] }   // the wavy ceiling the drift sits on
+    let excess = p0.heights.indices.map { max(p0.heights[$0] - ceil($0), 0) }.reduce(0, +)
     #expect(excess > 3)
     f.update(windows: [back1], dt: 0.5)
     f.debris.removeAll()
     for _ in 0..<60 { f.step(dt: 1.0 / 60) }   // 1 s: the ramp peels from the wall at 180pt/s
-    #expect(f.pile(id: 1)!.heights.allSatisfy { $0 <= Tuning.maxPileHeight + 0.01 })
+    #expect(f.pile(id: 1)!.heights.indices.allSatisfy { f.pile(id: 1)!.heights[$0] <= ceil($0) + 0.01 })
     #expect(f.peeledVolume > excess * 0.5 && f.peeledVolume <= excess * 1.05, "peeled \(f.peeledVolume) excess \(excess)")
 }
 

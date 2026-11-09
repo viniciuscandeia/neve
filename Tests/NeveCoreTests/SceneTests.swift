@@ -45,7 +45,7 @@ func demoRun(_ f: SnowField, to t: Float, peak: ((SnowField) -> Void)? = nil) {
     demoRun(f, to: 21) { avalanched = avalanched || $0.avalancheActive }
     #expect(avalanched && f.chain.started == 1)
     demoRun(f, to: 25.8) { burst = max(burst, $0.debris.count) }   // Fotos slides away fast at 25 s
-    #expect(burst > 10)
+    #expect(burst > 6)   // wavy ceilings: the sliding window may carry a lower stretch of pile
     demoRun(f, to: 29.5)
     #expect(f.figures.contains { $0.kind == .sleigh } || !f.gifts.isEmpty)
     demoRun(f, to: 29.9)
