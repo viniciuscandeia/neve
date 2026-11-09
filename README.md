@@ -46,7 +46,7 @@ App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Met
 | 🏔️ **Avalanche** | Um monte cheio, um solavanco ou um susto no passarinho solta uma frente de placas que pode cair em cascata sobre a janela de baixo. |
 | 🧱 **Neve encostada** | Quando uma janela fica rente a outra, mais alta, a neve forma uma rampa contínua até o topo da da frente (e desaba em placas se ela sair). |
 | 🖥️ **Janela maximizada** | Com uma janela cobrindo quase tudo, a neve cai só na faixa visível (até o Dock) e o custo cai muito; ao desmaximizar, os montes escondidos voltam. |
-| 🎞️ **Quadros adaptativos** | Sempre ativos, sem opção: 60 fps quando algo rápido acontece e 30 fps quando a nevada está calma. No modo econômico: 30 fps com algo acontecendo e 20 fps com a nevada calma. |
+| 🎞️ **Quadros adaptativos** | Ligados por padrão, sem opção na interface (há só uma preferência oculta, `adaptiveFps`): 60 fps quando algo rápido acontece e 30 fps quando a nevada está calma. No modo econômico: 30 fps com algo acontecendo e 20 fps com a nevada calma. |
 | 🔁 **Troca de Space** | A neve acumulada é preservada ao trocar de Space ou de tela cheia: voltando, os montes continuam lá. |
 | 🔭 **Flocos desfocados** | Raramente, um floco grande e desfocado passa em primeiro plano, como se estivesse perto da lente. |
 | ⏸️ **Neve parada** | Com Reduzir Movimento, a neve fica parada e o app dorme quando nada muda. |
@@ -91,7 +91,7 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 | **Ajustes…** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto). Um pontinho laranja aparece aqui quando falta a permissão de Acessibilidade (opcional) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
-Clicar no ícone abre um painel enxuto, sem seta, com só esses itens; ele fecha ao clicar fora, com Esc ou clicando no ícone de novo. Todo o resto fica em **Ajustes**, a janela com tudo por abas:
+Clicar no ícone abre um painel enxuto, sem seta, com só esses itens; ele fecha ao clicar fora, com Esc, clicando no ícone de novo, ao trocar de Space ou quando o Neve deixa de ser o app ativo. Todo o resto fica em **Ajustes**, a janela com tudo por abas:
 
 - **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
@@ -161,7 +161,7 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 ## 🌨️ Como funciona
 
 - Uma janela de overlay transparente por tela fica acima das demais e ignora o mouse. Com ⌥ pressionado, ela deixa de ser click-through só sobre a neve ou uma bola.
-- Com Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega ordem e limites (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll de segurança a cada 2 s (5 s depois de 10 s sem eventos) cobre eventos perdidos. Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s (10 vezes por segundo com o botão do mouse apertado).
+- Com Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega ordem e limites (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll de segurança a cada 2 s (5 s depois de 10 s sem eventos) cobre eventos perdidos. Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s; enquanto uma janela é arrastada (botão apertado e o arraste começa no título ou na borda de uma janela, ou com ⌘), as leituras sobem para cerca de 25 por segundo.
 - As janelas viram um mapa de superfícies por coluna de pixels; o Dock (lido via Acessibilidade) e o pé da tela também são superfícies. O pé da tela fica atrás de tudo, então janelas e Dock escondem a parte coberta, que guarda a neve até reaparecer.
 - Ao pousar, o floco alimenta uma pilha naquela coluna. As pilhas escorregam nos cantos arredondados e desabam quando a janela se move rápido, é minimizada ou fechada.
 - O shader Metal é compilado em tempo de execução a partir de código-fonte, porque as Command Line Tools não incluem o compilador `metal`.
