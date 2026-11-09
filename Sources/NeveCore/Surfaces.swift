@@ -41,9 +41,25 @@ extension SnowField {
             return 0
         }
         boundsDirty = false
+        let prev = lastWindows
         lastWindows = windows
         defer { windowsStale = false }
-        return updateSurfaces(windows: effective(windows))
+        return updateSurfaces(windows: effective(windows), only: dragOnlyRebuild ? movedOnly(windows, prev: prev) : nil, settle: true)
+    }
+
+    /// When the only change between two snapshots is one window's frame (a drag sample): the surfaces that can depend on it, the window and every
+    /// window whose x-range (+-8pt, the seam reach) meets its old or new one (front windows hide / roof, seams link; the ceiling check looks at any height).
+    /// nil = rebuild everything (list changed, Dock moved, Space switch).
+    func movedOnly(_ w: [WindowInfo], prev p: [WindowInfo]) -> Set<Int>? {
+        guard !windowsStale, w.count == p.count else { return nil }
+        var k = -1
+        for i in w.indices where w[i] != p[i] {
+            guard k < 0, w[i].number == p[i].number, w[i].number != 0 else { return nil }
+            k = i
+        }
+        guard k >= 0 else { return nil }
+        let lo = min(w[k].frame.minX, p[k].frame.minX) - 8, hi = max(w[k].frame.maxX, p[k].frame.maxX) + 8
+        return Set(w.filter { $0.frame.maxX > lo && $0.frame.minX < hi }.map(\.number)).union([w[k].number, Tuning.groundID])
     }
 
     func windowDt(_ id: Int) -> Float { stamps[id].map { Float(min(max(clock - $0, 1.0 / 240), 0.5)) } ?? pollDt }
@@ -63,7 +79,7 @@ extension SnowField {
     static func perUpdate(_ f: Float, dt: Float) -> Float { dt >= Tuning.shedRefDt ? f : 1 - pow(1 - f, dt / Tuning.shedRefDt) }
 
     @discardableResult
-    func updateSurfaces(windows: [WindowInfo], only: Set<Int>? = nil) -> Int {   // `only`: rebuild just these surface ids (the rest are reused as they are)
+    func updateSurfaces(windows: [WindowInfo], only: Set<Int>? = nil, settle: Bool = false) -> Int {   // `only`: rebuild just these surface ids (the rest are reused as they are)
         let windows = scene?.vanished.map { id in windows.filter { $0.number != id } } ?? windows   // NEVE_DEMO_VANISH: that scene window is treated as minimised
         let ox = origin.x, oy = origin.y
         var rects: [CGRect] = []
@@ -86,6 +102,10 @@ extension SnowField {
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
             if let only, !only.contains(id), let k = old.firstIndex(where: { $0.id == id }) {
                 var s = old.swapRemove(k)
+                if settle {   // what a full rebuild does to an unmoved window: its velocity keeps decaying
+                    let v = s.vel * exp(-windowDt(id) / Tuning.velSmoothing)
+                    s.vel = v.x * v.x + v.y * v.y < 0.25 ? .zero : v
+                }
                 if let reach, r.intersects(reach) { s.cover = rects[0..<i].filter { $0.intersects(s.frame) } }
                 built.append(s); continue
             }

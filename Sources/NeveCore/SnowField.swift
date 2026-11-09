@@ -22,6 +22,7 @@ public final class SnowField {
     private(set) var groundY: Float
     private(set) var visibleTop: Float
     var boundsDirty = false
+    var dragOnlyRebuild = true   // false (tests): every snapshot rebuilds all surfaces
     public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
     var stash: [Int: Stashed] = [:]   // window piles (and their frost) kept across a Space switch, by window number (cap 64, 30 min)
     var overhang: [Int: [Int: Float]] = [:]   // per window: snow on columns past the screen edge (global column -> height), kept until they come back on screen
