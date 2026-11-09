@@ -126,9 +126,9 @@ extension SnowField {
             if g.count == numCols { bankL = column(d.x0 - bw); bankR = column(d.x1 + bw); fillL = g[bankL]; fillR = g[bankR] }
         }
         // The ground slice between the bank column and the Dock end is replaced by the bridge body below (one fill, no doubled halo / crest); held back until we know a bridge exists.
-        var held: [(side: Int, seg: PileSeg)] = [], bridged = [false, false]
+        var heldL: PileSeg?, heldR: PileSeg?, bridgedL = false, bridgedR = false   // at most one ground slice per side
         for s in surfaces {
-            let h = s.pile.shown, vis = s.pile.visible, base = s.pile.base
+            let h = s.pile.shown, base = s.pile.base
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
@@ -164,11 +164,8 @@ extension SnowField {
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
                 return min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
             }
-            var b = 0
-            while b < cnt {
-                guard vis[b] else { b += 1; continue }
-                var e = b
-                while e < cnt && vis[e] { e += 1 }
+            for run in s.runs {
+                let b = run.lowerBound, e = run.upperBound
                 var lo = b, hi = e - 1
                 while lo <= hi && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
                 while hi >= lo && h[hi] <= 0.15 && fill(hi) == nil { hi -= 1 }
@@ -181,7 +178,8 @@ extension SnowField {
                             let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
                             let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                             if side >= 0 {
-                                held.append((side, PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3))))
+                                let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3))
+                                if side == 0 { heldL = seg } else { heldR = seg }
                             } else {
                                 put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil))
                             }
@@ -190,7 +188,6 @@ extension SnowField {
                     }
                     pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
                 }
-                b = e
             }
         }
         let bridgeStart = n
@@ -206,10 +203,15 @@ extension SnowField {
         }
         // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock. Only when the bank reaches the Dock snow's end (within 4pt): a lower bank would make a tall thin sliver up the bar's side, so the Dock pile just ends on the arc and the ground chain runs on alone.
         for d in pileEnds where d.id == 0 {
-            if fillL > 0, fillL >= d.first.t - 4 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridged[0] = true }
-            if fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridged[1] = true }
+            if fillL > 0, fillL >= d.first.t - 4 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridgedL = true }
+            if fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridgedR = true }
         }
-        for h in held where !bridged[h.side] { guard n < capacity else { dropped?.pointee += 1; continue }; p[n] = h.seg; n += 1 }   // no bridge came: keep the plain ground slice
+        func keep(_ seg: PileSeg?, _ bridged: Bool) {   // no bridge came: keep the plain ground slice
+            guard !bridged, let seg else { return }
+            guard n < capacity else { dropped?.pointee += 1; return }
+            p[n] = seg; n += 1
+        }
+        keep(heldL, bridgedL); keep(heldR, bridgedR)
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {
             for a in pileEnds where a.id == l.left {
@@ -225,14 +227,29 @@ extension SnowField {
             }
         }
         // Smoothed end slopes: where two segments meet (same x, same height within tolerance) both ends take the average of the two slopes, so the
-        // lighting normal is continuous. Run neighbours are adjacent in the buffer; bridges / held slices (appended after) are matched against everything.
+        // lighting normal is continuous. Run neighbours are adjacent in the buffer; bridges / held slices (appended after) are matched against the run slices
+        // (x strictly increases inside a run: a binary search per run finds the only slice whose end can meet the bridge's start, and the only one whose start can meet its end).
         func join(_ a: Int, _ b: Int) {
             guard abs(p[a].x1 - p[b].x0) < 1e-3, abs(p[a].top1 - p[b].top0) < 0.05 else { return }
             let m = (p[a].slope + p[b].slope) / 2
             p[a].n1 = m; p[b].n0 = m
         }
         if n > 1 { for i in 0..<(n - 1) { join(i, i + 1) } }
-        if bridgeStart < n { for j in bridgeStart..<n { for i in 0..<bridgeStart { join(i, j); join(j, i) } } }
+        if bridgeStart < n {
+            for j in bridgeStart..<n {
+                for e in pileEnds where !e.segs.isEmpty {
+                    var lo = e.segs.lowerBound, hi = e.segs.upperBound
+                    while lo < hi { let m = (lo + hi) / 2; if p[m].x1 > p[j].x0 - 1e-3 { hi = m } else { lo = m + 1 } }
+                    let a = lo   // first slice whose end reaches the bridge's start
+                    lo = e.segs.lowerBound; hi = e.segs.upperBound
+                    while lo < hi { let m = (lo + hi) / 2; if p[m].x0 > p[j].x1 - 1e-3 { hi = m } else { lo = m + 1 } }
+                    let c = lo   // first slice whose start reaches the bridge's end
+                    let end = e.segs.upperBound
+                    if min(a, c) < end { join(min(a, c), j); join(j, min(a, c)) }
+                    if a != c, max(a, c) < end { join(max(a, c), j); join(j, max(a, c)) }
+                }
+            }
+        }
         return n
     }
 

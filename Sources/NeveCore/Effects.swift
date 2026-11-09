@@ -53,7 +53,6 @@ extension SnowField {
                 for _ in 0..<Int(width / 20 + Float.random(in: 0..<1, using: &rng)) { addPuff(x: x + Float.random(in: -width / 2...width / 2, using: &rng), y: y) }
             }
         }
-        if n > 0 { pilesDirty = true }
         return n
     }
 
@@ -222,7 +221,6 @@ extension SnowField {
                             spin: calm ? 0 : Float.random(in: -0.35...0.35, using: &rng), vol: sum * bw, delay: hold, shape: 2, prof: prof)) else { return n }
             n += 1
         }
-        if n > 0 { pilesDirty = true }
         return n
     }
 
