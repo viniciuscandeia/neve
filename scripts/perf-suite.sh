@@ -12,12 +12,14 @@ NEVE_DEV=$NAME "$ROOT/scripts/make-app.sh" >&2
 BIN="$ROOT/build/Neve-$NAME.app/Contents/MacOS/Neve-dev-$NAME"
 
 # name | perf.sh args | extra check (awk condition on fps / cpu / base = fps of the first scenario; empty = CPU budget only) | what the check means
+# Optional 5th field: this scenario's own CPU limit. The Nevasca sweep is a worst case (cursor cutting through the piles nonstop for the whole run;
+# the snow it throws up keeps 60 fps), so it gets 11% instead of MAX_CPU.
 SCENARIOS=(
   "Média, cursor parado|media --no-figures|fps <= 40|calm snow runs mostly at 30 fps (gusts and spills raise it briefly)"
   "Média, mouse sobre os montes|media --no-figures --sweep --pointer on||"
   "Média, mouse no vazio, empurrão desligado|media --no-figures --sweep --pointer off --segs 300,1100,620|fps <= base + 2|a fast cursor away from any snow does not raise the rate when the push is off"
   "Nevasca, cursor parado|nevasca --no-figures||"
-  "Nevasca, mouse sobre os montes|nevasca --no-figures --sweep --pointer on||"
+  "Nevasca, mouse sobre os montes|nevasca --no-figures --sweep --pointer on||| 11"
 )
 
 REPORT="$ROOT/build/perf-report.md"; FAIL=0; BASE=""
@@ -25,7 +27,7 @@ REPORT="$ROOT/build/perf-report.md"; FAIL=0; BASE=""
   echo "| cenário | CPU % | quadros/s | passo ms | flocos ms | GPU ms | WindowServer % | resultado |"; echo "|---|---|---|---|---|---|---|---|"; } > "$REPORT"
 
 for s in "${SCENARIOS[@]}"; do
-  IFS='|' read -r title args check why <<< "$s"
+  IFS='|' read -r title args check why lim <<< "$s"; lim=${lim// /}; lim=${lim:-$MAX_CPU}
   echo "== $title" >&2
   # shellcheck disable=SC2086
   segs=""; [[ "$args" == *--segs* ]] && { segs=${args##*--segs }; args=${args% --segs *}; }
@@ -33,9 +35,10 @@ for s in "${SCENARIOS[@]}"; do
   if [ -z "$line" ]; then echo "| $title | — | — | — | — | — | — | ✗ sem medição |" >> "$REPORT"; FAIL=1; continue; fi
   eval "$(echo "${line#SUMMARY }" | tr ' ' '\n' | sed 's/^/m_/')"
   verdict="✓"
-  awk -v c="$m_cpu" -v m="$MAX_CPU" 'BEGIN { exit !(c <= m) }' || { verdict="✗ CPU acima de ${MAX_CPU}%"; FAIL=1; }
+  awk -v c="$m_cpu" -v m="$lim" 'BEGIN { exit !(c <= m) }' || { verdict="✗ CPU acima de ${lim}%"; FAIL=1; }
   if [ -n "$check" ] && ! awk -v fps="$m_fps" -v cpu="$m_cpu" -v base="${BASE:-$m_fps}" "BEGIN { exit !($check) }"; then verdict="✗ $why ($check)"; FAIL=1; fi
   [ -z "$BASE" ] && BASE=$m_fps
+  [ "$lim" != "$MAX_CPU" ] && verdict="$verdict (limite ${lim}%)"
   echo "| $title | $m_cpu | $m_fps | $m_step | $m_flakesim | $m_gpu | $m_ws | $verdict |" >> "$REPORT"
 done
 
