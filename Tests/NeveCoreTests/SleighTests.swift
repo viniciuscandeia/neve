@@ -17,8 +17,8 @@ private func sleighs(_ f: SnowField) -> [Figure] { f.figures.filter { $0.kind ==
 /// Director-only clock: ticks `stepDirector` once per simulated second with a hand-advanced `time` (the director's own 1 Hz cadence) and
 /// ends each sleigh after a 14 s crossing, so cooldown, caps and the Poisson roll run exactly as in `step` without simulating the world.
 /// `onStart` gets the sim time of every start. The real crossing is covered by the 1/60 s integration tests below.
-private func starts(_ f: SnowField, hours: Float, onStart: (Float) -> Void = { _ in }) -> Int {
-    var seen = 0, endAt = Float.infinity
+private func starts(_ f: SnowField, hours: Float, onStart: (Double) -> Void = { _ in }) -> Int {
+    var seen = 0, endAt = Double.infinity
     for _ in 0..<Int(hours * 3600) {
         f.time += 1
         f.stepDirector(dt: 1)
@@ -70,7 +70,7 @@ private func starts(_ f: SnowField, hours: Float, onStart: (Float) -> Void = { _
 
 @Test func sleighKeepsTheCooldownAndIsABigEvent() {
     let f = field(seed: 4)
-    var last: [Float] = []
+    var last: [Double] = []
     _ = starts(f, hours: 3) { last.append($0) }
     #expect(last.count >= 5)
     #expect(zip(last, last.dropFirst()).allSatisfy { $1 - $0 >= 120 })   // Dec 24: cooldown of 2 min inside the 10 min interval
@@ -129,7 +129,7 @@ private func starts(_ f: SnowField, hours: Float, onStart: (Float) -> Void = { _
     advance(f, 2)
     let n = f.gifts.count
     #expect(n >= 1 && f.gifts.allSatisfy { !$0.falling })
-    let t0 = f.time - (f.gifts.map(\.rest).max() ?? 0)   // when the first gift landed
+    let t0 = f.time - Double(f.gifts.map(\.rest).max() ?? 0)   // when the first gift landed
     while f.time < t0 + 89 { f.step(dt: 0.25) }
     #expect(f.gifts.count == n && f.gifts.allSatisfy { $0.fade == 1 })
     while f.time < t0 + 91.6 { f.step(dt: 0.25) }
@@ -141,7 +141,7 @@ private func starts(_ f: SnowField, hours: Float, onStart: (Float) -> Void = { _
     for _ in 0..<4 {
         _ = f.startSleigh()
         while !sleighs(f).isEmpty { f.step(dt: 1 / 30); #expect(f.gifts.count <= 3) }
-        f.director.cooldownUntil = [Float](repeating: 0, count: 8)
+        f.director.cooldownUntil = [Double](repeating: 0, count: 8)
     }
 }
 
@@ -208,10 +208,10 @@ private func throwField(seed: UInt64 = 1) -> (SnowField, Int) {
     return (f, id)
 }
 
-private func hold(_ f: SnowField, at p: SIMD2<Float>, seconds: Float, fps: Float = 60) -> [Float] {
+private func hold(_ f: SnowField, at p: SIMD2<Float>, seconds: Float, fps: Float = 60) -> [Double] {
     f.setPointer(p, velocity: .zero)
     f.optionHeld = true
-    var times: [Float] = [], seen = f.cursorThrow.thrown
+    var times: [Double] = [], seen = f.cursorThrow.thrown
     for _ in 0..<Int(seconds * fps) {
         f.step(dt: 1 / fps)
         if f.cursorThrow.thrown != seen { seen = f.cursorThrow.thrown; times.append(f.time) }

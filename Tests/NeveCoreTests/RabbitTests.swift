@@ -37,7 +37,7 @@ private func playOut(_ f: SnowField, limit: Float = 90, each: () -> Void = {}) {
     f.rabbitHitScale = 0
     let sn = home(f, x: 300)
     #expect(f.startRabbit() && f.canSpawnFigure)   // the rabbit does not count against the snowman cap
-    var stolenAt: Float?, landings = 0, hops = 0, bad = 0
+    var stolenAt: Double?, landings = 0, hops = 0, bad = 0
     playOut(f) {
         if stolenAt == nil, !fig(f, sn).carrot { stolenAt = f.time }
         guard let r = rabbits(f).first, r.critter.hops != hops else { return }   // (missed snowballs sprinkle crumbs back on the pile while it flees: check the way in)
@@ -60,7 +60,7 @@ private func playOut(_ f: SnowField, limit: Float = 90, each: () -> Void = {}) {
     f.rabbitHitScale = 0
     let sn = home(f, x: 300)
     _ = f.startRabbit()
-    var stolenAt: Float?
+    var stolenAt: Double?
     while stolenAt == nil && f.time < 60 { f.step(dt: 1 / 60); if !fig(f, sn).carrot { stolenAt = f.time } }
     let t0 = stolenAt!
     while f.time < t0 + 59 { f.step(dt: 1 / 60) }
@@ -75,7 +75,7 @@ private func playOut(_ f: SnowField, limit: Float = 90, each: () -> Void = {}) {
     f.rabbitHitScale = 100   // every throw hits
     let sn = home(f, x: 300)
     _ = f.startRabbit()
-    var dropT: Float?, backT: Float?, flee: Float = 0
+    var dropT: Double?, backT: Double?, flee: Float = 0
     for _ in 0..<(60 * 60) {
         f.step(dt: 1 / 60)
         if dropT == nil, !f.carrots.isEmpty { dropT = f.time }
@@ -118,8 +118,8 @@ private func playOut(_ f: SnowField, limit: Float = 90, each: () -> Void = {}) {
 
 // MARK: Director
 
-private func startTimes(_ f: SnowField, minutes: Float, full: Bool = false) -> (starts: [Float], maxAmbient: Int, rabbitStarts: [Float]) {
-    var starts: [Float] = [], last = 0, most = 0
+private func startTimes(_ f: SnowField, minutes: Float, full: Bool = false) -> (starts: [Double], maxAmbient: Int, rabbitStarts: [Double]) {
+    var starts: [Double] = [], last = 0, most = 0
     func tick() {
         most = max(most, f.figures.filter { $0.kind != .snowman }.count)
         if f.director.started != last { last = f.director.started; starts.append(f.time) }
@@ -219,4 +219,27 @@ private func startTimes(_ f: SnowField, minutes: Float, full: Bool = false) -> (
     }
     let a = run(), b = run()
     #expect(a == b && a.0 > 0)
+}
+
+// MARK: Long-uptime clock
+
+@Test func clockStillAdvancesAfterDaysOfUptime() {
+    let f = field()
+    f.time = 1e6   // ~11.6 days: a Float clock would have stopped
+    f.step(dt: 1 / 60)
+    let w0 = f.windShape(), t0 = f.time
+    f.step(dt: 1 / 60)
+    #expect(abs(f.time - t0 - 1.0 / 60) < 1e-9)
+    #expect(f.windShape() != w0)
+}
+
+@Test func followUpFiresAfterItsDelayAtHighUptime() {
+    let f = field()
+    home(f, x: 300)
+    f.time = 1e6
+    f.request(.rabbit, after: 5)
+    advance(f, 4.5, fps: 20)
+    #expect(f.director.started == 0)
+    advance(f, 1.5, fps: 20)
+    #expect(f.director.started == 1)
 }

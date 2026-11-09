@@ -185,8 +185,8 @@ extension SnowField {
     private func startled(_ f: Figure, _ si: Int, _ dt: Float) -> Bool {
         let p = f.foot + V(0, 4), recent = max(0.1, dt * 1.5)
         func near(_ q: V, _ r: Float) -> Bool { let d = q - p; return d.x * d.x + d.y * d.y <= r * r }
-        if let s = shotLand, time - s.t <= recent, near(s.p, Tuning.robinShot) { return true }
-        if let m = impactAt, time - m.t <= recent, near(V(m.x, m.y), Tuning.robinImpact) { return true }
+        if let s = shotLand, time - s.t <= Double(recent), near(s.p, Tuning.robinShot) { return true }
+        if let m = impactAt, time - m.t <= Double(recent), near(V(m.x, m.y), Tuning.robinImpact) { return true }
         if let c = pointer, near(c, Tuning.robinCursor), pointerVel.x * pointerVel.x + pointerVel.y * pointerVel.y > Tuning.robinCursorSpeed * Tuning.robinCursorSpeed { return true }
         let v = surfaces[si].vel
         return v.x * v.x + v.y * v.y > Tuning.robinSurfaceSpeed * Tuning.robinSurfaceSpeed

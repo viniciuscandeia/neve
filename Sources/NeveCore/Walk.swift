@@ -44,6 +44,8 @@ public struct Flutter: Equatable {
         }
         return f
     }
+    /// Phases wrap here: 20 pi is a whole period of every sin(phase * k) used (k = 0.5, 1, 1.3), so a long-lived figure never loses Float precision.
+    static let wrap: Float = 20 * .pi
     /// Radians per second the flutter phase advances.
     public static func rate(gust g: Float, gait: Float) -> Float { 2 * .pi * (1.2 + 2.2 * abs(g) + 0.8 * gait) }
     /// Rotation of each arm in the V (about its shoulder; `side` -1 left, +1 right) plus the shared sway.
@@ -177,13 +179,13 @@ extension SnowField {
         }
         m.windLean += (-g * Tuning.windLean * scale - m.windLean) * min(1, dt * 3)   // leans into the wind
         m.gait += ((moving ? 1 : 0) - m.gait) * min(1, dt * 6)
-        m.phase += dt * 2 * .pi * 1.4 * m.gait
+        m.phase += dt * 2 * .pi * 1.4 * m.gait; if m.phase > Flutter.wrap { m.phase -= Flutter.wrap }
         let wob = sin(m.wobble * 28) * min(m.wobble, 0.7)
         f.pose.hop = abs(sin(m.phase)) * 2.2 * scale * m.gait + jump
         f.pose.lean = m.windLean + sin(m.phase * 0.5) * 1.4 * scale * m.gait + wob * 7 * scale
         f.pose.squash = max(cheerSquash, 0.12 * sin(.pi * (1 - m.squash / Tuning.squashTime)) * (m.squash > 0 ? 1 : 0))   // 1.06 x 0.95 at the peak
         f.pose.shake = wob + sin(m.headHit * 45) * (m.headHit / 0.7) * 1.5 * scale
-        m.flutter += dt * Flutter.rate(gust: g, gait: m.gait)
+        m.flutter += dt * Flutter.rate(gust: g, gait: m.gait); if m.flutter > Flutter.wrap { m.flutter -= Flutter.wrap }
         f.pose.flutter = .make(gust: g, gait: m.gait, dir: f.facing, phase: m.flutter, cheer: m.cheer)
         f.motion = m
         return moving

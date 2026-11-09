@@ -222,11 +222,11 @@ extension SnowField {
             f.foot.x += f.facing * min(abs(d), m.speed * f.scale * Tuning.fetchSpeed * dt)
         }
         m.gait += ((moving ? 1 : 0) - m.gait) * min(1, dt * 6)
-        m.phase += dt * 2 * .pi * 2.2 * m.gait
+        m.phase += dt * 2 * .pi * 2.2 * m.gait; if m.phase > Flutter.wrap { m.phase -= Flutter.wrap }
         f.pose.hop = abs(sin(m.phase)) * 2.2 * f.scale * m.gait
         f.pose.lean = sin(m.phase * 0.5) * 1.4 * f.scale * m.gait
         f.pose.squash = 0; f.pose.shake = 0
-        m.flutter += dt * Flutter.rate(gust: gust, gait: m.gait)
+        m.flutter += dt * Flutter.rate(gust: gust, gait: m.gait); if m.flutter > Flutter.wrap { m.flutter -= Flutter.wrap }
         f.pose.flutter = .make(gust: gust, gait: m.gait, dir: f.facing, phase: m.flutter, cheer: 0)
         f.motion = m
         return moving

@@ -32,7 +32,7 @@ struct AvaFront {
 struct AvaChain {
     var fronts: [AvaFront] = []
     var cascades = 0
-    var cooldownUntil: Float = 0
+    var cooldownUntil: Double = 0
     var scanT: Float = 0
     var fullTime: [Int: Float] = [:]   // window id -> seconds its pile has been full (spontaneous trigger)
     var started = 0                     // chains begun (tests)
@@ -158,7 +158,7 @@ extension SnowField {
             if Float(f.group) * Tuning.avaGroup >= f.length { chain.fronts.swapAt(i, chain.fronts.count - 1); chain.fronts.removeLast() } else { chain.fronts[i] = f }
             i -= 1
         }
-        if chain.fronts.isEmpty { chain.cooldownUntil = time + Tuning.avaCooldown; chain.cascades = 0 }
+        if chain.fronts.isEmpty { chain.cooldownUntil = time + Double(Tuning.avaCooldown); chain.cascades = 0 }
     }
 
     /// 60-80% of every visible column in [from, to] leaves as one slab run (volume conserved: removed == released).

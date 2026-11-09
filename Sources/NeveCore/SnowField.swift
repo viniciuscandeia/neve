@@ -53,7 +53,7 @@ public final class SnowField {
     var groundWinKey: [CGRect] = [], groundWinCeil: [Float] = [], groundWinHidden: [Bool] = []   // buildGround cache (non-Dock windows)
     /// "Neve parada": `step` is never called, so nothing can animate: the Dock jumps to its target at once.
     public var frozen = false { didSet { if frozen, !oldValue, dockCur != dockTarget { dockCur = dockTarget; boundsDirty = true } } }
-    var time: Float = 0
+    var time: Double = 0
     var windGain: Float = 8
     var wind: Float = 0
     public var music = MusicInput.silent   // injected each frame by the app (Music.swift)
@@ -84,7 +84,7 @@ public final class SnowField {
     public var pileSeconds = (ease: 0.0, contour: 0.0, join: 0.0)
     public var optionHeld = false        // the overlay reports the ⌥ key every frame
     var carrots: [Carrot] = []           // stolen noses lying on a pile or falling (Figures+Rabbit.swift)
-    var shotLand: (p: SIMD2<Float>, t: Float)?, impactAt: (x: Float, y: Float, t: Float)?   // last landings (robin startle)
+    var shotLand: (p: SIMD2<Float>, t: Double)?, impactAt: (x: Float, y: Float, t: Double)?   // last landings (robin startle)
     var rabbitHitScale = Tuning.rabbitHitScale   // tests force hits (large) or misses (0)
     public var walkEnabled = true      // figures walk and fight (Walk.swift)
     public var pointerPush = true      // the cursor pushes and swirls the flakes (off saves CPU; every other cursor feature is unaffected)
@@ -99,7 +99,7 @@ public final class SnowField {
     var pointerVel: SIMD2<Float> = .zero
     var pollDt: Float = 0.1        // seconds between the last two window polls
     var rng: SplitMix64
-    var silentUntil: Float = 0   // simulation time until which knock-off debris is muted (Space switches)
+    var silentUntil: Double = 0   // simulation time until which knock-off debris is muted (Space switches)
     var silent: Bool { time < silentUntil }
     let config: SimConfig
     var introT: Float = 0, introDur: Float = 0   // intro: flake slots wake in order over introDur seconds (0 = no intro running)
@@ -238,7 +238,7 @@ public final class SnowField {
     public var pilesSettled: Bool { pileVersion == pileWritten && !pileEasing }
 
     public func step(dt: Float) {
-        time += dt
+        time += Double(dt)
         if scene != nil { stepScene(dt: dt) }
         stepBuilder(dt: dt)
         stepDirector(dt: dt)

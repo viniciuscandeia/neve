@@ -63,10 +63,13 @@ extension SnowField {
 
     /// Smooth gusts: slow sines with unrelated periods; sign flips over several seconds.
     func windShape() -> Float {
-        0.55 * sin(time * 2 * .pi / 37) + 0.3 * sin(time * 2 * .pi / 17 + 1.3) + 0.25 * sin(time * 2 * .pi / 9 + 2.1)
+        let w = 2 * Double.pi * time   // Double: a Float clock loses the fractions after ~36 h
+        let a: Double = 0.55 * sin(w / 37), b: Double = 0.3 * sin(w / 17 + 1.3), c: Double = 0.25 * sin(w / 9 + 2.1)
+        return Float(a + b + c)
     }
 
     func stepFlakes(dt: Float) {
+        let gt = Float((time * 0.35).truncatingRemainder(dividingBy: 2 * .pi))   // gust phase, once per call
         let x0 = liveX0 - 10, w = liveX1 - liveX0 + 20
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
         for n in 0..<(skyEnd + bgEnd) {
@@ -82,7 +85,7 @@ extension SnowField {
             let p0 = f.pos
             f.phase += f.freq * dt
             // Wind: a gust field varying across the screen and in time; flakes relax toward it (heavier = slower to respond).
-            let gust = 1 + 0.5 * sin(f.pos.x * 0.005 + time * 0.35)
+            let gust = 1 + 0.5 * sin(f.pos.x * 0.005 + gt)
             f.wv += (wind * gust * f.vx / Tuning.wind - f.wv) * min(1, dt / (0.4 + 0.25 * f.size))
             // Sway: two incommensurate sines (flutter) instead of one.
             let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)

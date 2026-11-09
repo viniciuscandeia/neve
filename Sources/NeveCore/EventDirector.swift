@@ -31,13 +31,13 @@ public struct EventDirector {
     }
     static let kinds: [FigureKind] = [.rabbit, .penguin, .sleigh, .robin]   // the kinds the Poisson roll considers
 
-    struct Request { var kind: FigureKind, at: Float }
+    struct Request { var kind: FigureKind, at: Double }
 
     var rng: SplitMix64
     let speed: Float                       // NEVE_DIRECTOR_FAST: divides every interval
     var acc: Float = 0
-    var lastStart = -Float.infinity
-    var cooldownUntil = [Float](repeating: 0, count: 8)   // by `FigureKind.rawValue`; infinity while a visit runs
+    var lastStart = -Double.infinity
+    var cooldownUntil = [Double](repeating: 0, count: 8)   // by `FigureKind.rawValue`; infinity while a visit runs
     var queue: [Request] = []
     var sleighCooldown: Float = 1200
     public internal(set) var started = 0    // visits started so far (tests / diagnostics)
@@ -53,15 +53,15 @@ public struct EventDirector {
     }
 
     /// Asks for a visit of `kind` `after` seconds from `now` (plus up to 30 s of patience). Ignored when the queue is full.
-    public mutating func request(_ kind: FigureKind, after: Float, now: Float) {
+    public mutating func request(_ kind: FigureKind, after: Float, now: Double) {
         guard queue.count < 4 else { return }
-        queue.append(Request(kind: kind, at: now + after))
+        queue.append(Request(kind: kind, at: now + Double(after)))
     }
 
-    mutating func ended(_ kind: FigureKind, at t: Float) {
+    mutating func ended(_ kind: FigureKind, at t: Double) {
         guard let s = Self.spec(kind) else { return }
         if kind == .rabbit { story.active = false; story.pending = false }
-        cooldownUntil[Int(kind.rawValue)] = t + (kind == .sleigh ? sleighCooldown : s.cooldown) / speed
+        cooldownUntil[Int(kind.rawValue)] = t + Double((kind == .sleigh ? sleighCooldown : s.cooldown) / speed)
     }
 }
 
@@ -94,7 +94,7 @@ extension SnowField {
                 return
             }
         }
-        guard scene == nil, ambient < limit, time - director.lastStart >= EventDirector.minGap / director.speed else { return }
+        guard scene == nil, ambient < limit, time - director.lastStart >= Double(EventDirector.minGap / director.speed) else { return }
         for kind in EventDirector.kinds {
             guard let spec = EventDirector.spec(kind), canStart(kind, ambient: ambient, big: big, limit: limit) else { continue }
             let p = kind == .sleigh ? sleighChance() : director.speed / (spec.mean * (eco ? 2 : 1))   // dt = 1 s

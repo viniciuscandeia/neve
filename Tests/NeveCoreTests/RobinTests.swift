@@ -159,7 +159,7 @@ private func fill(_ f: SnowField) {
             run(f) { perched(f) }
             f.director.story.active = story
             _ = f.startRabbit()
-            var last: Float = -1
+            var last: Double = -1
             for _ in 0..<(30 * 60) {
                 f.step(dt: 1 / 60)
                 guard let s = f.shotLand, s.t != last else { if rabbit(f) == nil { break }; continue }
