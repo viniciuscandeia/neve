@@ -38,10 +38,10 @@ extension Array {
 }
 
 /// Display-link rate choice. Calm (nothing fast for 0.5 s): economy 20 fps, otherwise 30. Busy: 60 (30...60), except under Low Power / a shrunk
-/// window, which stay at 30. Economy that is busy goes back to 60 on the spot.
+/// window, which stay at 30. Economy never exceeds 30: busy economy 30.
 public enum FrameRate {
     public static func range(lowPower: Bool, economy: Bool, shrunk: Bool, calm: Bool) -> (min: Float, max: Float, preferred: Float) {
-        if calm && economy { return (20, 20, 20) }
+        if economy { return calm ? (20, 20, 20) : (30, 30, 30) }
         if lowPower || shrunk || calm { return (30, 30, 30) }
         return (30, 60, 60)
     }

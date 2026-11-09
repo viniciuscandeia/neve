@@ -202,7 +202,8 @@ private func velocities(bMoves: Bool) -> [Float] {
     #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: true).preferred == 20)
     #expect(FrameRate.range(lowPower: true, economy: true, shrunk: true, calm: true).preferred == 20)
     #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: true).preferred == 30)
-    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: false).preferred == 60)   // busy: back to 60 at once
+    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: false).preferred == 30)   // economy never exceeds 30
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: false).preferred == 60)
     #expect(FrameRate.range(lowPower: true, economy: false, shrunk: false, calm: false).preferred == 30)
     #expect(FrameRate.range(lowPower: false, economy: false, shrunk: true, calm: false).preferred == 30)
 }

@@ -63,7 +63,7 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     float smear = (k <= 1u || k == 5u) ? min(speed * (1.0 / 60.0), i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
     if (smear >= 0.3) {
         float2 dir = i.vel / speed, perp = float2(-dir.y, dir.x);
-        float h = i.size * 0.5;
+        float h = i.size * 0.5 * (pr > 0u ? 1.15 : 1.0);   // same chunk margin as above
         float a = corner.x > 0.0 ? h : -(h + smear);
         float2 d = dir * a + perp * (corner.y * h);
         p = i.pos + d;

@@ -353,20 +353,25 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// With Accessibility trust, window events drive updates and the timer is a 2s safety poll; without it, a 0.5s poll (10Hz while the mouse is down).
     /// Plus a 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
     private func scheduleTimers() {
-        timer?.invalidate()
-        timer = nil
         slowTimer?.invalidate()
         slowTimer = nil
+        scheduleSafety(slow: true)
+    }
+
+    /// Rebuilds the poll timer; `slow` also rebuilds the 30 s Dock timer (leave it alone when only the safety period changes).
+    private func scheduleSafety(slow: Bool) {
+        timer?.invalidate()
+        timer = nil
         watcher.setActive(polling && AXIsProcessTrusted())   // events replace polling; the timer stays as a slow safety net
         guard polling else { return }
         let idle = fullscreenIdle
         idleWatch = idle
-        timerGap = sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active)
+        timerGap = safetyGap()
         let t = Timer(timeInterval: idle ? 1 : (watcher.active ? timerGap : mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
         t.tolerance = idle ? 0.2 : (mouseDown && !watcher.active ? 0.03 : 0.1)
         RunLoop.main.add(t, forMode: .common)
         timer = t
-        if !idle {
+        if slow && !idle {
             let st = Timer(timeInterval: 30, target: self, selector: #selector(refreshDock), userInfo: nil, repeats: true)
             st.tolerance = 1
             RunLoop.main.add(st, forMode: .common)
@@ -374,14 +379,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Safety period; never stretched while idle/melting, so a single input always lands in the wake window of `pollTick`.
+    private func safetyGap() -> Double { sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active && !userIdle && !idleMelting) }
+
     /// No input for 5 min pauses rendering; input resumes it (checked here, so no Accessibility needed for keys).
     @objc private func pollTick() {
         let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
         if !userIdle && !idleMelting && !ambient && sceneKind == nil && since >= idleSecs { startIdleMelt() }
-        else if (userIdle || idleMelting) && since < 2 { wakeFromIdle() }
+        else if (userIdle || idleMelting) && since < max(2, timerGap + 0.5) { wakeFromIdle() }
         if Date().timeIntervalSince(lastScreensCheck) >= 0.5 { requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         requestPoll()   // the safety poll
-        if watcher.active, !idleWatch, sched.safetyInterval(now: CACurrentMediaTime(), ax: true) != timerGap { scheduleTimers() }   // quiet for 10 s: 2 s -> 5 s
+        if watcher.active, !idleWatch, safetyGap() != timerGap { scheduleSafety(slow: false) }   // quiet for 10 s: 2 s -> 5 s
     }
 
     /// The idle timeout: the snow melts away on every overlay, then rendering pauses (userIdle).
@@ -542,7 +550,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func transitionPoll() {
         guard polling, !userIdle else { return }
         sched.transition(now: CACurrentMediaTime())
-        if watcher.active, !idleWatch, timerGap != PollScheduler.safetyGap { scheduleTimers() }   // an event ends the quiet stretch
+        if watcher.active, !idleWatch, timerGap != PollScheduler.safetyGap { scheduleSafety(slow: false) }   // an event ends the quiet stretch
         arm()
     }
 
