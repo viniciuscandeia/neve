@@ -44,8 +44,8 @@ public enum Tuning {
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
-    static let dustSlope: Float = 1.0       // extra step allowed onto an empty bin (fades to 0 as it fills to dustDepth): fresh dusting stays put
-    static let dustDepth: Float = 2.0
+    static let dustSlope: Float = 2.5      // extra step allowed onto a thin bin (fades to 0 as it fills to dustDepth): fresh snow stays in small mounds where it lands instead of a wide film
+    static let dustDepth: Float = 6.0
     static let speckFloor: Float = 1.5      // below this a bin neither relaxes nor counts as built up: bare snow stays as isolated specks until later landings stack on it
     static let speckStick: Float = 0.04     // share of a landing that sticks on a completely bare bin (rises to 1 as the bin reaches speckFloor)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
@@ -57,7 +57,7 @@ public enum Tuning {
     static let penguinGroove: Float = 2.5           // belly-slide trench depth (pt, at most 35% of the pile)
     static let penguinBerm: Float = 0.15            // share of the plowed area banked beside the trench; the rest sprays
     static let penguinPuff: Float = 8               // plowed area (pt^2) per spray puff
-    static let depositScale: Float = 1.2    // pile volume per flake size
+    static let depositScale: Float = 0.8    // pile volume per flake size
     static let wind: Float = 6
     static let nearFraction: Float = 0.02   // out-of-focus foreground flakes: share of the active sky count
     static let nearAlpha: Float = 0.28
