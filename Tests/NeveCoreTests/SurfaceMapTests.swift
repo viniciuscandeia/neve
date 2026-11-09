@@ -480,3 +480,53 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     let g = appKitFrame(fromCG: Tuning.dockGlass(fromAX: ax), primaryHeight: 900)
     #expect(g == CGRect(x: 171, y: 5, width: 1098, height: 84))
 }
+
+// MARK: - Window snow kept across a Space switch
+
+@Test func spaceSwitchAwayAndBackRestoresWindowSnow() {
+    let f = makeField()
+    f.update(windows: [front, back])
+    pileUp(f, id: 1)
+    let h = f.pile(id: 1)!.heights
+    f.dropPiles(); f.markStale()
+    #expect(f.update(windows: []) == 0)
+    f.update(windows: [front, back])
+    #expect(f.pile(id: 1)!.heights == h)
+    #expect(f.pile(id: 1)!.shown == h)
+    #expect(f.stash[1] == nil)
+}
+
+@Test func spaceSwitchBackWithChangedWidthRestoresNothing() {
+    let f = makeField()
+    f.update(windows: [back])
+    pileUp(f, id: 1)
+    f.dropPiles(); f.update(windows: [])
+    f.update(windows: [win(1, back.frame.minX, back.frame.minY, back.frame.width + 100, back.frame.height)])
+    #expect(f.pile(id: 1)!.heights.max()! == 0)
+    #expect(f.stash[1] == nil)
+}
+
+@Test func windowSnowStashIsCappedAndClearedAndExpires() {
+    let f = makeField()
+    f.update(windows: [back])
+    pileUp(f, id: 1)
+    for i in 0..<70 { f.stash[100 + i] = ([1], Double(i) - 1000) }
+    f.dropPiles()
+    #expect(f.stash.count == 64)
+    #expect(f.stash[1] != nil && f.stash[100] == nil)   // oldest evicted
+    f.clear()
+    #expect(f.stash.isEmpty)
+    f.stash[1] = ([1], f.clock - 1900)
+    f.update(windows: [back])
+    #expect(f.pile(id: 1)!.heights.max()! == 0)
+}
+
+@Test func windowVanishingWithoutSpaceSwitchStillDropsBlocks() {
+    let f = makeField()
+    f.update(windows: [front, back])
+    pileUp(f, id: 1)
+    let before = f.debris.count
+    #expect(f.update(windows: [front]) > 0)
+    #expect(f.debris.count > before)
+    #expect(f.stash.isEmpty)
+}

@@ -258,6 +258,10 @@ extension SnowField {
                 }
             }
         }
+        else if let e = stash.removeValue(forKey: id), clock - e.stamp < 1800, e.heights.count == pile.heights.count {   // back from another Space: same width, same snow
+            for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
+            pile.shown = pile.heights
+        }
         return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel, radius: Float(min(radius, frame.width / 2, frame.height / 2)),
                        cover: rects[0..<front].filter { $0.intersects(frame) })
     }
@@ -398,6 +402,7 @@ extension SnowField {
     /// A vanished surface's pile falls as a few intact blocks (`dropBlocks`), not as a spray: each run of snow is cut into ~60pt slabs.
     func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
         guard !silent else { return 0 }
+        stash[s.id] = nil   // it left on its own: its snow falls, nothing to bring back
         var n = 0, b = 0
         let count = s.pile.heights.count
         let origin = [Float(s.frame.midX), Float(s.frame.minX), Float(s.frame.maxX)][Int.random(in: 0..<3, using: &rng)]   // the ripple starts mid-window or at one end
