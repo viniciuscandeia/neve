@@ -21,7 +21,9 @@ private func oneWindow(seed: UInt64 = 1, config: SimConfig = .init()) -> SnowFie
     let st = f.icicles
     #expect(st.count >= 4 && st.count <= 10)
     for c in st {
-        #expect(c.y <= Float(frame.minY) + 1 && c.y - c.len < Float(frame.minY))
+        let r = Float(Tuning.defaultWindowRadius), d = max(r - (c.x - Float(frame.minX)), (c.x - Float(frame.minX)) - (Float(frame.width) - r), 0)
+        let lip = Float(frame.minY) + r - (r * r - d * d).squareRoot()   // the bottom edge, rising along the rounded corners
+        #expect(c.y <= lip + 1 && c.y - c.len < lip)
         #expect(c.x > Float(frame.minX) && c.x < Float(frame.maxX))
     }
     advance(f, 130, fps: 4)   // 1-2 minutes of growth

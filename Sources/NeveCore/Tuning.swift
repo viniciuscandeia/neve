@@ -49,9 +49,9 @@ public enum Tuning {
     static let speckFloor: Float = 1.5      // below this a bin neither relaxes nor counts as built up: bare snow stays as isolated specks until later landings stack on it
     static let speckStick: Float = 0.04     // share of a landing that sticks on a completely bare bin (rises to 1 as the bin reaches speckFloor)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
-    /// Window corner radius: ~20pt from macOS 26 (Tahoe) on, ~10pt before.
-    public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 20 : 10 }
-    public static let defaultWindowRadius: CGFloat = 20   // the app passes the OS-dependent value via WindowInfo.radius
+    /// Window corner radius: ~22pt from macOS 26 (Tahoe) on, ~10pt before.
+    public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 22 : 10 }   // measured: a Finder window's bottom corner on macOS 26
+    public static let defaultWindowRadius: CGFloat = 22   // the app passes the OS-dependent value via WindowInfo.radius
     static let calmSway: Float = 0.25       // Reduce Motion: share of the lateral flake sway kept
     static let calmDebrisFall: Float = 30   // Reduce Motion: uniform initial fall speed of knocked-off snow
     static let penguinGroove: Float = 2.5           // belly-slide trench depth (pt, at most 35% of the pile)

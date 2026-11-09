@@ -87,8 +87,8 @@ private func flatten(_ f: SnowField) -> [CGPoint] {
 
 // 4. Corner radius by OS.
 @Test func windowRadiusDependsOnMacOSVersion() {
-    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)) == 20)
-    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 27, minorVersion: 1, patchVersion: 0)) == 20)
+    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)) == 22)
+    #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 27, minorVersion: 1, patchVersion: 0)) == 22)
     #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 15, minorVersion: 6, patchVersion: 0)) == 10)
     #expect(Tuning.windowRadius(for: OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)) == 10)
 }

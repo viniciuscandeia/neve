@@ -212,12 +212,12 @@ extension SnowField {
     }
 
     /// Underside of a front window over column centre `x` (inf outside it): its bottom edge, rising along the rounded corners, so snow under a
-    /// window follows the corner curve instead of stopping at a straight line. The lowest of the bin either side keeps the straight contour between
-    /// bin centres under the (convex) arc, as for the Dock bar.
+    /// window follows the corner curve instead of stopping at a straight line. The lowest value across the bin (centre and both half-bin edges) keeps
+    /// the straight contour between bin centres close under the arc without the full-bin step that left a gap along the steep part.
     static func roundedUnderside(x: Float, _ r: CGRect, radius: CGFloat) -> Float {
         let bw = Tuning.binWidth, rad = Float(min(radius, r.width / 2, r.height / 2))
         var u = Float.infinity
-        for dx in [-bw, 0, bw] where dx == 0 || (CGFloat(x) >= r.minX && CGFloat(x) < r.maxX) {
+        for dx in [-bw / 2, 0, bw / 2] where dx == 0 || (CGFloat(x + dx) >= r.minX && CGFloat(x + dx) < r.maxX) {
             if let v = Tuning.barUnderside(x: x + dx, minX: Float(r.minX), maxX: Float(r.maxX), minY: Float(r.minY), radius: rad) { u = min(u, v) }
         }
         return u
