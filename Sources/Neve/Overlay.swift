@@ -513,7 +513,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         render(drawable)
         perf?.frame(field, "paused=\(link?.isPaused ?? true) occluded=\(occluded) slow=\(slow)")
         // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
-        if (moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: lastCursorPrev, to: cursor)) || held != nil || field.isBusy { fastUntil = now + 0.5 }
+        // A fast cursor only needs 60 fps when something reacts to it (flake push / pile groove); with the toggle off nothing does.
+        if (prefs.pointerPush && moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: lastCursorPrev, to: cursor)) || held != nil || field.isBusy { fastUntil = now + 0.5 }
         let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
