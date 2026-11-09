@@ -269,3 +269,16 @@ private func wideField(id: Int = 1) -> SnowField {
     #expect(fill.min()! > 0.9)
     #expect(f.fullSpot(si: i) != nil)
 }
+
+/// Two specks far apart on a clean window are drawn as two specks: no segment spans the bare stretch between them (it used to show as a 1pt film).
+@Test func farApartSpecksDrawNoFilmBetweenThem() {
+    let f = makeField()
+    f.update(windows: [win(1, 100, 300, 600, 200)])
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    let c0 = f.surfaces[i].c0, n = f.surfaces[i].pile.heights.count
+    f.surfaces[i].pile.heights[20] = 1; f.surfaces[i].pile.heights[n - 20] = 1
+    let segs = pileSegs(f).filter { $0.base0 > 400 }   // the window's own pile (top edge at y=500)
+    let left = (Float(c0 + 20) + 0.5) * Tuning.binWidth, right = (Float(c0 + n - 20) + 0.5) * Tuning.binWidth
+    #expect(!segs.isEmpty)
+    #expect(!segs.contains { $0.x0 > left + 4 && $0.x1 < right - 4 }, "a segment lies on the bare stretch between the specks")
+}

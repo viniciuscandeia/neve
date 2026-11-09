@@ -169,27 +169,33 @@ extension SnowField {
             }
             for run in s.runs {
                 let b = run.lowerBound, e = run.upperBound
-                var lo = b, hi = e - 1
-                while lo <= hi && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
-                while hi >= lo && h[hi] <= 0.15 && fill(hi) == nil { hi -= 1 }
-                if lo <= hi {
-                    lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
-                    var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
-                    let first = prev, seg0 = n
-                    if lo < hi {
-                        for i in (lo + 1)...hi {
-                            let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
-                            let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
-                            if side >= 0 {
-                                let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3))
-                                if side == 0 { heldL = seg } else { heldR = seg }
-                            } else {
-                                put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil))
+                // Snowy stretches only: 3+ bare bins split the run, so two specks far apart stay two specks (no 1pt film drawn between them).
+                var k = b
+                while k < e {
+                    var lo = k
+                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
+                    var hi = lo, j = lo + 1, gap = 0
+                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
+                    k = max(hi + 1, j)
+                    if lo < e {
+                        lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
+                        var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
+                        let first = prev, seg0 = n
+                        if lo < hi {
+                            for i in (lo + 1)...hi {
+                                let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
+                                let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
+                                if side >= 0 {
+                                    let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3))
+                                    if side == 0 { heldL = seg } else { heldR = seg }
+                                } else {
+                                    put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil))
+                                }
+                                prev = cur
                             }
-                            prev = cur
                         }
+                        pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
                     }
-                    pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
                 }
             }
         }
@@ -197,17 +203,22 @@ extension SnowField {
         // A ground bank that meets the Dock pile (ends within ~2.5pt in y (the top has up to 1.5pt of noise), close in x) reads as one snowbank.
         for g in pileEnds where g.id == Tuning.groundID {
             for d in pileEnds where d.id == 0 {
-                if g.last.x <= d.first.x, d.first.x - g.last.x < 60, abs(d.first.t - g.last.t) <= 2.5 {
+                // Only the ground stretch nearest the Dock end bridges (the ground run can be split into several snowy stretches).
+                if g.last.x <= d.first.x, d.first.x - g.last.x < 60, abs(d.first.t - g.last.t) <= 2.5,
+                   !pileEnds.contains(where: { ($0.id == Tuning.groundID && $0.last.x > g.last.x && $0.last.x <= d.first.x) || ($0.id == 0 && $0.first.x < d.first.x) }) {
                     put(g.last.x, g.last.t, g.last.b, d.first.x, d.first.t, d.first.b, d.drag)
-                } else if d.last.x <= g.first.x, g.first.x - d.last.x < 60, abs(g.first.t - d.last.t) <= 2.5 {
+                } else if d.last.x <= g.first.x, g.first.x - d.last.x < 60, abs(g.first.t - d.last.t) <= 2.5,
+                          !pileEnds.contains(where: { ($0.id == Tuning.groundID && $0.first.x < g.first.x && $0.first.x >= d.last.x) || ($0.id == 0 && $0.last.x > d.last.x) }) {
                     put(d.last.x, d.last.t, d.last.b, g.first.x, g.first.t, g.first.b, d.drag)
                 }
             }
         }
         // The Dock pile's filled corner continues the bank: one contour from the ground up and over onto the Dock. Only when the bank reaches the Dock snow's end (within 4pt): a lower bank would make a tall thin sliver up the bar's side, so the Dock pile just ends on the arc and the ground chain runs on alone.
         for d in pileEnds where d.id == 0 {
-            if fillL > 0, fillL >= d.first.t - 4 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridgedL = true }
-            if fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridgedR = true }
+            // Only the Dock snow's outer ends meet the bank (the Dock run can be split into several snowy stretches).
+            let outerL = !pileEnds.contains { $0.id == 0 && $0.first.x < d.first.x }, outerR = !pileEnds.contains { $0.id == 0 && $0.last.x > d.last.x }
+            if outerL, fillL > 0, fillL >= d.first.t - 4 { put((Float(column(d.first.x - bw)) + 0.5) * bw, fillL, 0, d.first.x, d.first.t, 0, d.drag, bank: true); bridgedL = true }
+            if outerR, fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridgedR = true }
         }
         func keep(_ seg: PileSeg?, _ bridged: Bool) {   // no bridge came: keep the plain ground slice
             guard !bridged, let seg else { return }
