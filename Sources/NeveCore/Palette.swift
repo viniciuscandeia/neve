@@ -4,6 +4,7 @@ import Foundation
 public enum Palette {
     public static let snow = SIMD3<Float>(0.84, 0.90, 0.98)
     public static let lift = SIMD3<Float>(0.88, 0.93, 0.99)
+    public static let shade = SIMD3<Float>(0.86, 0.92, 1.0)   // multiplier for snow facing away from the light
     public static let crestAlpha: Float = 0.95
     public static let shadow = SIMD3<Float>(0.25, 0.40, 0.65)
     public static let shadowHC = SIMD3<Float>(0.15, 0.28, 0.50)

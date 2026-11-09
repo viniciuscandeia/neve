@@ -115,7 +115,7 @@ extension SnowField {
         dropped?.pointee = 0
         func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool, bank: Bool = false) {   // bank: shades like the ground bank (AO measured from the ground, not from this piece's own base)
             guard n < capacity else { dropped?.pointee += 1; return }
-            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0))
+            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0), n0: (t1 - t0) / max(x1 - x0, 1e-3), n1: (t1 - t0) / max(x1 - x0, 1e-3))
             n += 1
         }
         // Ground bank height beside each end of the Dock bar: the Dock pile's rounded corners are filled up to it, so bank and Dock top are one contour.
@@ -180,7 +180,7 @@ extension SnowField {
                             let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
                             let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                             if side >= 0 {
-                                held.append((side, PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0)))
+                                held.append((side, PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3))))
                             } else {
                                 put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil))
                             }
@@ -192,6 +192,7 @@ extension SnowField {
                 b = e
             }
         }
+        let bridgeStart = n
         // A ground bank that meets the Dock pile (ends within ~2.5pt in y (the top has up to 1.5pt of noise), close in x) reads as one snowbank.
         for g in pileEnds where g.id == Tuning.groundID {
             for d in pileEnds where d.id == 0 {
@@ -222,6 +223,15 @@ extension SnowField {
                 }
             }
         }
+        // Smoothed end slopes: where two segments meet (same x, same height within tolerance) both ends take the average of the two slopes, so the
+        // lighting normal is continuous. Run neighbours are adjacent in the buffer; bridges / held slices (appended after) are matched against everything.
+        func join(_ a: Int, _ b: Int) {
+            guard abs(p[a].x1 - p[b].x0) < 1e-3, abs(p[a].top1 - p[b].top0) < 0.05 else { return }
+            let m = (p[a].slope + p[b].slope) / 2
+            p[a].n1 = m; p[b].n0 = m
+        }
+        if n > 1 { for i in 0..<(n - 1) { join(i, i + 1) } }
+        if bridgeStart < n { for j in bridgeStart..<n { for i in 0..<bridgeStart { join(i, j); join(j, i) } } }
         return n
     }
 
@@ -237,10 +247,11 @@ extension SnowField {
     }
 }
 
-/// One bin-pair slice of a pile contour for the Metal pile pass, 32 bytes; layout mirrors the Metal struct.
+/// One bin-pair slice of a pile contour for the Metal pile pass, 40 bytes; layout mirrors the Metal struct.
 public struct PileSeg {
     public var x0: Float, x1: Float, top0: Float, top1: Float, base0: Float, base1: Float, slope: Float
     public var dragged: UInt32   // 1 = on the window being dragged (the app shifts it with the mouse)
+    public var n0: Float = 0, n1: Float = 0   // smoothed slope at each end (average with the neighbour across the junction): continuous lighting normal, no facets
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.

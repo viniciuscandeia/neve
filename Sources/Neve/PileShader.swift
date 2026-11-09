@@ -3,7 +3,7 @@ import NeveCore
 /// The fragment shader draws what the CA layers used to: bluish body, a lighter band lifted 1.5pt, a white crest ~3pt deep,
 /// a soft shadow skirt under the base and a faint dark halo above the top (so snow reads on white pages).
 let pileShaderSource = """
-struct PileSeg { float x0; float x1; float top0; float top1; float base0; float base1; float slope; uint dragged; };
+struct PileSeg { float x0; float x1; float top0; float top1; float base0; float base1; float slope; uint dragged; float n0; float n1; };
 struct SVOut { float4 position [[position]]; float2 p; uint id [[flat]]; };
 vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant PileSeg *segs [[buffer(0)]],
                         constant float2 &viewSize [[buffer(1)]], constant float2 &dragOffset [[buffer(2)]]) {
@@ -39,12 +39,18 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float steep = 1.0 - smoothstep(1.2, 3.0, abs(sl));   // a near-vertical step (bank down to the Dock gap) is a face, not a surface: no crest / halo line on it
     float halo = 0.08 * (1.0 - smoothstep(0.0, 2.5, dTop)) * steep;
     float sa = max(skirt, halo) * hf * step(s.x0, in.p.x) * step(in.p.x, s.x1);   // overlap strips draw coverage only (no doubled shadow)
+    // Light from the upper left on a continuous normal (n0 -> n1, no facets): only close to the surface, subtle; Increase Contrast weakens it.
+    float nl = mix(s.n0, s.n1, clamp(t, 0.0, 1.0));
+    float ndl = dot(float2(-nl, 1.0), float2(-0.6, 0.8)) * rsqrt(1.0 + nl * nl) - 0.8;   // 0 on flat ground, > 0 facing the light
+    float lk = clamp(ndl * 2.0, -1.0, 1.0) * (1.0 - 0.6 * contrast) * steep * (1.0 - smoothstep(0.0, 6.0, -dTop));
     float3 rgb = mix(\(Palette.msl(Palette.snow)), \(Palette.msl(Palette.lift)), smoothstep(1.0, 2.0, -dBase));
     // Deep snow (banks): a cool ambient-occlusion tint toward the base, fading out over the lower 40pt (a fixed length, and full from ~10pt of snow:
     // the gap snow under a Dock bar then shades like the bank beside it, no break at the bar end); thin piles are untouched.
     float depth = in.p.y - ((s.dragged & 2) != 0 ? 0.0 : base), tall = smoothstep(4.0, 10.0, top - base);
     rgb = mix(rgb, rgb * float3(0.90, 0.94, 1.0), 0.6 * tall * (1.0 - smoothstep(0.0, 40.0, depth)));
+    rgb = lk < 0.0 ? mix(rgb, rgb * \(Palette.msl(Palette.shade)), -lk * 0.7) : rgb + 0.04 * lk;
     rgb = mix(rgb, float3(1.0), \(Palette.crestAlpha) * (1.0 - smoothstep(2.0, 3.6, -dTop)) * steep);
+    rgb *= 1.0 + (fract(52.9829189 * fract(dot(in.position.xy, float2(0.06711056, 0.00583715)))) - 0.5) * 0.02;   // +-1% dither against banding
     float a = 0.97 * cover * smoothstep(0.3, 1.8, top - base);   // thin-layer fade: a speck is faint but visible, never a hard line (specks are 1-2 bins wide, so no full-width film)
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a));
 }
