@@ -55,7 +55,7 @@ public enum Tuning {
     static let calmSway: Float = 0.25       // Reduce Motion: share of the lateral flake sway kept
     static let calmDebrisFall: Float = 30   // Reduce Motion: uniform initial fall speed of knocked-off snow
     static let penguinGroove: Float = 2.5           // belly-slide trench depth (pt, at most 35% of the pile)
-    static let penguinBerm: Float = 0.15            // share of the plowed area banked beside the trench; the rest sprays
+    static let penguinBerm: Float = 0.4             // share of the plowed area banked in berms on both sides of a deep cut (shallow: 0.8); the rest sprays
     static let penguinPuff: Float = 8               // plowed area (pt^2) per spray puff
     static let depositScale: Float = 0.8    // pile volume per flake size
     static let wind: Float = 6
