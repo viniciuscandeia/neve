@@ -75,7 +75,6 @@ extension SnowField {
                           size: min(max(c.len * 0.5, 3), 7), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng), fade: 1,
                           spin: Float.random(in: -3...3, using: &fxRng), vol: c.len * c.width / 2 / Float(n), shape: 2))
         }
-        pilesDirty = true
     }
 
     /// Cursor sweep a->b (radius r) shatters the icicles it touches.

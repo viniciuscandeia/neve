@@ -112,3 +112,17 @@ private func stackedField(seed: UInt64) -> SnowField {
     #expect(carried <= removed * 1.001 && carried > 0.8 * removed)   // the rest (thin end columns) leaves as plain dots
     #expect(abs(removed - f.chain.released) < 0.001 * removed)
 }
+
+// Breaking an icicle changes no pile geometry: the pile version stays, and the slab debris still appears (and is drawn).
+@Test func breakingAnIcicleDoesNotInvalidateThePiles() {
+    let f = iceField()
+    advance(f, 200, fps: 4)   // frozen
+    #expect(!f.icicles.isEmpty)
+    let p = UnsafeMutablePointer<Instance>.allocate(capacity: 8192)
+    defer { p.deallocate() }
+    let drawn0 = f.writeInstances(to: p)
+    let v = f.pileVersion, n = f.icicles.count, d = f.debris.count
+    f.breakIcicle(0, .zero)
+    #expect(f.pileVersion == v && f.icicles.count == n - 1 && f.debris.count >= d + 2)
+    #expect(f.writeInstances(to: p) >= drawn0 + 2)
+}
