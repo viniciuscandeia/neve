@@ -98,6 +98,7 @@ extension SnowField {
     public func writePiles(to p: UnsafeMutablePointer<PileSeg>, capacity: Int, dt: Float, force: Bool = false, dropped: UnsafeMutablePointer<Int>? = nil) -> Int? {
         guard force || pileVersion != pileWritten || pileEasing else { return nil }
         pileWritten = pileVersion
+        let tp0 = timer?() ?? 0
         let k = 1 - exp(-dt / Tuning.pileEase), kDrop = 1 - exp(-dt / 0.05), kSoft = 1 - exp(-dt / 0.12)
         var active = false
         for si in surfaces.indices {
@@ -111,6 +112,7 @@ extension SnowField {
             }
         }
         pileEasing = active
+        let tp1 = timer?() ?? 0
         pileEnds.removeAll(keepingCapacity: true)
         let bw = Tuning.binWidth
         var n = 0
@@ -235,6 +237,7 @@ extension SnowField {
             let m = (p[a].slope + p[b].slope) / 2
             p[a].n1 = m; p[b].n0 = m
         }
+        let tp2 = timer?() ?? 0
         if n > 1 { for i in 0..<(n - 1) { join(i, i + 1) } }
         if bridgeStart < n {
             for j in bridgeStart..<n {
@@ -251,6 +254,7 @@ extension SnowField {
                 }
             }
         }
+        if let timer { let tp3 = timer(); pileSeconds.ease += tp1 - tp0; pileSeconds.contour += tp2 - tp1; pileSeconds.join += tp3 - tp2 }
         return n
     }
 

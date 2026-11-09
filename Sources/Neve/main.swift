@@ -416,7 +416,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func pollWindows() {
         let t0 = Perf.now()
-        defer { Perf.add(.poll, t0) }
+        defer { Perf.addPoll(t0) }
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
         guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber))) else {
