@@ -154,15 +154,16 @@ extension SnowField {
             pile.maxes = bankMaxes(docks)
         }
         // What the ordinary windows do to each ground column (hidden / roof) only changes with their frames: cached across Dock animation frames.
-        let winRects = rects.indices.filter { windows[$0].number != 0 }.map { rects[$0] }
+        let winIdx = rects.indices.filter { windows[$0].number != 0 }, winRects = winIdx.map { rects[$0] }
         if winRects != groundWinKey || groundWinCeil.count != numCols {
             groundWinKey = winRects
             groundWinCeil = [Float](repeating: .infinity, count: numCols); groundWinHidden = [Bool](repeating: false, count: numCols)
             for b in 0..<numCols {
                 let x = CGFloat((Float(b) + 0.5) * bw)
-                for r in winRects {
+                for i in winIdx {
+                    let r = rects[i]
                     if r.contains(CGPoint(x: x, y: 1)) { groundWinHidden[b] = true; break }
-                    if r.minY > 1, x >= r.minX, x < r.maxX { groundWinCeil[b] = min(groundWinCeil[b], Float(r.minY)) }
+                    if r.minY > 1 { groundWinCeil[b] = min(groundWinCeil[b], Self.roundedUnderside(x: Float(x), r, radius: windows[i].radius)) }
                 }
             }
         }
@@ -210,6 +211,18 @@ extension SnowField {
         return Surface(id: Tuning.groundID, frame: frame, edgeY: 0, c0: 0, anchor: 0, pile: pile)
     }
 
+    /// Underside of a front window over column centre `x` (inf outside it): its bottom edge, rising along the rounded corners, so snow under a
+    /// window follows the corner curve instead of stopping at a straight line. The lowest of the bin either side keeps the straight contour between
+    /// bin centres under the (convex) arc, as for the Dock bar.
+    static func roundedUnderside(x: Float, _ r: CGRect, radius: CGFloat) -> Float {
+        let bw = Tuning.binWidth, rad = Float(min(radius, r.width / 2, r.height / 2))
+        var u = Float.infinity
+        for dx in [-bw, 0, bw] where dx == 0 || (CGFloat(x) >= r.minX && CGFloat(x) < r.maxX) {
+            if let v = Tuning.barUnderside(x: x + dx, minX: Float(r.minX), maxX: Float(r.maxX), minY: Float(r.minY), radius: rad) { u = min(u, v) }
+        }
+        return u
+    }
+
     func buildSurface(id: Int, frame: CGRect, edgeY: Float, radius: CGFloat, rects: [CGRect], front: Int,
                               old: inout [Surface], spawned: inout Int) -> Surface? {
         let bw = Tuning.binWidth
@@ -233,7 +246,7 @@ extension SnowField {
             for j in 0..<front {
                 let r = rects[j]
                 if r.contains(CGPoint(x: x, y: y)) { hidden = true; hideTop[b] = Float(r.maxY); break }
-                if r.minY > y, x >= r.minX, x < r.maxX { ceiling = min(ceiling, Float(r.minY)) }
+                if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radius)) }
             }
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)

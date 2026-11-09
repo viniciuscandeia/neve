@@ -67,7 +67,7 @@ private func flatten(_ f: SnowField) -> [CGPoint] {
     f.update(windows: [front410, back])
     let i = f.surfaces.firstIndex { $0.id == 1 }!
     for _ in 0..<40 { for b in 0..<f.surfaces[i].pile.heights.count { f.deposit(surface: i, bin: b, volume: 4) } }
-    let pts = flatten(f).filter { $0.x >= 200 && $0.x <= 400 }
+    let pts = flatten(f).filter { $0.x >= 220 && $0.x <= 400 }   // past the front window's rounded corner (radius 20), where the ceiling rises along the arc
     #expect(pts.count > 20)
     #expect(pts.map(\.y).max()! <= 410 + 1e-9)
     #expect(flatten(f).filter { $0.x < 190 }.map(\.y).max()! > 410)   // snow left of the front window is still tall

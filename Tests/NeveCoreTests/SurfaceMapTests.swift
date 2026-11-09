@@ -222,7 +222,7 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
     pileUp(f, id: 1, rounds: 40)
     let free = f.pile(id: 1)!.heights[0..<45].max()!
     #expect(free >= 14)   // the open part really grew tall, so the cap below is what limits the rest
-    let under = f.pile(id: 1)!.heights[50..<150]
+    let under = f.pile(id: 1)!.heights[60..<150]   // bins 50...59 sit under the front window's rounded corner: the ceiling rises along the arc there
     #expect(under.max()! <= 10.001)
 }
 
@@ -535,4 +535,14 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     #expect(f.update(windows: [front]) > 0)
     #expect(f.debris.count > before)
     #expect(f.stash.isEmpty)
+}
+
+/// Snow under a window that floats above the ground follows the window's rounded bottom corners, not a straight line at its bottom edge.
+@Test func groundCeilingUnderAWindowFollowsItsRoundedCorners() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 40, 400, 300)])   // bottom edge 40pt above the screen bottom, corner radius 20 (default)
+    let g = f.pile(id: Tuning.groundID)!
+    let corner = g.cap[Int(301 / Tuning.binWidth)], middle = g.cap[Int(500 / Tuning.binWidth)]
+    #expect(abs(middle - 40) < 0.5)
+    #expect(corner > middle + 5, "under the corner arc the ceiling rises (\(corner) vs \(middle))")
 }
