@@ -206,3 +206,18 @@ private func velocities(bMoves: Bool) -> [Float] {
     #expect(FrameRate.range(lowPower: true, economy: false, shrunk: false, calm: false).preferred == 30)
     #expect(FrameRate.range(lowPower: false, economy: false, shrunk: true, calm: false).preferred == 30)
 }
+
+@Test func fastCursorOnlyConcernsNearbyScreens() {
+    let a = CGRect(x: 0, y: 0, width: 1000, height: 800), b = CGRect(x: 1000, y: 0, width: 1000, height: 800)
+    func near(_ f: CGRect, _ p: (CGFloat, CGFloat), _ c: (CGFloat, CGFloat)) -> Bool {
+        FrameRate.cursorNear(frame: f, from: CGPoint(x: p.0, y: p.1), to: CGPoint(x: c.0, y: c.1))
+    }
+    #expect(near(a, (500, 400), (520, 400)))            // inside
+    #expect(!near(b, (500, 400), (520, 400)))           // other screen
+    #expect(near(b, (900, 400), (1100, 400)))           // crossing in
+    #expect(near(a, (900, 400), (1100, 400)))           // crossing out
+    #expect(near(b, (500, 400), (2500, 400)))           // segment passes through with both ends outside
+    #expect(!near(b, (500, 1000), (2500, 1000)))        // passes above
+    #expect(near(b, (950, 400), (960, 400)))            // within margin (60)
+    #expect(!near(b, (900, 400), (920, 400)))           // beyond margin
+}

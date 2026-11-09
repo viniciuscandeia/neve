@@ -46,3 +46,18 @@ public enum FrameRate {
         return (30, 60, 60)
     }
 }
+
+public extension FrameRate {
+    /// True when a fast cursor concerns this screen: the segment prev→cur touches `frame` grown by `margin` (≈ `Tuning.pointerRadius`).
+    /// Other screens have no reason to run at 60 fps because of it. Liang–Barsky slab clip; no allocation.
+    static func cursorNear(frame: CGRect, from a: CGPoint, to b: CGPoint, margin: CGFloat = 60) -> Bool {
+        let r = frame.insetBy(dx: -margin, dy: -margin)
+        var t0: CGFloat = 0, t1: CGFloat = 1
+        let d = (x: b.x - a.x, y: b.y - a.y)
+        for (p, q) in [(-d.x, a.x - r.minX), (d.x, r.maxX - a.x), (-d.y, a.y - r.minY), (d.y, r.maxY - a.y)] {
+            if p == 0 { if q < 0 { return false } }
+            else { let t = q / p; if p < 0 { t0 = max(t0, t) } else { t1 = min(t1, t) } }
+        }
+        return t0 <= t1
+    }
+}

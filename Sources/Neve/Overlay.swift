@@ -492,6 +492,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.optionHeld = option
         refreshDay(now: now)
         field.setPointer(frame.contains(cursor) ? local : nil, velocity: resumed ? .zero : moved)
+        let lastCursorPrev = lastCursor ?? cursor
         lastCursor = cursor
         Perf.add(.input, t0); t0 = Perf.now()
         let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
@@ -506,7 +507,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         render(drawable)
         Perf.frame(field)
         // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
-        if moved.x * moved.x + moved.y * moved.y > 60 * 60 || held != nil || field.isBusy { fastUntil = now + 0.5 }
+        if (moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: lastCursorPrev, to: cursor)) || held != nil || field.isBusy { fastUntil = now + 0.5 }
         let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
