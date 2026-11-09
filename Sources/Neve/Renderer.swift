@@ -42,7 +42,7 @@ struct Gpu {
 let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
-struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; float2 vel; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop
+struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; float2 vel; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc
 struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; float2 tail; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
@@ -104,6 +104,11 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     float sg = 1.0;
     float tt2 = dot(in.tail, in.tail);
     if (tt2 > 0.0) { float tt = clamp(dot(u0, in.tail) / tt2, 0.0, 1.0); u0 -= in.tail * tt; sg = mix(1.0, 0.3, tt); }
+    if (kind == 6) {   // out-of-focus foreground flake: soft gaussian-like disc, no edge, no streak
+        float r2 = dot(in.uv, in.uv);
+        float a = exp(-3.5 * r2) * (1.0 - smoothstep(0.7, 1.0, r2)) * in.alpha * (1.0 - hide);
+        return float4(\(Palette.msl(Palette.snow)) * a, a);
+    }
     if (kind == 5) {   // meltwater drop: teardrop (point up), bluish translucent, white specular dot
         float2 u = u0;
         float t = (u.y + 1.0) * 0.5;

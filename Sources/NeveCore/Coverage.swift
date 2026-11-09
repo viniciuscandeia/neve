@@ -82,7 +82,7 @@ extension SnowField {
     /// (snow never appears mid-screen). The rest follow through the normal dormant respawn.
     public func wake(fraction: Float) {
         for i in flakes.indices where flakes[i].kind == .dormant && isActive(i) && Float.random(in: 0..<1, using: &rng) < fraction {
-            var f = spawn(i < skyCount ? .sky : .background, anywhere: false)
+            var f = spawn(slotKind(i), anywhere: false)
             f.pos.y += Float.random(in: 0...(f.fall * 2.5), using: &rng)
             flakes[i] = f
         }
