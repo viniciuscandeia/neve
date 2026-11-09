@@ -338,11 +338,11 @@ extension SnowField {
         }
     }
 
-    /// Figures on windows go with them (Space switch).
-    func dropWindowFigures() {
+    /// Figures on the windows `ids` go with them (Space switch).
+    func dropWindowFigures(on ids: Set<Int>) {
         var i = figures.count - 1
         while i >= 0 {
-            if let sid = figures[i].surfaceID, sid != Tuning.groundID { removeFigure(i) }
+            if let sid = figures[i].surfaceID, ids.contains(sid) { removeFigure(i) }
             i -= 1
         }
     }

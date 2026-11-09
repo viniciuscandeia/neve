@@ -136,11 +136,13 @@ private func windowTop(_ f: SnowField, id: Int, h: Float = 12) {
     #expect(fig(f, id).phase == .collapsing)
 }
 
-@Test func dropPilesRemovesFiguresOnWindowsButNotOnTheGround() {
+@Test func spaceSwitchRemovesFiguresOnVanishedWindowsButNotOnTheGround() {
     let f = field([win(1, 200, 300, 300, 200)])
     stand(f, x: 350, on: 1)
     let g = stand(f, x: 700)
-    f.dropPiles()
+    f.dropPiles(); f.markStale()
+    #expect(f.figures.count == 2)   // not before the next snapshot
+    f.update(windows: [])
     #expect(f.figures.map(\.id) == [g])
 }
 
