@@ -1,9 +1,9 @@
 import NeveCore
 /// Snow piles: one instanced quad per `PileSeg` (see NeveCore/Render.swift). Appended to the flake shader source.
-/// The fragment shader draws what the CA layers used to: bluish body, a lighter band lifted 1.5pt, a white crest ~3pt deep,
+/// The fragment shader draws: bluish body, a lighter band lifted 1.5pt, a white crest ~3pt deep,
 /// a soft shadow skirt under the base and a faint dark halo above the top (so snow reads on white pages).
 let pileShaderSource = """
-struct PileSeg { float x0; float x1; float top0; float top1; float base0; float base1; float slope; uint dragged; float n0; float n1; };
+struct PileSeg { float x0; float x1; float top0; float top1; float base0; float base1; float slope; uint dragged; float n0; float n1; float inset; };
 struct SVOut { float4 position [[position]]; float2 p; uint id [[flat]]; };
 vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant PileSeg *segs [[buffer(0)]],
                         constant float2 &viewSize [[buffer(1)]], constant float2 &dragOffset [[buffer(2)]]) {
@@ -33,7 +33,8 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float cover = (1.0 - smoothstep(-w, w, dTop)) * smoothstep(-w, w, -dBase);
     // Shadow skirt under the base + faint halo above the top; both fade out where the pile is flat (ends, thin snow).
     float3 shCol = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
-    float hf = smoothstep(1.5, 3.5, top - base);   // no skirt / halo below ~1.5pt of snow (windows draw 1pt under the edge)
+    float snow = top - base - s.inset;   // real snow depth: windows draw `inset` pt under their edge to hide the seam, which must not count as snow
+    float hf = smoothstep(1.5, 3.5, snow);   // no skirt / halo below ~1.5pt of snow
     float steepBase = (1.0 - smoothstep(1.2, 3.0, abs(bs))) * ((s.dragged & 2) != 0 ? 0.0 : 1.0);   // bank-flagged pieces (corner fill, bridge) are part of the bank body: no skirt on it   // the skirt follows a base edge, never a near-vertical one (it would be a dark stroke across the bank)
     float skirt = mix(0.45, 0.8, contrast) * smoothstep(-1.5, -0.5, dBase) * (1.0 - smoothstep(-0.5, 3.0, dBase)) * steepBase;
     float steep = 1.0 - smoothstep(1.2, 3.0, abs(sl));   // a near-vertical step (bank down to the Dock gap) is a face, not a surface: no crest / halo line on it
@@ -46,12 +47,12 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float3 rgb = mix(\(Palette.msl(Palette.snow)), \(Palette.msl(Palette.lift)), smoothstep(1.0, 2.0, -dBase));
     // Deep snow (banks): a cool ambient-occlusion tint toward the base, fading out over the lower 40pt (a fixed length, and full from ~10pt of snow:
     // the gap snow under a Dock bar then shades like the bank beside it, no break at the bar end); thin piles are untouched.
-    float depth = in.p.y - ((s.dragged & 2) != 0 ? 0.0 : base), tall = smoothstep(4.0, 10.0, top - base);
+    float depth = in.p.y - ((s.dragged & 2) != 0 ? 0.0 : base), tall = smoothstep(4.0, 10.0, snow);
     rgb = mix(rgb, rgb * float3(0.90, 0.94, 1.0), 0.6 * tall * (1.0 - smoothstep(0.0, 40.0, depth)));
     rgb = lk < 0.0 ? mix(rgb, rgb * \(Palette.msl(Palette.shade)), -lk * 0.7) : rgb + 0.04 * lk;
     rgb = mix(rgb, float3(1.0), \(Palette.crestAlpha) * (1.0 - smoothstep(2.0, 3.6, -dTop)) * steep);
     rgb *= 1.0 + (fract(52.9829189 * fract(dot(in.position.xy, float2(0.06711056, 0.00583715)))) - 0.5) * 0.02;   // +-1% dither against banding
-    float a = 0.97 * cover * smoothstep(0.3, 1.8, top - base);   // thin-layer fade: a speck is faint but visible, never a hard line (specks are 1-2 bins wide, so no full-width film)
+    float a = 0.97 * cover * smoothstep(0.3, 1.8, snow);   // thin-layer fade: a speck is faint but visible, never a hard line (specks are 1-2 bins wide, so no full-width film)
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a));
 }
 """

@@ -78,7 +78,8 @@ extension SnowField {
             p[n] = Instance(pos: f.pos + [0, 1.5], size: f.size * (0.6 + 0.4 * env), alpha: env, seed: f.seed, rot: .pi / 4 + f.seed * 0.5, kind: 4); n += 1   // 1.5pt above the crest
         }
         for f in debris {   // falling chunk: its packed profile rides in kind's upper 24 bits (the shader draws the crest and the broken edges from it)
-            let k = f.amp > 0 && f.prof > 0 ? 2 | f.prof << 8 : UInt32(f.shape)
+            // A slab without its own profile (flushed run, split slab, icicle shard) gets a flat rounded block, never the glint branch.
+            let k = f.shape == 2 ? 2 | (f.amp > 0 && f.prof > 0 ? f.prof : Flake.pack(thickness: max(f.size * 0.45, 3), left: 0.7, mid: 0.85, right: 0.7)) << 8 : UInt32(f.shape)
             p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed, rot: f.rot, kind: k, vel: calm ? .zero : [f.vx, -f.fall]); n += 1
         }
         return n
@@ -86,13 +87,14 @@ extension SnowField {
 
     // MARK: Piles
 
-    /// Writes one `PileSeg` per visible bin pair of every snowy run (the top edge uses the same blur, stable noise and ceiling
-    /// clamp the CA path had; the ground bank and the Dock pile are bridged where they meet). Heights come from the eased `shown`
-    /// arrays: they rise toward the real ones with a 0.25 s time constant and ease down with a 0.05 s one (Reduce Motion: snap down). Returns nil when nothing changed since the
-    /// last write (same `pileVersion`, no easing left): the caller reuses its last buffer. `force` writes regardless (tests).
     /// Upper bound of the segments `writePiles` can emit for the current surfaces (one per bin pair, plus bridges): size the buffer from it when the window list changes.
     public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count } + 2 * seams.count + 16 }
 
+    /// Writes one `PileSeg` per bin pair of every snowy stretch of every run (top edge: neighbour blur, stable per-column noise and the
+    /// front-window ceiling clamp; the ground bank and the Dock pile are bridged where they meet). Heights come from the eased `shown`
+    /// arrays: they rise toward the real ones with a `Tuning.pileEase` time constant and ease down with a 0.05 s one (0.12 s for small drops that
+    /// leave snow; Reduce Motion: snap down). Returns nil when nothing changed since the last write (same `pileVersion`, no easing left):
+    /// the caller reuses its last buffer. `force` writes regardless (tests).
     /// Note: `shown`, `pileWritten` and `pileEasing` are presentation state (what was last drawn, and the easing toward the real heights), kept in the core so the output stays testable.
     /// `dropped` (optional) receives the number of segments that did not fit in `capacity`.
     public func writePiles(to p: UnsafeMutablePointer<PileSeg>, capacity: Int, dt: Float, force: Bool = false, dropped: UnsafeMutablePointer<Int>? = nil) -> Int? {
@@ -117,9 +119,9 @@ extension SnowField {
         let bw = Tuning.binWidth
         var n = 0
         dropped?.pointee = 0
-        func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool, bank: Bool = false) {   // bank: shades like the ground bank (AO measured from the ground, not from this piece's own base)
+        func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool, bank: Bool = false, inset: Float = 0) {   // bank: shades like the ground bank (AO measured from the ground, not from this piece's own base); inset: how far b0/b1 sit under the real edge
             guard n < capacity else { dropped?.pointee += 1; return }
-            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0), n0: (t1 - t0) / max(x1 - x0, 1e-3), n1: (t1 - t0) / max(x1 - x0, 1e-3))
+            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0), n0: (t1 - t0) / max(x1 - x0, 1e-3), n1: (t1 - t0) / max(x1 - x0, 1e-3), inset: inset)
             n += 1
         }
         // Ground bank height beside each end of the Dock bar: the Dock pile's rounded corners are filled up to it, so bank and Dock top are one contour.
@@ -186,10 +188,10 @@ extension SnowField {
                                 let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
                                 let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                                 if side >= 0 {
-                                    let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3))
+                                    let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), inset: drop)
                                     if side == 0 { heldL = seg } else { heldR = seg }
                                 } else {
-                                    put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil))
+                                    put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil), inset: drop)
                                 }
                                 prev = cur
                             }
@@ -232,11 +234,8 @@ extension SnowField {
                 for c in pileEnds where c.id == l.right && c.first.x >= a.last.x && c.first.x - a.last.x < 8 {
                     // The lower side rises to the other's top over a gentle ramp (the drift reaches the front pile's surface, no cliff).
                     var a = a, c = c
-                    let d = c.first.t - a.last.t
-                    if abs(d) > 0.05 {
-                        if d > 0 { liftRun(p, a.segs, d, atEnd: true, edge: a.last.x); a.last.t += d } else { liftRun(p, c.segs, -d, atEnd: false, edge: c.first.x); c.first.t -= d }
-                    }
-                    put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag || c.drag)
+                    liftSeam(p, &a, &c)
+                    put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)   // moves with the drag only when both sides do (else it would detach from the side that stays)
                 }
             }
         }
@@ -269,10 +268,24 @@ extension SnowField {
         return n
     }
 
-    /// Adds up to `d` to the tops of the segments within the ramp width of one end of a run (full at the end, 0 at the far
-    /// side of the ramp, slope <= ~0.3), so the bridge to the neighbouring window's pile has no step.
-    func liftRun(_ p: UnsafeMutablePointer<PileSeg>, _ r: Range<Int>, _ d: Float, atEnd: Bool, edge: Float) {
-        let w = max(16, d / 0.3)
+    /// The lower side of a seam rises toward the other's top (no cliff), but only by what the physics backs: at most 6pt (a drift's usual
+    /// boost), over a ramp that stays inside the stretch (slope <= 0.3), and not at all on a thin stretch (a speck must not grow a ramp).
+    func liftSeam(_ p: UnsafeMutablePointer<PileSeg>, _ a: inout PileEnd, _ c: inout PileEnd) {
+        let d = c.first.t - a.last.t
+        guard abs(d) > 0.05 else { return }
+        let lowIsA = d > 0
+        let low = lowIsA ? a : c, end = lowIsA ? a.last : c.first
+        guard end.t - end.b - 1 >= 1 else { return }
+        let w = min(20, low.last.x - low.first.x)
+        let lift = min(abs(d), 6, 0.3 * w)
+        guard lift > 0.01 else { return }
+        liftRun(p, low.segs, lift, atEnd: lowIsA, edge: end.x, width: w)
+        if lowIsA { a.last.t += lift } else { c.first.t += lift }
+    }
+
+    /// Adds up to `d` to the tops of the segments within `width` of one end of a run (full at the end, 0 at the far
+    /// side of the ramp), so the bridge to the neighbouring window's pile has no step.
+    func liftRun(_ p: UnsafeMutablePointer<PileSeg>, _ r: Range<Int>, _ d: Float, atEnd: Bool, edge: Float, width w: Float) {
         func f(_ x: Float) -> Float { d * max(0, 1 - abs(edge - x) / w) }
         for i in r {
             p[i].top0 += f(p[i].x0); p[i].top1 += f(p[i].x1)
@@ -281,11 +294,12 @@ extension SnowField {
     }
 }
 
-/// One bin-pair slice of a pile contour for the Metal pile pass, 40 bytes; layout mirrors the Metal struct.
+/// One bin-pair slice of a pile contour for the Metal pile pass, 44 bytes; layout mirrors the Metal struct.
 public struct PileSeg {
     public var x0: Float, x1: Float, top0: Float, top1: Float, base0: Float, base1: Float, slope: Float
     public var dragged: UInt32   // 1 = on the window being dragged (the app shifts it with the mouse)
     public var n0: Float = 0, n1: Float = 0   // smoothed slope at each end (average with the neighbour across the junction): continuous lighting normal, no facets
+    public var inset: Float = 0   // how far base0 / base1 sit under the real window edge (the overlap hides the seam): the shader measures snow depth as top - base - inset
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.

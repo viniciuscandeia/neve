@@ -46,7 +46,7 @@ struct Instance { float2 pos; float size; float alpha; float seed; float rot; ui
 struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; float2 tail; };
 struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
-                        constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]]) {
+                        constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]], constant float &frameDt [[buffer(2)]]) {
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
     Instance i = inst[iid];
     uint k = i.kind & 255u;
@@ -56,11 +56,11 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     float c = cos(i.rot), sn = sin(i.rot);
     float2 p = i.pos + float2(c * l.x - sn * l.y, sn * l.x + c * l.y);
     // Motion streak (flakes, clumps, drops): stretch the quad backwards along the velocity, head at the current position.
-    // smear = distance covered in ~1/60 s, capped at k * size; below 0.3pt the quad is untouched (no extra cost for slow flakes).
+    // smear = distance covered in one frame (frameDt, so 30 / 20 fps do not strobe), capped at k * size; below 0.3pt the quad is untouched (no extra cost for slow flakes).
     float2 uv = corner, tail = float2(0.0);
     float alphaK = 1.0;
     float speed = length(i.vel);
-    float smear = (k <= 1u || k == 5u) ? min(speed * (1.0 / 60.0), i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
+    float smear = (k <= 1u || k == 5u) ? min(speed * frameDt, i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
     if (smear >= 0.3) {
         float2 dir = i.vel / speed, perp = float2(-dir.y, dir.x);
         float h = i.size * 0.5 * (pr > 0u ? 1.15 : 1.0);   // same chunk margin as above
@@ -131,7 +131,7 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         if (kind == 2) ul.y = clamp(rc * u.y + rs * u.x / max(in.aspect, 0.45), -1.0, 1.0);   // long thin blocks: a small tilt must not flip the lighting
         float a = 0.0;
         float3 c = float3(1.0);
-        if (kind == 1) {   // clump: lumpy disc, shadowed below, whiter on top
+        if (kind == 1 || (kind == 2 && in.prof <= 0.0)) {   // clump (also a slab without a profile, should one ever arrive): lumpy disc, shadowed below, whiter on top
             float th = atan2(u.y, u.x) + seed * 6.2832;
             float d = length(u) / (1.0 + 0.12 * cos(3.0 * th + seed * 17.0) + 0.06 * cos(5.0 * th));
             a = 1.0 - smoothstep(1.0 - max(0.18, 1.5 * fwidth(d)), 1.0, d);
@@ -159,12 +159,12 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
             c = mix(c, float3(1.0), 1.0 - smoothstep(0.0, 1.6, ytop - q.y));
         } else if (kind == 3) {   // puff: soft white, no rim
             a = max(1.0 - dot(u, u), 0.0);
-        } else {   // glint: 4-point star
+        } else if (kind == 4) {   // glint: 4-point star
             float v = sqrt(abs(u.x)) + sqrt(abs(u.y));
             a = (1.0 - smoothstep(0.5, 1.0, v)) + 0.5 * (1.0 - smoothstep(0.0, 0.5, length(u)));
             a = min(a, 1.0);
             c = float3(1.0, 0.97, 0.88);
-        }
+        }   // any other kind: a = 0, nothing drawn
         a *= in.alpha * sg * (1.0 - hide);
         return float4(c * a, a);
     }
