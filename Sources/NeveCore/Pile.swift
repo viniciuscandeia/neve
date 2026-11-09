@@ -15,6 +15,7 @@ public struct Pile {
     let x0: Float, x1: Float     // taper and spill-off are measured against these, not the screen-clipped pile
     var spillL: Float = 0        // snow slid off each end, turned into debris by SnowField
     var spillR: Float = 0
+    var wobble: [Float] = []     // per-bin multiplier on the ceiling (long waves along the pile, see setWobble); empty = 1
     var boost: [Float] = []      // extra height limit per bin: snow banked against a front window (empty = none)
     var walls: [Float] = []      // x of each wall (visible bin next to a hidden one), global
     var supportL = false         // the pile end faces a drift (SeamLink): no corner dip, taper or spill there
@@ -78,8 +79,25 @@ public struct Pile {
         }
     }
 
+    /// Two long waves (~500 and ~150 pt, +-9% and +-6%) along the window (from its anchor bin), phases from the window number: stable across rebuilds.
+    mutating func setWobble(id: Int, anchor: Int) {
+        let p1 = Float(id % 997) * 2.399963, p2 = Float(id % 991) * 4.188790
+        wobble = (0..<heights.count).map { b in
+            let x = binCenter(c0 + b) - Float(anchor) * Tuning.binWidth   // window-local on the bin grid: the shape travels with the pile when the window is dragged
+            return 1 + 0.09 * sinf(2 * .pi * x / 500 + p1) + 0.06 * sinf(2 * .pi * x / 150 + p2)
+        }
+    }
+
+    /// Share of a deposit that still sticks at bin `i`: full up to 80% of the limit, then tapers to 15% as the height nears it.
+    @inline(__always) private func softness(_ i: Int) -> Float {
+        let l = limit(i)
+        guard l > 0 else { return 0.15 }
+        let t = min(max((heights[i] / l - 0.8) / 0.2, 0), 1)
+        return max(0.15, 1 - t * t)
+    }
+
     func limit(_ bin: Int) -> Float {
-        var l = (maxes.isEmpty ? maxHeight : maxes[bin]) + (boost.isEmpty ? 0 : boost[bin])
+        var l = (maxes.isEmpty ? maxHeight : maxes[bin]) * (wobble.isEmpty ? 1 : wobble[bin]) + (boost.isEmpty ? 0 : boost[bin])
         if inset > 0 {
             let x = binCenter(c0 + bin)
             l *= min(1, max(min(supportL ? .infinity : x - x0, supportR ? .infinity : x1 - x), 0) / inset)
@@ -96,7 +114,7 @@ public struct Pile {
         // Fresh powder barely sticks to a clean surface and lands as a one-bin speck (no wide footprint); the grip grows as snow builds up under it.
         let h0 = heights[bin]
         if powder, h0 < Tuning.speckFloor {
-            let v = volume * (Tuning.speckStick + (1 - Tuning.speckStick) * h0 / Tuning.speckFloor)
+            let v = volume * softness(bin) * (Tuning.speckStick + (1 - Tuning.speckStick) * h0 / Tuning.speckFloor)
             heights[bin] = max(h0, min(h0 + v, limit(bin)))
             changed = heights[bin] != h0
         } else {
@@ -105,7 +123,7 @@ public struct Pile {
                 if i < 0 || i >= heights.count || !visible[i] { i = bin }
                 guard cap[i] >= Tuning.minRoom else { continue }
                 let before = heights[i]
-                heights[i] = max(before, min(before + volume * (o == 0 ? 0.5 : 0.25), limit(i)))
+                heights[i] = max(before, min(before + volume * softness(i) * (o == 0 ? 0.5 : 0.25), limit(i)))
                 if heights[i] != before { changed = true }
             }
         }

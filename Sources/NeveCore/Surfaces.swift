@@ -184,6 +184,7 @@ extension SnowField {
         guard c1 > c0 else { return nil }
         let anchor = Int((Float(frame.minX) / bw).rounded())
         var pile = Pile(columns: c1 - c0, inset: Tuning.cornerInset, c0: c0, x0: Float(frame.minX), x1: Float(frame.maxX))
+        pile.setWobble(id: id, anchor: anchor)
         for l in seams {   // an end facing a drift (or a neighbour window at the same height) is a wall: no dip, taper or spill
             if l.right == id, l.rightSupported { pile.supportL = true }
             if l.left == id, l.leftSupported { pile.supportR = true }

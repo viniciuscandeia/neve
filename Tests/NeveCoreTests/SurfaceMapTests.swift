@@ -230,7 +230,7 @@ func total(_ f: SnowField, id: Int = 1) -> Float { f.pile(id: id)!.heights.reduc
     let f = makeField()
     f.update(windows: [win(1, 800, 200, 400, 200), win(2, 600, 200, 400, 200)])   // 1 crosses the right edge, 2 ends on it
     for s in f.surfaces.indices { for _ in 0..<60 { f.deposit(surface: s, bin: f.surfaces[s].pile.heights.count - 1, volume: 4) } }
-    #expect(f.pile(id: 1)!.heights.last! >= 17)    // snow piles to full height right at the screen edge
+    #expect(f.pile(id: 1)!.heights.last! >= 0.85 * f.pile(id: 1)!.limit(f.pile(id: 1)!.heights.count - 1))    // snow piles to full height right at the screen edge
     #expect(f.pile(id: 2)!.heights.last! < 5)      // a real end still tapers
 }
 

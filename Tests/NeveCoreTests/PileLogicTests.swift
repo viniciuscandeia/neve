@@ -79,7 +79,7 @@ private func flatten(_ f: SnowField) -> [CGPoint] {
     #expect(flatten(f).filter { $0.x > 330 && $0.x < 670 } == a)   // no frame-to-frame shimmer
     let tops = a.filter { $0.y > 500 + 5 && $0.x > 400 && $0.x < 600 }.map(\.y)
     #expect(Set(tops.map { ($0 * 100).rounded() }).count > 5)   // not a smooth band
-    #expect(a.map(\.y).max()! <= 500 + Double(Tuning.maxPileHeight) + 1.5 + 0.3 + 1e-9)
+    #expect(a.map(\.y).max()! <= 500 + Double(Tuning.maxPileHeight) * 1.15 + 1.5 + 0.3 + 1e-9)
     f.update(windows: [win(1, 340, 300, 400, 200)], dt: 1)      // 40 pt = 20 whole columns
     let b = flatten(f).filter { $0.x > 370 && $0.x < 710 }
     #expect(a.count > 100 && a.count == b.count && zip(a, b).allSatisfy { abs($1.x - $0.x - 40) < 1e-9 && abs($1.y - $0.y) < 1e-9 })
@@ -219,4 +219,40 @@ private func maxSway(calm: Bool) -> Float {
     #expect(!s.isEmpty)
     #expect(s.first!.n0 == s.first!.slope)
     #expect(s.last!.n1 == s.last!.slope)
+}
+
+// Ceiling modulation and soft approach.
+private func wideField(id: Int = 1) -> SnowField {
+    let f = makeField()
+    f.update(windows: [win(id, 100, 300, 1000, 200)])
+    return f
+}
+
+@Test func ceilingVariesAlongWindowAndIsStableForSameNumber() {
+    let a = wideField().pile(id: 1)!, b = wideField().pile(id: 1)!
+    let mid = (5..<(a.heights.count - 5)).map { a.limit($0) }
+    #expect(mid.max()! - mid.min()! > 0.15 * a.maxHeight)
+    #expect(mid.max()! <= a.maxHeight * 1.151)
+    #expect((0..<a.heights.count).allSatisfy { a.limit($0) == b.limit($0) })
+    #expect(wideField(id: 2).pile(id: 2)!.wobble != a.wobble)
+}
+
+@Test func depositSlowsNearTheCeiling() {
+    var p = Pile(columns: 20, inset: 0)
+    let l = p.limit(10)
+    p.deposit(bin: 10, volume: 1)
+    let first = p.heights[10]
+    p.heights = [Float](repeating: l * 0.95, count: 20)
+    p.deposit(bin: 10, volume: 1)
+    #expect(p.heights[10] - l * 0.95 < first * 0.5)
+}
+
+@Test func longSnowfallStillFillsToCeilingAndAvalancheTriggers() {
+    let f = wideField()
+    let i = f.surfaces.firstIndex { $0.id == 1 }!
+    for _ in 0..<400 { for b in 5..<(f.surfaces[i].pile.heights.count - 5) { f.deposit(surface: i, bin: b, volume: 4) } }
+    let p = f.pile(id: 1)!
+    let fill = (60..<(p.heights.count - 60)).map { p.heights[$0] / p.limit($0) }
+    #expect(fill.min()! > 0.9)
+    #expect(f.fullSpot(si: i) != nil)
 }
