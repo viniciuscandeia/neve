@@ -127,7 +127,7 @@ private func liveFlakes(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .d
     let (f, i) = wide()
     let n = f.surfaces[i].pile.heights.count
     f.surfaces[i].pile.heights = [Float](repeating: 10, count: n); f.surfaces[i].pile.shown = [Float](repeating: 3, count: n)
-    f.glints.append(Flake(pos: [500, 0], vx: 0, fall: 0, phase: Float(n / 2), amp: 1, freq: 0, size: 4, alpha: 1, kind: .debris, fade: 1, delay: 0.6, shape: 4, prof: 1))
+    f.glints.append(Flake(pos: [500, 0], vx: 0, fall: 0, phase: Float(f.surfaces[i].c0 + n / 2), amp: 1, freq: 0, size: 4, alpha: 1, kind: .debris, fade: 1, delay: 0.6, shape: 4, prof: 1))
     f.stepGlints(dt: 1 / 60)
     #expect(abs(f.glints[0].pos.y - (f.surfaces[i].edgeY + 3)) < 0.01)
 }
@@ -141,4 +141,20 @@ private func liveFlakes(_ f: SnowField) -> Int { f.flakes.filter { $0.kind != .d
         return f.balls[0].vel.x
     }
     #expect(abs(throwSpeed(events: 1) - throwSpeed(events: 10)) < 0.2 * throwSpeed(events: 10))
+}
+
+@Test func tiedGlintSurvivesShrinkAndFollowsItsColumn() {
+    let f = makeField(seed: 3)
+    f.update(windows: [win(1, 300, 300, 600, 200)])
+    var i = f.surfaces.firstIndex { $0.id == 1 }!
+    let col = f.surfaces[i].c0 + f.surfaces[i].pile.heights.count - 5
+    f.glints.append(Flake(pos: [0, 0], vx: 0, fall: 0, phase: Float(col), amp: 1, freq: 0, size: 4, alpha: 1, kind: .debris, fade: 1, delay: 0.6, shape: 4,
+                          prof: UInt32(bitPattern: Int32(1))))
+    f.update(windows: [win(1, 300, 300, 100, 200)])   // far fewer bins: the column is gone
+    i = f.surfaces.firstIndex { $0.id == 1 }!
+    #expect(col - f.surfaces[i].c0 >= f.surfaces[i].pile.heights.count)
+    f.stepGlints(dt: 1 / 60)
+    #expect(f.glints.count == 1 && f.glints[0].fade < 1)
+    for _ in 0..<20 { f.stepGlints(dt: 1 / 60) }
+    #expect(f.glints.isEmpty)
 }

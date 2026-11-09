@@ -14,6 +14,7 @@ public struct BusyReasons: OptionSet, Sendable {
 struct Stashed {
     var heights: [Float], stamp: Double
     var ice: WinIce? = nil
+    var overhang: [Int: Float] = [:]   // snow past the screen edge, by column relative to the old surface's c0
 }
 
 public final class SnowField {
@@ -25,6 +26,7 @@ public final class SnowField {
     public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
     var stash: [Int: Stashed] = [:]   // window piles (and their frost) kept across a Space switch, by window number (cap 64, 30 min)
     var overhang: [Int: [Int: Float]] = [:]   // per window: snow on columns past the screen edge (global column -> height), kept until they come back on screen
+    var spaceSwitchIDs: Set<Int> = []; var spaceSwitchUntil = 0.0   // windows present at the Space switch; they may be stashed (if they vanish) until the monotonic `clock` passes this
     var staleUntil = 0.0          // `windowsStale` lapses at this simulation time even without a changed snapshot (an identical one right after the switch proves nothing)
     var clock = 0.0, stamps: [Int: Double] = [:]   // monotonic time and each window's last sample, for per-window dt
     public internal(set) var flakes: [Flake] = []
@@ -184,7 +186,13 @@ public final class SnowField {
 
     /// Space switch: nothing is emptied. Knock-offs are muted briefly and the window list is marked stale; the next changed snapshot
     /// stashes the windows that vanished (silently) and leaves the ones still present, the Dock, the ground and what stands on them alone.
-    public func markStale() { windowsStale = true; staleUntil = time + 4 }
+    /// The windows present now are remembered (`spaceSwitchIDs`): any of them that vanishes from a changed snapshot within `spaceSwitchWindow` seconds of the monotonic
+    /// clock (`now`, default the field's own) is stashed, however long the sim was paused or occluded in between.
+    public func markStale(now: Double? = nil) {
+        windowsStale = true; staleUntil = time + 4
+        spaceSwitchIDs = Set(surfaces.lazy.map(\.id).filter { $0 > 0 }); spaceSwitchUntil = (now ?? clock) + Self.spaceSwitchWindow
+    }
+    static let spaceSwitchWindow = 6.0
     public func dropPiles() {
         silentUntil = time + 1.5
         pilesDirty = true
@@ -235,7 +243,7 @@ public final class SnowField {
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         if !balls.isEmpty { balls.removeAll() }
         for i in surfaces.indices { surfaces[i].pile.empty() }
-        stash.removeAll(); overhang.removeAll()
+        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
         giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)

@@ -202,7 +202,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var lastWindows: [WindowInfo] = []
     private var confirmedDrag: Int?   // the window being dragged by the mouse (main confirms it); only that one is extrapolated
     /// Space switch: no deposits on window surfaces until the next snapshot reconciles.
-    func markStale() { field.markStale() }
+    func markStale() { field.markStale(now: CACurrentMediaTime()) }
     /// `covering`: the real windows for coverage / compaction when `windows` (the surfaces) is deliberately empty (behind-windows mode).
     /// `dragTarget`: the mouse-confirmed dragged window, the one source for pile segments, figures and balls. `mouse`: the pointer read at the same
     /// instant as the window bounds (the per-frame drag offset is measured from it).

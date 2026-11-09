@@ -94,16 +94,19 @@ extension SnowField {
         }
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
         spawned += flushRuns()
-        if windowsStale {   // Space switch: windows that went away are not closed, they are elsewhere: snow (and frost) set aside, balls and figures on them go, no debris
-            let gone = old.filter { $0.id > 0 }
+        if clock >= spaceSwitchUntil { spaceSwitchIDs = [] }
+        let gone = old.filter { $0.id > 0 && spaceSwitchIDs.contains($0.id) }
+        if !gone.isEmpty {   // Space switch: windows that went away are not closed, they are elsewhere: snow (and frost) set aside, balls and figures on them go, no debris
             for s in gone where s.pile.heights.contains(where: { $0 > 0 }) {
-                stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id })
+                stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id },
+                                      overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }))
             }
+            spaceSwitchIDs.subtract(gone.map(\.id))
             while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
             let ids = Set(gone.map(\.id))
             balls.removeAll { $0.state != .held && $0.surfaceID.map { ids.contains($0) } ?? false }
             dropWindowFigures(on: ids)
-            old.removeAll { $0.id > 0 }
+            old.removeAll { ids.contains($0.id) }
         }
         for s in old { spawned += knockOff(s) }   // gone surfaces
         overhang = overhang.filter { k, _ in built.contains { $0.id == k } }
@@ -301,6 +304,9 @@ extension SnowField {
         else if let e = stash.removeValue(forKey: id), clock - e.stamp < 1800, e.heights.count == pile.heights.count {   // back from another Space: same width, same snow
             for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
             pile.shown = pile.heights
+            let u0 = Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)), u1 = Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1
+            let oh = e.overhang.compactMap { r, h -> (Int, Float)? in let nc = c0 + r; return (nc < c0 || nc >= c0 + pile.heights.count) && nc >= u0 && nc < u1 ? (nc, h) : nil }
+            if !oh.isEmpty { overhang[id] = Dictionary(uniqueKeysWithValues: oh) }
             if var ice = e.ice {   // frost and icicles come back with the snow (stalactites regrow from the next frost step)
                 ice.w0 = Float(frame.width); ice.h0 = Float(frame.height)
                 if ice.frozen { ice.frozen = false; ice.acc = Tuning.frozenAfter }
