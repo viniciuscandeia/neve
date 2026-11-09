@@ -396,7 +396,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        lowPower || prefs.economy || shrunk != nil || slow ? CAFrameRateRange(minimum: 30, maximum: 30, preferred: 30) : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, calm: slow)
+        return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
@@ -466,7 +467,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         dirty = false
         var t0 = Perf.now()
         let now = time, resumed = lastTimestamp == 0
-        let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 1.0 / 30)
+        let dt = lastTimestamp == 0 ? 1.0 / 60 : min(now - lastTimestamp, 0.06)   // 20 fps (economy, calm) steps 0.05
         lastTimestamp = now
         advanceCover(now)   // MARK: P3-0
         frameDt = Float(dt)
@@ -505,7 +506,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         Perf.frame(field)
         // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
         if moved.x * moved.x + moved.y * moved.y > 60 * 60 || held != nil || field.isBusy { fastUntil = now + 0.5 }
-        let wantSlow = prefs.adaptive && now > fastUntil
+        let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
         if still, !dirty, field.pilesSettled { stillPaused = true; link?.isPaused = true }

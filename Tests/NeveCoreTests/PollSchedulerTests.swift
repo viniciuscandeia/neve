@@ -185,3 +185,24 @@ private func velocities(bMoves: Bool) -> [Float] {
     f.deposit(surface: i, bin: 5, volume: 50)
     #expect(f.surfaces[i].pile.heights[5] > 0)
 }
+
+@Test func safetyPollStretchesAfterTenQuietSecondsWithAccessibility() {
+    var s = PollScheduler()
+    #expect(s.safetyInterval(now: 100, ax: true) == 2)    // first call starts the quiet clock
+    #expect(s.safetyInterval(now: 109.9, ax: true) == 2)
+    #expect(s.safetyInterval(now: 110, ax: true) == 5)
+    #expect(s.safetyInterval(now: 500, ax: false) == 2)   // no Accessibility: never stretched
+    s.transition(now: 500)                                // any event brings it back to 2 s
+    #expect(s.safetyInterval(now: 500.1, ax: true) == 2)
+    #expect(s.safetyInterval(now: 509.9, ax: true) == 2)
+    #expect(s.safetyInterval(now: 510, ax: true) == 5)
+}
+
+@Test func frameRateSteps() {
+    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: true).preferred == 20)
+    #expect(FrameRate.range(lowPower: true, economy: true, shrunk: true, calm: true).preferred == 20)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: false, calm: true).preferred == 30)
+    #expect(FrameRate.range(lowPower: false, economy: true, shrunk: false, calm: false).preferred == 60)   // busy: back to 60 at once
+    #expect(FrameRate.range(lowPower: true, economy: false, shrunk: false, calm: false).preferred == 30)
+    #expect(FrameRate.range(lowPower: false, economy: false, shrunk: true, calm: false).preferred == 30)
+}

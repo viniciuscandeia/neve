@@ -346,7 +346,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard polling else { return }
         let idle = fullscreenIdle
         idleWatch = idle
-        let t = Timer(timeInterval: idle ? 1 : (watcher.active ? 2 : mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
+        timerGap = sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active)
+        let t = Timer(timeInterval: idle ? 1 : (watcher.active ? timerGap : mouseDown ? 0.1 : 0.5), target: self, selector: #selector(pollTick), userInfo: nil, repeats: true)
         t.tolerance = idle ? 0.2 : (mouseDown && !watcher.active ? 0.03 : 0.1)
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -365,6 +366,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         else if (userIdle || idleMelting) && since < 2 { wakeFromIdle() }
         if Date().timeIntervalSince(lastScreensCheck) >= 0.5 { requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         requestPoll()   // the safety poll
+        if watcher.active, !idleWatch, sched.safetyInterval(now: CACurrentMediaTime(), ax: true) != timerGap { scheduleTimers() }   // quiet for 10 s: 2 s -> 5 s
     }
 
     /// The idle timeout: the snow melts away on every overlay, then rendering pauses (userIdle).
@@ -513,7 +515,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func transitionPollNotification() { transitionPoll() }
 
     // MARK: poll scheduling. Every window read goes through `sched`: coalesced, 30/s at most, bursts bounded (see PollScheduler).
-    private var sched = PollScheduler(), schedTimer: Timer?
+    private var sched = PollScheduler(), schedTimer: Timer?, timerGap = PollScheduler.safetyGap
     private var lastRead: [WindowInfo] = [], lastReadMouse = NSEvent.mouseLocation
     private var dragID: Int?, exemptID: Int?, downOnDesktop = false, lastDragReq = 0.0
 
@@ -525,6 +527,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func transitionPoll() {
         guard polling, !userIdle else { return }
         sched.transition(now: CACurrentMediaTime())
+        if watcher.active, !idleWatch, timerGap != PollScheduler.safetyGap { scheduleTimers() }   // an event ends the quiet stretch
         arm()
     }
 

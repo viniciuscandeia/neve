@@ -78,13 +78,22 @@ public struct PollScheduler: Sendable {
     public static let minGap = 1.0 / 30, burstGap = 0.05, dragGap = 0.04, guardTime = 0.25, hardCap = 1.5, maxRetries = 3
     public private(set) var pending: PollReasons = []
     public private(set) var held = false, dragging = false
-    private var lastRead = -Double.infinity, burstStart = -Double.infinity, burstOn = false, identical = 0, failures = 0
+    private var lastRead = -Double.infinity, burstStart = -Double.infinity, burstOn = false, identical = 0, failures = 0, lastEvent: Double?
+    public static let safetyGap = 2.0, safetyGapQuiet = 5.0, quietAfter = 10.0
     public init() {}
 
     public mutating func request(_ r: PollReasons) { pending.formUnion(r) }
 
     /// Fresh baseline: the burst clock and the identical-snapshot count restart.
-    public mutating func transition(now: Double) { pending.insert(.windows); burstStart = now; burstOn = true; identical = 0 }
+    public mutating func transition(now: Double) { lastEvent = now; pending.insert(.windows); burstStart = now; burstOn = true; identical = 0 }
+
+    /// Period of the safety poll: 2 s, stretched to 5 s once Accessibility is active and nothing (AX event, activation, Space change...) called
+    /// `transition` for 10 s; the next event brings it back to 2 s. The first call starts the quiet clock.
+    public mutating func safetyInterval(now: Double, ax: Bool) -> Double {
+        let last = lastEvent ?? now
+        lastEvent = last
+        return ax && now - last >= Self.quietAfter ? Self.safetyGapQuiet : Self.safetyGap
+    }
 
     public mutating func mouseDown(now: Double, onDesktop: Bool) {
         held = true
