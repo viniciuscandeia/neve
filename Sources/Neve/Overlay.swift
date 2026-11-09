@@ -629,6 +629,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         var pileDropped = 0
         defer { pileForce = false }
         if let n = field.writePiles(to: pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), capacity: pileCapacity, dt: frameDt, force: pileForce, dropped: &pileDropped) {
+            let n = mergePileSegs(pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), count: n)
             pileSlot = slot
             pileCount = n
             perf?.add(.pile, t0); perf?.bump(.pileWrites); perf?.setSegs(n)
