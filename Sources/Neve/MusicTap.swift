@@ -17,7 +17,6 @@ final class MusicTap: @unchecked Sendable {
     private var tapID = AudioObjectID(kAudioObjectUnknown), aggID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var sampleRate: Float = 48000
-    private(set) var failed = false
     var running: Bool { procID != nil }
 
     private init() { word.initialize(to: 0) }
@@ -36,9 +35,8 @@ final class MusicTap: @unchecked Sendable {
     /// False when the tap cannot be created (old macOS, permission refused, no output device).
     @discardableResult
     func start() -> Bool {
-        guard #available(macOS 14.2, *) else { failed = true; return false }
+        guard #available(macOS 14.2, *) else { return false }
         guard !running else { return true }
-        failed = false
         var pid = getpid(), own = AudioObjectID(kAudioObjectUnknown)
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
@@ -88,7 +86,7 @@ final class MusicTap: @unchecked Sendable {
         return true
     }
 
-    private func fail() -> Bool { stop(); failed = true; return false }
+    private func fail() -> Bool { stop(); return false }
 
     func stop() {
         if let p = procID { AudioDeviceStop(aggID, p); AudioDeviceDestroyIOProcID(aggID, p); procID = nil }

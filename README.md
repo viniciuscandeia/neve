@@ -46,7 +46,9 @@ App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Met
 | 🏔️ **Avalanche** | Um monte cheio, um solavanco ou um susto no passarinho solta uma frente de placas que pode cair em cascata sobre a janela de baixo. |
 | 🧱 **Neve encostada** | Quando uma janela fica rente a outra, mais alta, a neve forma uma rampa contínua até o topo da da frente (e desaba em placas se ela sair). |
 | 🖥️ **Janela maximizada** | Com uma janela cobrindo quase tudo, a neve cai só na faixa visível (até o Dock) e o custo cai muito; ao desmaximizar, os montes escondidos voltam. |
-| 🎞️ **Quadros adaptativos** | 60 fps quando algo rápido acontece, 30 fps quando a nevada está calma (opção ligada por padrão). |
+| 🎞️ **Quadros adaptativos** | Sempre ativos, sem opção: 60 fps quando algo rápido acontece e 30 fps quando a nevada está calma. No modo econômico: 30 fps com algo acontecendo e 20 fps com a nevada calma. |
+| 🔁 **Troca de Space** | A neve acumulada é preservada ao trocar de Space ou de tela cheia: voltando, os montes continuam lá. |
+| 🔭 **Flocos desfocados** | Raramente, um floco grande e desfocado passa em primeiro plano, como se estivesse perto da lente. |
 | ⏸️ **Neve parada** | Com Reduzir Movimento, a neve fica parada e o app dorme quando nada muda. |
 | 🌱 **Primeira neve** | Numa janela limpa, os primeiros flocos derretem ao tocar e só deixam pontinhos soltos; a camada contínua se forma aos poucos (~1 min na Média). |
 | 🏂 **Neve escorrendo do Dock** | Quando a ponta do Dock enche, torrões escorregam pela lateral curva da barra e engrossam o monte do pé da tela até os dois se unirem. |
@@ -89,20 +91,20 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 | **Ajustes** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
-Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar**, depois uma grade de blocos, com efeito imediato: *Quantidade* (linha de ícones), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Atrás de janelas grandes*. e, no rodapé, **Limpar neve**, **Ajustes…** e **Sair**. **Ajustes** abre a janela **Ajustes**, com tudo por abas:
+Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar**, depois uma grade de blocos, com efeito imediato: *Quantidade* (linha de ícones), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Atrás de janelas grandes*. No rodapé ficam **Limpar neve**, **Ajustes…** e **Sair**. **Ajustes** abre a janela **Ajustes**, com tudo por abas:
 
 - **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
 - **Desempenho:** *Modo econômico* (30 fps, só tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso) e *Neve parada* (só com Reduzir Movimento).
 - **Sistema:** *Aparecer em capturas de tela* e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
-- **Dicas:** dicas.
+- **Dicas:** atalhos e gestos (⌥-clique, varrer o cursor sobre presentes, ⌥ parado perto de um boneco).
 
 ## 🔥 Instalação
 
 ### Baixar o app
 
 1. Baixe `Neve-<versão>.zip` em [Releases](https://github.com/viniciuscandeia/neve/releases), descompacte e mova **Neve.app** para `/Applications`.
-2. O app não é notarizado (não há conta paga da Apple), então o Gatekeeper bloqueia a primeira abertura. Tente abrir, depois vá em **Ajustes do Sistema > Privacidade e Segurança** e clique em **Abrir Mesmo Assim** (macOS 15+). Alternativa no Terminal: `xattr -dr com.apple.quarantine /Applications/Neve.app`.
+2. O app não é notarizado (não há conta paga da Apple), então o Gatekeeper bloqueia a primeira abertura. Veja os passos em *Abrir em outro Mac (Gatekeeper)*, abaixo.
 3. Para a neve no Dock, conceda **Acessibilidade** em Ajustes do Sistema > Privacidade e Segurança. Ao atualizar para uma nova versão, a permissão pode precisar ser concedida de novo (a assinatura ad-hoc muda a cada build).
 
 ### Compilar do código-fonte
@@ -124,7 +126,7 @@ Para só experimentar, sem empacotar: `swift build -c release && .build/release/
 <details>
 <summary>Abrir em outro Mac (Gatekeeper)</summary>
 
-O app não é notarizado (não há Apple Developer ID), então o Gatekeeper o bloqueia ao ser copiado para outro Mac. Para abrir:
+Para abrir a primeira vez:
 
 - clique com o botão direito no app e escolha **Abrir**; ou, no macOS 15 ou superior, vá em Ajustes do Sistema > Privacidade e Segurança > **Abrir Mesmo Assim**; ou
 - rode `xattr -dr com.apple.quarantine /Applications/Neve.app`.
@@ -139,14 +141,14 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 
 - Renderização com `CAMetalDisplayLink` e Metal instanciado: todos os flocos em uma única draw call.
 - Física sobre um pool fixo de structs, sem alocação por frame no pool de partículas; as pilhas só são redesenhadas quando mudam.
-- Acompanhamento de janelas guiado por eventos de Acessibilidade (com rajadas curtas de leitura durante transições e arrastos), com poll leve como rede de segurança.
+- Acompanhamento de janelas guiado por eventos de Acessibilidade (com rajadas curtas de leitura durante transições e arrastos), com poll leve de segurança (a cada 2 s, ou 5 s quando nada se move).
 - A animação **pausa** sob apps em tela cheia, com o Mac em estado térmico alto, após 5 minutos sem uso (a menos que o Modo ambiente esteja ligado) e com as telas em repouso ou a sessão bloqueada.
-- Modo de Baixo Consumo do sistema: 30 fps e menos flocos. Modo econômico: 30 fps e só a tela principal.
+- Modo de Baixo Consumo do sistema: 30 fps e menos flocos. Modo econômico: 20 fps com a nevada calma (30 com algo acontecendo) e só a tela principal.
 
 ## 🔒 Privacidade
 
 - Apenas os limites (bounds) das janelas são lidos. Não exige Gravação de Tela.
-- A permissão de Acessibilidade é opcional e serve para dois ganhos: a neve acumular no Dock (Dock na parte inferior da tela) e o acompanhamento de janelas guiado por eventos, mais rápido que o poll. Sem ela, todo o resto funciona (as janelas são lidas por poll). Não exige Gravação de Tela.
+- A permissão de Acessibilidade é opcional e serve para dois ganhos: a neve acumular no Dock (Dock na parte inferior da tela) e o acompanhamento de janelas guiado por eventos, mais rápido que o poll. Sem ela, todo o resto funciona (as janelas são lidas por poll).
 - *Neve dança com a música* pede a permissão de Gravação de Áudio do Sistema: o áudio é analisado na hora (volume, grave e batidas), nada é gravado nem sai do Mac. Desligar a opção encerra a captura.
 - Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Aparecer em capturas de tela** para incluí-la.
 
@@ -159,7 +161,7 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 ## 🌨️ Como funciona
 
 - Uma janela de overlay transparente por tela fica acima das demais e ignora o mouse. Com ⌥ pressionado, ela deixa de ser click-through só sobre a neve ou uma bola.
-- Com Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega ordem e limites (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll a cada 2 s cobre eventos perdidos. Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s (10 vezes por segundo com o botão do mouse apertado).
+- Com Acessibilidade, um observador por app avisa quando uma janela é movida, redimensionada, criada, fechada ou minimizada; no máximo 30 vezes por segundo, uma leitura do `CGWindowList` entrega ordem e limites (o AX diz *que* algo mudou, o `CGWindowList` diz *o quê*). Os observadores são ligados um app por vez, para não travar a abertura. Um poll de segurança a cada 2 s (5 s depois de 10 s sem eventos) cobre eventos perdidos. Sem a permissão, o Neve lê o `CGWindowList` a cada 0,5 s (10 vezes por segundo com o botão do mouse apertado).
 - As janelas viram um mapa de superfícies por coluna de pixels; o Dock (lido via Acessibilidade) e o pé da tela também são superfícies. O pé da tela fica atrás de tudo, então janelas e Dock escondem a parte coberta, que guarda a neve até reaparecer.
 - Ao pousar, o floco alimenta uma pilha naquela coluna. As pilhas escorregam nos cantos arredondados e desabam quando a janela se move rápido, é minimizada ou fechada.
 - O shader Metal é compilado em tempo de execução a partir de código-fonte, porque as Command Line Tools não incluem o compilador `metal`.
@@ -194,6 +196,8 @@ As demais variáveis de demonstração (`NEVE_DEMO_*`, `NEVE_SNOWMAN_FAST`, `NEV
 - **`scripts/perf.sh [heavy|media|nevasca|max|still] [segundos=60] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--runs N=3] [--bin CAMINHO]`:** mede CPU e wakeups ociosos do Neve e a CPU do WindowServer (via `top`) com janelas do Finder abertas (`max` = janela maximizada; `--drag` arrasta uma janela; `--sweep` passa o cursor rápido pelo topo das janelas e pelo chão e o devolve ao lugar; `--no-figures` desliga bichos, boneco e trenó para a taxa de quadros não depender de sorteio). Antes de medir oculta os outros apps e minimiza as outras janelas do Finder, e devolve tudo no fim (`--keep-windows` pula isso). Roda a própria instância de dev (ou `--bin`), com defaults no suite dela, segura o lock da tela durante todo o teste e mata só o próprio pid. Se o Neve do usuário estiver aberto, avisa que a CPU do WindowServer o inclui (ele não é fechado). Com `NEVE_PERF=1` (sempre ligado no script) mostra o log de fases; os logs ficam em `build/perf-logs/`. A última linha (`SUMMARY`) traz as medianas.
 - **`scripts/perf-suite.sh [--quick]`:** validação de desempenho na tela. Roda o `perf.sh` em cinco cenários (Média e Nevasca, cursor parado e cursor rápido sobre os montes, e cursor rápido longe da neve com o empurrão desligado), compara com o limite de CPU (`MAX_CPU`, padrão 10% de um núcleo; 11% no pior caso, Nevasca com o cursor varrendo os montes sem parar) e com a taxa de quadros esperada, grava `build/perf-report.md` e sai com erro se algo falhar. Uns 10 minutos (`--quick`: 3); `SECS` e `RUNS` ajustam. Mexe no cursor durante os cenários com varredura: não use o Mac enquanto roda.
 
+Outras variáveis de ambiente de execução: `NEVE_REDUCE_MOTION=1` faz o app se comportar como se Reduzir Movimento estivesse ligado (medições e testes); `NEVE_SLOWMO=<fator>` roda a simulação nessa fração do tempo real (ex.: `0.25`, para conferir animações); `NEVE_DEMO_VANISH=<s>` (só em `NEVE_SCENE=demo`) faz, nesse instante da cena, a janela de cima sumir como se tivesse sido minimizada, com a pilha cheia caindo; `NEVE_DIRECTOR_FAST=1` faz o diretor de eventos sortear visitas (coelho, passarinho, pinguim, trenó) 30 vezes mais seguido.
+
 `NEVE_PERF=1` (opcional `NEVE_PERF_LOG=arquivo`) imprime a cada 5 s fps, tempos por etapa, GPU e CPU.
 
 Com apenas as Command Line Tools, `swift test` compila os testes mas não os executa; `Tests/run.sh` carrega o bundle num runner mínimo e os roda.
@@ -207,6 +211,13 @@ NEVE_SNOWMAN_FAST=1 .build/release/Neve
 `NEVE_DEMO_PENGUIN=1` força uma visita do pinguim a cada ~12 s (precisa de uma janela com topo largo e neve acumulada; use com `NEVE_SCENARIO=heavy`).
 
 `NEVE_DEMO_ICE=1` faz as janelas congelarem em ~10 s (geada na borda) e as estalactites embaixo crescerem 120 vezes mais rápido; `NEVE_DEMO_AVALANCHE=<segundos>` enche as pilhas e dispara uma avalanche a cada tanto tempo; `NEVE_DEMO_SLEIGH=1` faz o trenó do Papai Noel cruzar a tela logo depois de abrir (e de novo a cada ~45 s), solta presentes sobre os montes e funciona em qualquer data (sem isso: 24–25/12 a cada ~10 min, dezembro a cada ~45 min, resto do ano a cada ~3 h). Presentes: varrer com o cursor estoura em confete; ⌥-clique abre. Com ⌥ pressionado e o cursor parado por 0,8 s perto de um boneco (e fora da neve), ele joga uma bola de neve no cursor (até 3 por toque, a cada 2 s).
+
+### Build e release
+
+- **Variáveis do `scripts/make-app.sh`:** `NEVE_VERSION` (versão do bundle, padrão 1.0), `NEVE_UNIVERSAL=1` (arm64 + x86_64, dois builds e `lipo`), `NEVE_SIGN` (identidade de assinatura; `-` = ad-hoc) e `NEVE_APP_DIR` (onde gerar `Neve.app`, padrão `build`).
+- **`scripts/release.sh VERSÃO`:** gera `dist/Neve-VERSÃO.zip` (universal, assinatura ad-hoc) em `dist/Neve.app`, sem tocar no `build/Neve.app` do dia a dia, e confere executável, bundle id e versão antes de zipar.
+- **`scripts/cursor-sweep.swift <segundos> <x0,x1,y>...`:** move o cursor real de um lado a outro de cada segmento (coordenadas CG, ~600 pt/s) e o devolve ao lugar; usado pelo `perf.sh --sweep`, que aceita `SWEEP_SEGS="x0,x1,y ..."` para trocar os segmentos.
+- **`NEVE_LOCK_TIMEOUT=<segundos>`:** quanto `agent-run.sh`, `perf.sh` e `perf-suite.sh` esperam pelo lock da tela antes de desistir.
 
 ## 📜 Licença
 

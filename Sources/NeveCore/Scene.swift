@@ -119,7 +119,7 @@ extension SnowField {
         if fire(9, at: 19.8), let r = figures.first(where: { $0.kind == .robin && !$0.robin.flying }) { shotLand = (r.foot + SIMD2(0, 4), time) }   // a miss lands next to it
         if fire(10, at: 22) { request(.sleigh, after: 0) }
         // NEVE_DEMO_VANISH=<s>: at that scene time the top window's pile (filled to its limit) falls as if the window had been minimised (visual checks).
-        if let at = Float(ProcessInfo.processInfo.environment["NEVE_DEMO_VANISH"] ?? ""), fire(11, at: at), let si = topWindow {
+        if let at = config.demoVanishAt, fire(11, at: at), let si = topWindow {
             fillPiles(1)
             scene!.vanished = surfaces[si].id; boundsDirty = true   // the next surface update drops its pile
         }

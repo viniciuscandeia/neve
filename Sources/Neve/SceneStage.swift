@@ -46,7 +46,6 @@ final class SceneStage {
         for (win, w) in zip(windows, DemoScene.windows(in: area, t: t)) where win.frame != w.frame { win.setFrame(w.frame, display: true) }
     }
 
-    func close() { windows.forEach { $0.close() }; backdrop.close(); strip.close() }
 }
 
 /// A calm winter-dusk backdrop.

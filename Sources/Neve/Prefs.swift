@@ -1,7 +1,7 @@
 import NeveCore
 import Foundation
 
-/// UserDefaults keys of the on / off options. Defaults: Nevar and Boneco de neve on, the rest off.
+/// UserDefaults keys of the on / off options. Defaults on: Nevar, Boneco de neve, Andam e brigam, Visitantes, Trenó, Quadros adaptativos, Cursor empurra os flocos; the rest off.
 enum Pref: String, CaseIterable {
     case enabled, economy, ambient, behindWindows, behindLarge, stillSnow, snowman, walk, visitors, sleigh, showInCaptures, adaptiveFps, music, pointerPush
     var defaultValue: Bool { [.enabled, .snowman, .walk, .visitors, .sleigh, .adaptiveFps, .pointerPush].contains(self) }
@@ -29,6 +29,7 @@ let simConfig: SimConfig = {
     if env["NEVE_DEMO_ICE"] == "1" { c.iceSpeed = 120 }
     c.penguinDemo = env["NEVE_DEMO_PENGUIN"] == "1"
     c.sleighDemo = env["NEVE_DEMO_SLEIGH"] == "1"
+    c.demoVanishAt = Float(env["NEVE_DEMO_VANISH"] ?? "")
     c.avalancheDemo = Float(env["NEVE_DEMO_AVALANCHE"] ?? "") ?? 0
     return c
 }()

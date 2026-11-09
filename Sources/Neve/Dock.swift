@@ -76,7 +76,7 @@ final class DockWatcher {
                         if let list = q.list, observer == nil || pid != observedPid { attach(pid: pid, list: list) }
                     } else { stop() }
                     let new = q.rect.flatMap { r in NSScreen.screens.first.map { appKitFrame(fromCG: r, primaryHeight: $0.frame.height) } }
-                    let r = steady.feed(new)
+                    let r = q.side ? steady.feedSide() : steady.feed(new)   // a side Dock is a successful read of "no bar", not a failed one
                     if r.changed { done(); settleSoon() }   // changed: read again once the animation has settled
                     if r.retry { Task { try? await Task.sleep(for: .seconds(1)); refresh(done: done) } }
                 }
@@ -90,7 +90,8 @@ final class DockWatcher {
 struct DockQuery: @unchecked Sendable {
     var pid: pid_t?
     var list: AXUIElement?
-    var rect: CGRect?   // raw AX coordinates (converted with the current geometry when published); nil when the Dock is not a bottom bar
+    var rect: CGRect?   // raw AX coordinates (converted with the current geometry when published); nil when the read failed or the Dock is not a bottom bar
+    var side = false    // the list was read but is not a bottom bar (Dock on the left / right)
 }
 
 /// Dock's AXList child = the bar.
@@ -109,7 +110,7 @@ private func queryDockBar() -> DockQuery {
               AXUIElementCopyAttributeValue(k, kAXSizeAttribute as CFString, &size) == .success else { return q }
         var p = CGPoint.zero, s = CGSize.zero
         guard AXValueGetValue(pos as! AXValue, .cgPoint, &p), AXValueGetValue(size as! AXValue, .cgSize, &s),
-              s.width > s.height * 1.5 else { return q }
+              s.width > s.height * 1.5 else { q.side = true; return q }
         q.rect = Tuning.dockGlass(fromAX: CGRect(origin: p, size: s))   // the glass is offset from the AX list frame (see Tuning.dockGlassOffset)
         return q
     }

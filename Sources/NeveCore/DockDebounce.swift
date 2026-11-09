@@ -24,6 +24,13 @@ public struct DockDebounce {
         return (true, false)
     }
 
-    /// Trust lost / Dock moved to a side: no grace.
+    /// The Dock was read fine but sits on the left / right side (or is hidden): there is no bar. Unlike a failed read, no grace period.
+    public mutating func feedSide() -> (changed: Bool, retry: Bool) {
+        let had = frame != nil
+        reset()
+        return (had, false)
+    }
+
+    /// Trust lost / Dock on a side: no grace.
     public mutating func reset() { frame = nil; misses = 0 }
 }

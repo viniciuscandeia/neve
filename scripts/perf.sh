@@ -23,7 +23,6 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-USER_APP=/Users/viniciuscandeia/development/neve/build/Neve.app
 NAME=perf-$(basename "$ROOT" | shasum | cut -c1-4)
 SUITE=io.github.viniciuscandeia.neve.dev.$NAME
 TMP=$(mktemp -d)
@@ -123,8 +122,9 @@ ENVV=(NEVE_PERF=1 NEVE_INSTANCE="$NAME")
 [ "$MODE" = still ] && ENVV+=(NEVE_REDUCE_MOTION=1)   # still mode = Reduce Motion + Neve parada
 caffeinate -dimsu -t $(( RUNS * (SECS + 25) + 60 )) & CAFF_PID=$!; disown
 
-if pgrep -f "$USER_APP/Contents/MacOS/" >/dev/null; then
-  echo "WARNING: the user's Neve ($USER_APP) is running; WindowServer numbers include it. Not killed."
+# Any installed / release Neve (executable "Neve"); our dev bundle runs as Neve-dev-<name>, and a --bin build has no bundle path.
+if pgrep -f "/Contents/MacOS/Neve( |$)" >/dev/null; then
+  echo "WARNING: another Neve.app is running; WindowServer numbers include it. Not killed."
 fi
 echo "mode=$MODE secs=$SECS runs=$RUNS drag=$DRAG sweep=$SWEEP pointer=${POINTER:-default} nofig=$NOFIG bin=$BIN"
 : > "$TMP/runs"; : > "$TMP/app"

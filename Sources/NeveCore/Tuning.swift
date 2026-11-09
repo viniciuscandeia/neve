@@ -114,6 +114,7 @@ public struct SimConfig: Sendable {
     public var avalancheDemo: Float = 0                   // > 0: fills the piles and starts an avalanche every this many seconds (demos)
     public var penguinDemo = false                        // NEVE_DEMO_PENGUIN: a penguin visit every ~12 s (cap and cooldown aside)
     public var sleighDemo = false                         // NEVE_DEMO_SLEIGH: a crossing starts as soon as there is a pile to drop on, then every ~45 s (the director gap)
+    public var demoVanishAt: Float?                       // NEVE_DEMO_VANISH: scene time at which the top window is treated as minimised (visual checks)
     public var directorSpeed: Float = 1                   // EventDirector intervals / gaps / cooldowns are divided by this (demos: 30)
     public init(snowmanSpeed: Float = 1, snowmanDepth: Float = Tuning.snowmanDepth, iceSpeed: Float = 1, avalancheDemo: Float = 0, directorSpeed: Float = 1, sleighDemo: Bool = false) {
         self.snowmanSpeed = snowmanSpeed; self.snowmanDepth = snowmanDepth; self.iceSpeed = iceSpeed; self.avalancheDemo = avalancheDemo; self.directorSpeed = directorSpeed; self.sleighDemo = sleighDemo

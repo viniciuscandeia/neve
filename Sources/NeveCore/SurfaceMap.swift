@@ -20,7 +20,10 @@ struct Entry {
 }
 
 extension SnowField {
-    func column(_ x: Float) -> Int { min(max(Int(x * invBin), 0), numCols - 1) }
+    func column(_ x: Float) -> Int {
+        let c = x * invBin
+        return c.isNaN ? 0 : Int(min(max(c, 0), Float(numCols - 1)))   // NaN / inf / huge never reach Int(): that traps
+    }
 
     func edgeVisible(id: Int, x: Float) -> Bool {
         let c = column(x)
