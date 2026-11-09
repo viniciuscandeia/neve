@@ -65,12 +65,12 @@ public func dragTarget(prev: [WindowInfo], cur: [WindowInfo], mouseDelta: CGVect
     return found
 }
 
-/// Whether a press at `p` could start a window drag or resize: inside a window's top strip (title bar / toolbar) or on its edge band.
+/// Whether a press at `p` could start a window drag or resize: inside a window's top strip (title bar / toolbar) or on its edge band; with ⌘ held (⌘-drag moves a window from anywhere in it) anywhere inside a window.
 /// Anything else (text selection in a window body, a click on the desktop) is no reason to poll the window list while the button is held.
-public func dragPlausible(at p: CGPoint, windows: [WindowInfo], titleStrip: CGFloat = 60, edge: CGFloat = 8) -> Bool {
+public func dragPlausible(at p: CGPoint, windows: [WindowInfo], titleStrip: CGFloat = 60, edge: CGFloat = 8, command: Bool = false) -> Bool {
     windows.contains { w in
         w.number > 0 && w.frame.insetBy(dx: -edge, dy: -edge).contains(p)
-            && (p.y >= w.frame.maxY - titleStrip || !w.frame.insetBy(dx: edge, dy: edge).contains(p))
+            && (command || p.y >= w.frame.maxY - titleStrip || !w.frame.insetBy(dx: edge, dy: edge).contains(p))
     }
 }
 

@@ -116,3 +116,10 @@ import Testing
     t.read(down: true, moved: true, prev: [a2], cur: [a3], mouseDelta: CGVector(dx: 50, dy: 0), screens: screens)    // moves again
     #expect(t.target == 1)
 }
+
+@Test func commandPressAnywhereInAWindowIsAPlausibleDrag() {
+    let w = [win(1, 100, 100, 300, 400)], body = CGPoint(x: 200, y: 200)   // y grows up: the title strip is the top 60 pt (y >= 440)
+    #expect(!dragPlausible(at: body, windows: w))
+    #expect(dragPlausible(at: body, windows: w, command: true))
+    #expect(!dragPlausible(at: CGPoint(x: 900, y: 900), windows: w, command: true))
+}

@@ -34,6 +34,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var menuPanel: NSPanel?
     private var panelTeardown: [() -> Void] = []
     private var panelSize: NSKeyValueObservation?
+    private var menuHost: NSViewController?   // the hosting controller must outlive togglePopover: place() and the size observation need it while the panel is open
     private var settingsWindow: NSWindow?
     private var intensitySnapshot = Intensity.media
     private var prefSnapshot: [Pref: Bool] = [:]
@@ -230,6 +231,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         updateStatus()
         let host = NSHostingController(rootView: QuickSettingsView(env: settingsEnv()))
         host.sizingOptions = .preferredContentSize
+        menuHost = host
         let fx = NSVisualEffectView()
         fx.material = .popover; fx.blendingMode = .behindWindow; fx.state = .active
         fx.wantsLayer = true; fx.layer?.cornerRadius = 10; fx.layer?.masksToBounds = true
@@ -255,6 +257,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         panelSize = host.observe(\.preferredContentSize) { _, _ in MainActor.assumeIsolated { place() } }
         menuPanel = panel
         button.highlight(true)
+        DispatchQueue.main.async { [weak self] in if self?.menuPanel != nil { button.highlight(true) } }   // status-item tracking may reset it as it ends
         // Accessory app: activate first and make the panel key, else SwiftUI renders switches inactive (grey).
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
@@ -277,6 +280,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let p = menuPanel else { return }
         menuPanel = nil
         panelSize = nil
+        menuHost = nil
         panelTeardown.forEach { $0() }
         panelTeardown = []
         statusItem?.button?.highlight(false)
@@ -612,7 +616,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             let p = NSEvent.mouseLocation
             downOnDesktop = !lastRead.contains { $0.frame.contains(p) }   // click on the wallpaper = show-desktop: no AX event
             drag.pressed(at: p, windows: lastRead)   // a press outside the exempt (dragged-offscreen) window ends its exemption
-            if polling, !userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead)) }
+            if polling, !userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead, command: NSEvent.modifierFlags.contains(.command))) }
         case .leftMouseUp:
             mouseDown = false
             if polling, !userIdle { sched.mouseUp(now: now, onDesktop: downOnDesktop) }
