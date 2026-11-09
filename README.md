@@ -83,18 +83,18 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 | Item | O que faz |
 |---|---|
 | Linha de status | Ex.: "Nevando · Média", "Pausado: app em tela cheia", "Pausado: sem atividade", "Desligado" |
-| **Nevar** (⌘N) | Liga e desliga a neve |
-| **Permitir Acessibilidade…** | Só aparece quando falta a permissão de Acessibilidade (opcional: neve no Dock e acompanhamento mais rápido das janelas) |
+| **Nevar** | Chave que liga e desliga a neve |
+| **Quantidade** | Quatro níveis, em uma linha de ícones, com efeito imediato |
 | **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
-| **Ajustes** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto) |
+| **Ajustes…** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto). Um pontinho laranja aparece aqui quando falta a permissão de Acessibilidade (opcional) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
-Clicar no ícone abre um popover: o topo tem a linha de status e a chave **Nevar**, depois uma grade de blocos, com efeito imediato: *Quantidade* (linha de ícones), blocos liga/desliga (*Boneco de neve*, *Andam e brigam*, *Visitantes*, *Trenó*, *Modo econômico*, *Modo ambiente* e, só com Reduzir Movimento ativo, *Neve parada*) e as chaves *Atrás das janelas* e *Atrás de janelas grandes*. e, no rodapé, **Limpar neve**, **Ajustes…** e **Sair**. **Ajustes** abre a janela **Ajustes**, com tudo por abas:
+Clicar no ícone abre um painel enxuto, sem seta, com só esses itens; ele fecha ao clicar fora, com Esc ou clicando no ícone de novo. Todo o resto fica em **Ajustes**, a janela com tudo por abas:
 
 - **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
 - **Desempenho:** *Modo econômico* (30 fps, só tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso) e *Neve parada* (só com Reduzir Movimento).
-- **Sistema:** *Aparecer em capturas de tela* e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
+- **Sistema:** *Aparecer em capturas de tela*, *Permitir Acessibilidade…* (só quando falta) e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
 - **Dicas:** dicas.
 
 ## 🔥 Instalação
@@ -115,7 +115,7 @@ scripts/make-app.sh    # gera build/Neve.app
 ```
 
 1. Mova `build/Neve.app` para `/Applications` (necessário para o item de login funcionar de forma confiável) e abra.
-2. No popover, abra **Ajustes** e marque **Abrir ao iniciar sessão**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
+2. no painel do ícone, abra **Ajustes…** e marque **Abrir ao iniciar sessão**. Se o macOS pedir aprovação, ative o Neve em Ajustes do Sistema > Geral > Itens de Início de Sessão.
 
 O Neve permite uma única instância. A permissão de Acessibilidade fica associada à assinatura do app: com a identidade estável "Neve Local Signing" ela sobrevive a recompilações; com a assinatura ad-hoc (usada se a identidade não existir, e `make-app.sh` avisa) ela se perde a cada build.
 

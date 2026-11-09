@@ -31,7 +31,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// The one defaults store: a per-instance suite for dev builds, so concurrent instances never share prefs.
     private let ud = neveInstance.flatMap { UserDefaults(suiteName: "io.github.viniciuscandeia.neve.dev.\($0)") } ?? .standard
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
-    private var popover: NSPopover?
+    private var menuPanel: NSPanel?
+    private var panelTeardown: [() -> Void] = []
+    private var panelSize: NSKeyValueObservation?
     private var settingsWindow: NSWindow?
     private var intensitySnapshot = Intensity.media
     private var prefSnapshot: [Pref: Bool] = [:]
@@ -148,13 +150,13 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func prefValues() -> [Pref: Bool] { Dictionary(uniqueKeysWithValues: Pref.allCases.map { ($0, flag($0)) }) }
 
-    /// Diffs the Bool prefs against the last snapshot and reacts to each change; called by the defaults observer (the popover writes straight to defaults).
+    /// Diffs the Bool prefs against the last snapshot and reacts to each change; called by the defaults observer (the panel writes straight to defaults).
     @objc private func syncPrefs() {
         let new = prefValues()
         let changed = changedPrefs(old: prefSnapshot, new: new)
         prefSnapshot = new
         changed.forEach(prefChanged)
-        let level = Intensity.saved(ud)   // not a Pref: set by the popover tiles
+        let level = Intensity.saved(ud)   // not a Pref: set by the Quantidade row
         if level != intensitySnapshot { intensitySnapshot = level; applyPrefs(); updateStatus() }
     }
 
@@ -199,14 +201,14 @@ final class AppController: NSObject, NSApplicationDelegate {
                            login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
                            openWindow: { [weak self] in self?.showSettingsWindow() },
                            panel: panel, askAccessibility: { [weak self] in self?.askAccessibility() },
-                           clear: { [weak self] in self?.clearSnow(); self?.popover?.performClose(nil) },
+                           clear: { [weak self] in self?.clearSnow(); self?.closePanel() },
                            quit: { NSApp.terminate(nil) })
     }
 
-    /// Right-click / ctrl-click: a small menu (fallback if the popover fails); left click: the popover.
+    /// Right-click / ctrl-click: a small menu (fallback if the panel fails); left click: the panel.
     @objc private func statusClicked() {
         guard let e = NSApp.currentEvent, e.type == .rightMouseUp || e.modifierFlags.contains(.control) else { return togglePopover() }
-        popover?.performClose(nil)
+        closePanel()
         let m = NSMenu()
         m.addItem(withTitle: "Ajustes…", action: #selector(showSettingsWindow), keyEquivalent: "").target = self
         m.addItem(withTitle: "Sair Neve", action: #selector(quitApp), keyEquivalent: "").target = self
@@ -216,27 +218,70 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     @objc private func quitApp() { NSApp.terminate(nil) }
 
-    /// Status-item click: the popover (⌥-click opens the full window directly).
+    /// Status-item click: the menu panel (⌥-click opens the full window directly).
     @objc private func togglePopover() {
         if NSEvent.modifierFlags.contains(.option) { return showSettingsWindow() }
-        guard let button = statusItem?.button else { return }
-        if popover?.isShown == true { return popover!.performClose(nil) }
+        if menuPanel != nil { return closePanel() }
+        guard let button = statusItem?.button, let bw = button.window else { return }
         updateStatus()
         let host = NSHostingController(rootView: QuickSettingsView(env: settingsEnv()))
         host.sizingOptions = .preferredContentSize
-        let pop = popover ?? NSPopover()
-        pop.behavior = .transient
-        pop.contentViewController = host
-        popover = pop
-        // Accessory app: activate first and make the popover window key, else SwiftUI renders switches inactive (grey).
+        let fx = NSVisualEffectView()
+        fx.material = .popover; fx.blendingMode = .behindWindow; fx.state = .active
+        fx.wantsLayer = true; fx.layer?.cornerRadius = 10; fx.layer?.masksToBounds = true
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        fx.addSubview(host.view)
+        NSLayoutConstraint.activate([host.view.leadingAnchor.constraint(equalTo: fx.leadingAnchor), host.view.topAnchor.constraint(equalTo: fx.topAnchor)])
+        let panel = MenuPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.contentView = fx
+        panel.contentViewController = nil
+        panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
+        panel.level = .popUpMenu; panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+        panel.setAccessibilityLabel("Neve")
+        let anchor = bw.convertToScreen(button.convert(button.bounds, to: nil))
+        nonisolated(unsafe) let place = { [weak panel, weak host] in
+            guard let panel, let host else { return }
+            host.view.layoutSubtreeIfNeeded()
+            let size = host.view.fittingSize
+            let vis = (panel.screen ?? bw.screen ?? NSScreen.main)?.visibleFrame ?? anchor
+            panel.setFrame(panelFrame(size: size, anchor: anchor, visible: vis), display: true)
+        }
+        place()
+        panelSize = host.observe(\.preferredContentSize) { _, _ in MainActor.assumeIsolated { place() } }
+        menuPanel = panel
+        button.highlight(true)
+        // Accessory app: activate first and make the panel key, else SwiftUI renders switches inactive (grey).
         NSApp.activate()
-        pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        pop.contentViewController?.view.window?.makeKey()
+        panel.makeKeyAndOrderFront(nil)
+        let close: @Sendable (Any?) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.closePanel() } }
+        let down: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let g = NSEvent.addGlobalMonitorForEvents(matching: down, handler: close)
+        let l = NSEvent.addLocalMonitorForEvents(matching: down.union(.keyDown)) { [weak self] e in
+            guard let self, let p = self.menuPanel else { return e }
+            if e.type == .keyDown { if e.keyCode == 53 { self.closePanel(); return nil }; return e }
+            if e.window !== p && e.window !== self.statusItem?.button?.window { self.closePanel() }   // the status button's own click toggles
+            return e
+        }
+        let o1 = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: close)
+        let o2 = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main, using: close)
+        panelTeardown = [{ [g, l].compactMap { $0 }.forEach(NSEvent.removeMonitor) },
+                         { NotificationCenter.default.removeObserver(o1); NSWorkspace.shared.notificationCenter.removeObserver(o2) }]
+    }
+
+    private func closePanel() {
+        guard let p = menuPanel else { return }
+        menuPanel = nil
+        panelSize = nil
+        panelTeardown.forEach { $0() }
+        panelTeardown = []
+        statusItem?.button?.highlight(false)
+        p.orderOut(nil)
     }
 
     /// The single "Ajustes" window (rebuilt on each open so the screen list is fresh).
     @objc private func showSettingsWindow() {
-        popover?.performClose(nil)
+        closePanel()
         if settingsWindow == nil {
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "Ajustes"
@@ -251,7 +296,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
         settingsWindow?.contentViewController = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
-        // after the popover has finished closing, or the activation is lost
+        // after the panel has finished closing, or the activation is lost
         DispatchQueue.main.async { [weak self] in
             NSApp.activate()
             self?.settingsWindow?.makeKeyAndOrderFront(nil)
@@ -311,7 +356,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         return i
     }
 
-    /// Read-only summary derived from the existing pause reasons; refreshed live while the popover is open.
+    /// Read-only summary derived from the existing pause reasons; refreshed live while the panel is open.
     private var statusText: String {
         let level = Intensity.saved(ud)
         if !enabled { return "Desligado" }
@@ -427,7 +472,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         defer { Perf.addPoll(t0) }
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
-        guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber))) else {
+        guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber) + [menuPanel?.windowNumber].compactMap { $0 })) else {
             sched.didRead(ok: false, changed: false, frameMoved: false)   // CGWindowList failed: keep the last snapshot, retry shortly
             return
         }
@@ -624,3 +669,6 @@ let controller = AppController()
 app.delegate = controller
 app.setActivationPolicy(.accessory)
 app.run()
+
+/// Borderless menu-bar panel: nonactivating, but able to take key so the SwiftUI switches render active.
+final class MenuPanel: NSPanel { override var canBecomeKey: Bool { true } }
