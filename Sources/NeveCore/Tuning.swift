@@ -62,6 +62,7 @@ public enum Tuning {
     static let nearFraction: Float = 0.02   // out-of-focus foreground flakes: share of the active sky count
     static let nearAlpha: Float = 0.28
     static let maxDebris = 1200
+    static let busyDebris = 24   // loose chunks alive before the frame rate goes up (steady Nevasca shedding peaks near 16)
     static let maxPuffs = 24
     static let maxGlints = 6
     static let maxDrops = 16                // meltwater droplets alive at once (Drips.swift)

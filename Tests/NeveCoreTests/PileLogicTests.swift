@@ -192,6 +192,19 @@ private func maxSway(calm: Bool) -> Float {
     #expect(!f.isBusy)
 }
 
+@Test func gentleSheddingAndGustsAloneAreNotBusyButBurstsAndSlabsAre() {
+    let f = makeField()
+    f.update(windows: [win(1, 300, 300, 400, 200)])
+    f.gustOverride = 0.8
+    for i in 0..<16 { f.addDebris(x: 100 + Float(i), y: 500, vx: 10, fall: 20) }
+    #expect(!f.isBusy)                               // a dozen small chunks and a gust with no figure: calm
+    for i in 0..<12 { f.addDebris(x: 200 + Float(i), y: 500, vx: 10, fall: 20) }
+    #expect(f.busyReasons == .debris)                // a burst
+    f.debris.removeAll()
+    f.debris.append(Flake(pos: [100, 500], vx: 0, fall: 0, phase: 0, amp: 1, freq: 0, size: 30, alpha: 1, kind: .debris, seed: 0, fade: 1))
+    #expect(f.isBusy)                                // one intact slab (avalanche)
+}
+
 // Smoothed end slopes: stride matches the Metal struct (10 x 4 bytes); neighbours share n; run ends keep their own slope.
 @Test func pileSegNormalsAreContinuous() {
     #expect(MemoryLayout<PileSeg>.stride == 40)

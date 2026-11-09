@@ -2,6 +2,14 @@ import CoreGraphics
 import Foundation
 
 /// Per-screen simulation: flakes, surface map, piles. Local coords are points, y up.
+public struct BusyReasons: OptionSet, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let drag = BusyReasons(rawValue: 1), dock = BusyReasons(rawValue: 2), shots = BusyReasons(rawValue: 4), fights = BusyReasons(rawValue: 8), debris = BusyReasons(rawValue: 16)
+    public static let introOutro = BusyReasons(rawValue: 32), figures = BusyReasons(rawValue: 64), gust = BusyReasons(rawValue: 128), balls = BusyReasons(rawValue: 256)
+    public static let names: [(BusyReasons, String)] = [(.drag, "drag"), (.dock, "dock"), (.shots, "shots"), (.fights, "fights"), (.debris, "debris"), (.introOutro, "intro"), (.figures, "figures"), (.gust, "gust"), (.balls, "balls")]
+}
+
 public final class SnowField {
     public let size: SIMD2<Float>
     let origin: CGPoint
@@ -235,9 +243,22 @@ public final class SnowField {
 
     /// Something moves fast enough to want the full frame rate (adaptive fps): drag, shots, fights, avalanche-sized debris,
     /// a ball in hand or in the air, a gust, intro / outro. Steady gentle snowfall is not.
-    public var isBusy: Bool {
-        draggingID != nil || dockCur != dockTarget || dockSlump > 0 || !shots.isEmpty || !fights.isEmpty || debris.count > 6 || (introDur > 0 && introT < introDur)
-            || (outro && outroRel < 1) || figures.contains { $0.kind != .snowman } || abs(gust) > 0.15 || balls.contains { $0.state != .resting }
+    public var isBusy: Bool { !busyReasons.isEmpty }
+
+    /// Every reason `isBusy` holds right now (all of them, not just the first; NEVE_PERF counts frames per reason).
+    public var busyReasons: BusyReasons {
+        var r: BusyReasons = []
+        if draggingID != nil { r.insert(.drag) }
+        if dockCur != dockTarget || dockSlump > 0 { r.insert(.dock) }
+        if !shots.isEmpty { r.insert(.shots) }
+        if !fights.isEmpty { r.insert(.fights) }
+        // Gentle shedding off window / pile ends (a dozen small chunks, always some in Nevasca) is fine at 30 fps; slabs and bursts are not.
+        if debris.count > Tuning.busyDebris || debris.contains(where: { $0.amp > 0 }) { r.insert(.debris) }
+        if (introDur > 0 && introT < introDur) || (outro && outroRel < 1) { r.insert(.introOutro) }
+        if figures.contains(where: { $0.kind != .snowman }) { r.insert(.figures) }
+        if abs(gust) > 0.15, !figures.isEmpty { r.insert(.gust) }   // a gust only moves figures (flutter, shots, balls have their own reasons); flakes drift fine at 30 fps
+        if balls.contains(where: { $0.state != .resting }) { r.insert(.balls) }
+        return r
     }
     /// The pile buffer written last is still the current picture (no version change, no easing left).
     public var pilesSettled: Bool { pileVersion == pileWritten && !pileEasing }

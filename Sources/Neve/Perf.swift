@@ -48,6 +48,8 @@ enum Perf {
         let label: String
         private var stat = [PerfStat](repeating: PerfStat(), count: Slot.allCases.count)
         private var count = [Int](repeating: 0, count: Count.allCases.count)
+        private var busy = [Int](repeating: 0, count: BusyReasons.names.count), busyFrames = 0
+        func busyNow(_ r: BusyReasons) { if !r.isEmpty { busyFrames += 1 }; for (i, e) in BusyReasons.names.enumerated() where r.contains(e.0) { busy[i] += 1 } }
         private var instances = 0, truncPrims = 0, truncPiles = 0, segs = 0
         private var winStart: UInt64 = 0, cpuStart = 0.0
         private let gpu = OSAllocatedUnfairLock(initialState: (sum: 0.0, count: 0))
@@ -98,11 +100,12 @@ enum Perf {
             field.flakeSeconds = 0; field.flakeSteps = 0
             line += String(format: " gpu=%.3fms(n=%d) cpu=%.1f%% main=%.1f%%", g.count == 0 ? 0 : g.sum / Double(g.count) * 1000, g.count, (c - cpuStart) / wall * 100, Double(mainNs) / 1e9 / wall * 100)
             for (i, nm) in Self.countNames.enumerated() { line += " \(nm)=\(count[i])" }
+            line += " busy=\(busyFrames)[" + BusyReasons.names.enumerated().map { "\($1.1)=\(busy[$0])" }.joined(separator: " ") + "]"
             line += " segs=\(segs) \(extra) flakes=\(max(instances - debris, 0)) debris=\(debris) balls=\(field.balls.count) figures=\(field.figures.count) fights=\(field.fights.count) shots=\(field.shots.count) trunc=prims:\(truncPrims)/piles:\(truncPiles)\n"
             Perf.emit(line)
             for i in stat.indices { stat[i] = PerfStat() }
             for i in count.indices { count[i] = 0 }
-            truncPrims = 0; truncPiles = 0
+            truncPrims = 0; truncPiles = 0; busyFrames = 0; for i in busy.indices { busy[i] = 0 }
             winStart = t; cpuStart = c
         }
     }

@@ -511,6 +511,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         perf?.add(.drag, t0)
         render(drawable)
+        perf?.busyNow(field.busyReasons)
         perf?.frame(field, "paused=\(link?.isPaused ?? true) occluded=\(occluded) slow=\(slow)")
         // P3-C: adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
         // A fast cursor only needs 60 fps when something reacts to it (flake push / pile groove); with the toggle off nothing does.
