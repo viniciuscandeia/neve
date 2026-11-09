@@ -251,7 +251,6 @@ extension SnowField {
             stepShots(dt)
             stepCarrots(dt)
             stepCursorThrow(dt: dt)
-            stepCursorCarve()
         }
     }
 
