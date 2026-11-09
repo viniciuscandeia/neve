@@ -232,6 +232,12 @@ struct SettingsWindowView: View {
                             .disabled(!MusicTap.supported || env.reduceMotion)
                     }
                     MusicNote(panel: env.panel, reduceMotion: env.reduceMotion)
+                    PrefBinding(.pointerPush, env.store) { b in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle(isOn: b) { Label("Cursor empurra os flocos", systemImage: "cursorarrow.motionlines") }
+                            Text("Desligar economiza CPU").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     if env.reduceMotion { toggle(stillOpt) }
                 case .sistema:
                     PrefBinding(.showInCaptures, env.store) { b in Toggle(isOn: b) { Label("Mostrar em capturas", systemImage: "camera") } }

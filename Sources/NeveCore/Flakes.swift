@@ -86,7 +86,7 @@ extension SnowField {
             let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)
             f.pos.x += (f.vx + f.wv + 0.69 * f.amp * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(2 * f.phase))   // vertical flutter, a bit more for big flakes
-            if let p = pointer {
+            if pointerPush, let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
                 if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {
                     // Radial push plus a tangential swirl (always one side, so a flake dead above the pointer slides off),

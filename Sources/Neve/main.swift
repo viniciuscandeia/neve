@@ -45,8 +45,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
         // Scene mode: fixed options (Mostrar em capturas ON, everything alive), whatever the user saved; nothing is written back.
-        if let k = sceneKind { return OverlayPrefs(economy: false, behind: false, behindLarge: false, still: false, snowman: true, walk: true, visitors: true, sleigh: true, showInCaptures: true, adaptive: false, music: false, intensity: k == .demo ? .forte : .media) }
-        return OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), music: flag(.music), intensity: Intensity.saved(ud))
+        if let k = sceneKind { return OverlayPrefs(economy: false, behind: false, behindLarge: false, still: false, snowman: true, walk: true, visitors: true, sleigh: true, showInCaptures: true, adaptive: false, music: false, pointerPush: true, intensity: k == .demo ? .forte : .media) }
+        return OverlayPrefs(economy: economy, behind: behind, behindLarge: flag(.behindLarge), still: flag(.stillSnow), snowman: flag(.snowman), walk: flag(.walk), visitors: flag(.visitors), sleigh: flag(.sleigh), showInCaptures: flag(.showInCaptures), adaptive: flag(.adaptiveFps), music: flag(.music), pointerPush: flag(.pointerPush), intensity: Intensity.saved(ud))
     }
     private func applyPrefs() { let p = overlayPrefs; for o in overlays { o.apply(p) } }
 
@@ -172,7 +172,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             applyPrefs()
             requestPoll()   // empties / refills the surface list
             updateStatus()
-        case .behindLarge, .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps: applyPrefs()
+        case .behindLarge, .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps, .pointerPush: applyPrefs()
         }
     }
 

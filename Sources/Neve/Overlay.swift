@@ -385,6 +385,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if window.sharingType != sharing { window.sharingType = sharing }
         field.snowmanEnabled = p.snowman
         field.walkEnabled = p.walk
+        field.pointerPush = p.pointerPush
         field.visitorsEnabled = p.visitors
         field.sleighEnabled = p.sleigh
         refreshDay(force: true)

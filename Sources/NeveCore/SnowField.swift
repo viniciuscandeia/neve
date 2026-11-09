@@ -84,6 +84,7 @@ public final class SnowField {
     var shotLand: (p: SIMD2<Float>, t: Float)?, impactAt: (x: Float, y: Float, t: Float)?   // last landings (robin startle)
     var rabbitHitScale = Tuning.rabbitHitScale   // tests force hits (large) or misses (0)
     public var walkEnabled = true      // figures walk and fight (Walk.swift)
+    public var pointerPush = true      // the cursor pushes and swirls the flakes (off saves CPU; every other cursor feature is unaffected)
     var gustOverride: Float?           // tests
     public var snowmanEnabled = true { didSet { if !snowmanEnabled { dropAutoFigure() } } }
     var snowmanCooldown: Float = 0      // snowfall seconds (x speed) before the next auto build may start

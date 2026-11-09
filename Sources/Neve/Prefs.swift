@@ -3,8 +3,8 @@ import Foundation
 
 /// UserDefaults keys of the on / off options. Defaults: Nevar and Boneco de neve on, the rest off.
 enum Pref: String, CaseIterable {
-    case enabled, economy, ambient, behindWindows, behindLarge, stillSnow, snowman, walk, visitors, sleigh, showInCaptures, adaptiveFps, music
-    var defaultValue: Bool { [.enabled, .snowman, .walk, .visitors, .sleigh, .adaptiveFps].contains(self) }
+    case enabled, economy, ambient, behindWindows, behindLarge, stillSnow, snowman, walk, visitors, sleigh, showInCaptures, adaptiveFps, music, pointerPush
+    var defaultValue: Bool { [.enabled, .snowman, .walk, .visitors, .sleigh, .adaptiveFps, .pointerPush].contains(self) }
 }
 
 /// Which Bool prefs differ between two snapshots (drives `AppController.prefChanged`).
@@ -12,7 +12,7 @@ func changedPrefs(old: [Pref: Bool], new: [Pref: Bool]) -> [Pref] { changedKeys(
 
 /// The user options an overlay renders; the controller owns them (UserDefaults) and pushes them to every overlay.
 struct OverlayPrefs: Equatable {
-    var economy = false, behind = false, behindLarge = false, still = false, snowman = true, walk = true, visitors = true, sleigh = true, showInCaptures = false, adaptive = true, music = false
+    var economy = false, behind = false, behindLarge = false, still = false, snowman = true, walk = true, visitors = true, sleigh = true, showInCaptures = false, adaptive = true, music = false, pointerPush = true
     var intensity = Intensity.media
 }
 

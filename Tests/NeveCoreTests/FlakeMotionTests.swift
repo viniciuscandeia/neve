@@ -41,3 +41,15 @@ private func snow(_ seed: UInt64 = 5) -> SnowField {
     #expect(maxWv > 20)       // the wind does move them
     #expect(maxStep < 5)      // but never snaps (per 1/60 s frame)
 }
+
+@Test func pointerPushOffIgnoresCursor() {
+    func run(cursor: Bool, push: Bool) -> [SIMD2<Float>] {
+        let f = snow(); f.pointerPush = push
+        if cursor { f.setPointer(SIMD2(500, 400), velocity: SIMD2(300, 0)) }
+        for _ in 0..<120 { f.step(dt: 1 / 60) }
+        return f.flakes.map(\.pos)
+    }
+    let none = run(cursor: false, push: true)
+    #expect(run(cursor: true, push: false) == none)
+    #expect(run(cursor: true, push: true) != none)
+}
