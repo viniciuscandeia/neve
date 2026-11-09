@@ -47,7 +47,7 @@ private func numbers(_ w: [RawWindow], exclude: Set<Int> = []) -> [Int] {
 }
 
 @Test func filterDropsFullyTransparentWindows() {
-    #expect(numbers([raw(1, alpha: 0), raw(2, alpha: 0.01), raw(3, alpha: 1)]) == [2, 3])
+    #expect(numbers([raw(1, alpha: 0), raw(2, alpha: 0.01), raw(3, alpha: 1)]) == [3])
 }
 
 @Test func filterDropsOwnProcessWindows() {
@@ -74,4 +74,8 @@ private func numbers(_ w: [RawWindow], exclude: Set<Int> = []) -> [Int] {
     #expect(mostlyOffscreen(CGRect(x: 3000, y: 0, width: 400, height: 300), screens: s))
     #expect(!mostlyOffscreen(CGRect(x: 1300, y: 0, width: 400, height: 300), screens: s + [CGRect(x: 1440, y: 0, width: 1000, height: 900)]))  // spans two screens
     #expect(!mostlyOffscreen(CGRect(x: 5000, y: 0, width: 10, height: 10), screens: []))
+}
+
+@Test func filterDropsWindowsFadingOut() {
+    #expect(numbers([raw(1, alpha: 0.25), raw(2, alpha: 0.31), raw(3, alpha: 0)]) == [2])
 }

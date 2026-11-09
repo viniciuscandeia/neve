@@ -23,6 +23,7 @@ public struct Flake {
     var delay: Float = 0    // slab: seconds aloft; puff / glint: seconds of life left
     var shape: UInt8 = 0
     var prof: UInt32 = 0    // falling chunk: packed top profile (Effects.swift `Flake.pack`)
+    var vel: SIMD2<Float> = .zero   // sky/background: velocity of the last step (pt/s), for the motion streak
     var wv: Float = 0       // sky/background: lateral speed from the wind field, relaxing toward it (inertia grows with size)
 }
 
@@ -78,6 +79,7 @@ extension SnowField {
             let prevY = f.pos.y
             f.fade = quiet ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
             if quiet, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
+            let p0 = f.pos
             f.phase += f.freq * dt
             // Wind: a gust field varying across the screen and in time; flakes relax toward it (heavier = slower to respond).
             let gust = 1 + 0.5 * sin(f.pos.x * 0.005 + time * 0.35)
@@ -99,6 +101,7 @@ extension SnowField {
                 }
             }
             if f.pos.x < x0 { f.pos.x += w } else if f.pos.x > x0 + w { f.pos.x -= w }
+            else if dt > 0 { f.vel = (f.pos - p0) / dt }   // a wrap would fake a screen-wide jump: keep the previous velocity
             if f.kind == .sky, tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale) {
                 f = spawn(.sky, anywhere: false)
             } else if f.pos.y < -f.size {

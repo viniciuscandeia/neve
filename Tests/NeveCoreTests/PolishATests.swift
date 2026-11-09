@@ -65,3 +65,39 @@ private func instances(_ f: SnowField) -> [Instance] {
     #expect(Rig.shadow == SIMD4(Palette.shadow, 1))
     #expect(Rig.shadowHC == SIMD4(Palette.shadowHC, 1))
 }
+
+@Test func instanceLayoutMatchesTheShader() {
+    // MSL: float2 pos; float size, alpha, seed, rot; uint kind; float2 vel  ->  offsets 0, 8..20, 24, 32; size 40, align 8
+    #expect(MemoryLayout<Instance>.stride == 40)
+    #expect(MemoryLayout<Instance>.alignment == 8)
+    #expect(MemoryLayout<Instance>.offset(of: \Instance.kind) == 24)
+    #expect(MemoryLayout<Instance>.offset(of: \Instance.vel) == 32)
+}
+
+@Test func instanceVelocityIsPositionDeltaOverDt() {
+    let f = makeField(flakes: 300, seed: 3)
+    f.update(windows: [])
+    for _ in 0..<30 { f.step(dt: 1.0 / 60) }
+    let a = instances(f)
+    f.step(dt: 1.0 / 60)
+    let b = instances(f)
+    var checked = 0
+    for (p, q) in zip(a, b) where p.kind == 0 && q.kind == 0 && p.seed == q.seed {
+        let d = (q.pos - p.pos) * 60
+        guard abs(d.x) < 200, abs(d.y) < 200 else { continue }   // skip wraps / respawns
+        #expect(abs(q.vel.x - d.x) < 0.5 && abs(q.vel.y - d.y) < 0.5)
+        checked += 1
+    }
+    #expect(checked > 100)
+    #expect(b.contains { $0.kind == 0 && $0.vel.y < -20 })
+}
+
+@Test func calmFlakesHaveNoVelocity() {
+    let f = makeField(flakes: 300, seed: 3)
+    f.setCalm(true)
+    f.update(windows: [])
+    for _ in 0..<60 { f.step(dt: 1.0 / 60) }
+    let all = instances(f)
+    #expect(!all.isEmpty)
+    #expect(all.allSatisfy { $0.vel == .zero })
+}
