@@ -196,6 +196,7 @@ private func windowTop(_ f: SnowField, id: Int, h: Float = 12) {
 @Test func lookDataExposesWhatARendererNeeds() {
     let f = field()
     let id = stand(f, x: 300)
+    advance(f, 0.27)   // a promoted stack eases its details in first
     let l = f.look(of: fig(f, id))
     #expect(abs(l.foot.y - (fig(f, id).foot.y - 0.2 * 20)) < 0.001 && l.foot.x == 300 && l.radii == SIMD3(20, 14, 10) && l.built == 7 && l.newest >= 0 && l.newest <= 1)
     #expect(!l.collapsing && !l.headless && l.fade == 1 && l.droop == 0)

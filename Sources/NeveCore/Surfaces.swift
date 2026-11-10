@@ -117,15 +117,22 @@ extension SnowField {
         if clock >= spaceSwitchUntil { spaceSwitchIDs = [] }
         let gone = old.filter { $0.id > 0 && spaceSwitchIDs.contains($0.id) }
         if !gone.isEmpty {   // Space switch: windows that went away are not closed, they are elsewhere: snow (and frost) set aside, balls and figures on them go, no debris
-            for s in gone where s.pile.heights.contains(where: { $0 > 0 }) {
+            let ids = Set(gone.map(\.id))
+            let onIt = { (sid: Int?) in sid.map { ids.contains($0) } ?? false }
+            let keptFigures = dropWindowFigures(on: ids)
+            let keptBalls = balls.filter { $0.state != .held && onIt($0.surfaceID) }   // resting stacks go with the window (a falling ball has no surface)
+            balls.removeAll { $0.state != .held && onIt($0.surfaceID) }
+            let keptGifts = giftState.gifts.filter { onIt($0.surface) }
+            giftState.gifts.removeAll { onIt($0.surface) }
+            for s in gone {
+                let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }
+                guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty else { continue }
                 stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id },
-                                      overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }))
+                                      overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
+                                      minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
             }
             spaceSwitchIDs.subtract(gone.map(\.id))
             while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
-            let ids = Set(gone.map(\.id))
-            balls.removeAll { $0.state != .held && $0.surfaceID.map { ids.contains($0) } ?? false }
-            dropWindowFigures(on: ids)
             old.removeAll { ids.contains($0.id) }
         }
         for s in old { spawned += knockOff(s) }   // gone surfaces
@@ -138,8 +145,19 @@ extension SnowField {
         transportBalls(before: before)
         transportGifts(before: before)
         transportFigures(before: before)
+        restoreStashed()
         pilesDirty = true
         return spawned
+    }
+
+    /// What stood on a window that came back from another Space returns with it (shifted by the window's move), without the transports above knocking it off.
+    private func restoreStashed() {
+        for (dx, e) in stashBack {
+            for var b in e.balls { b.pos.x += dx; balls.append(b) }
+            for var f in e.figures where canSpawnFigure { f.foot.x += dx; f.at = f.surfaceID.map { .surface(id: $0, x: f.foot.x) } ?? .air; figures.append(f) }
+            for var g in e.gifts { g.pos.x += dx; giftState.gifts.append(g) }
+        }
+        stashBack.removeAll()
     }
 
     /// Screen-bottom pile: full width, flat, no taper, edges drain nothing. Snow under covered columns stays (hidden), not knocked off.
@@ -337,6 +355,7 @@ extension SnowField {
         else if let e = stash.removeValue(forKey: id), clock - e.stamp < 1800, e.heights.count == pile.heights.count {   // back from another Space: same width, same snow
             for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
             pile.shown = pile.heights
+            stashBack.append((Float(frame.minX) - e.minX, e))
             let u0 = Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)), u1 = Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1
             let oh = e.overhang.compactMap { r, h -> (Int, Float)? in let nc = c0 + r; return (nc < c0 || nc >= c0 + pile.heights.count) && nc >= u0 && nc < u1 ? (nc, h) : nil }
             if !oh.isEmpty { overhang[id] = Dictionary(uniqueKeysWithValues: oh) }

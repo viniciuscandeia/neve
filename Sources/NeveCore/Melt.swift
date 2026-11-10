@@ -30,7 +30,7 @@ extension SnowField {
         for s in surfaces { for h in s.pile.heights { hmax = max(hmax, h) } }
         meltRate = hmax / (meltDur * 0.85)
         snowmanCooldown = .infinity
-        fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); carrots.removeAll(keepingCapacity: true)
+        clearFights(); clearCarrots()
         for i in icicles.indices { icicles[i].dying = true }
     }
 

@@ -9,10 +9,13 @@ public struct Fight {
 /// A snowball in flight (drawn by the overlay); lands after `dur` seconds.
 public struct Shot {
     public internal(set) var pos: SIMD2<Float>
-    let from: SIMD2<Float>, to: SIMD2<Float>, peak: Float, dur: Float
+    let from: SIMD2<Float>
+    var to: SIMD2<Float>
+    let peak: Float, dur: Float
     var t: Float = 0
     let hit: Bool, head: Bool, target: Int, surface: Int
     var radius: Float = 3.6                          // ball radius (scaled with the snowmen)
+    var rel: SIMD2<Float>?                           // hit shots at a snowman: `to` relative to its foot, so the ball follows a target that moved
     var impactT: Float = -1                          // < 0 in flight; else seconds of the squashed hold left after landing
     public internal(set) var normal = SIMD2<Float>(0, 1)   // impact normal (valid while impacting)
     public var impacting: Bool { impactT >= 0 }
@@ -30,6 +33,7 @@ public struct Splat {
     public let target: Int, surface: Int
     public let rel: SIMD2<Float>, scale: Float
     public internal(set) var age: Float = 0
+    var last = SIMD2<Float>.zero                     // where it was drawn last: it keeps fading there when its figure is gone
     var life: Float = Tuning.splatLife
     public var alpha: Float { max(0, 1 - age / life) }
 }
@@ -49,7 +53,7 @@ extension SnowField {
         guard fights.count < Tuning.maxFights else { return }
         let n = figures.count
         for i in 0..<n where free(figures[i]) {
-            for j in (i + 1)..<n where free(figures[j]) && figures[j].surfaceID == figures[i].surfaceID {
+            for j in (i + 1)..<n where free(figures[j]) && figures[j].surfaceID == figures[i].surfaceID && sameRun(figures[i], figures[j]) {
                 let d = abs(figures[j].foot.x - figures[i].foot.x)
                 guard d <= Tuning.fightRange, d >= figures[i].radii.x + figures[j].radii.x + 6 else { continue }
                 figures[i].fight = (figures[j].id, 0); figures[j].fight = (figures[i].id, 0)
@@ -60,6 +64,14 @@ extension SnowField {
             }
             if fights.count >= Tuning.maxFights { return }
         }
+    }
+
+    /// Both stand in the same visible stretch of their surface (no window / Dock gap between them).
+    private func sameRun(_ a: Figure, _ b: Figure) -> Bool {
+        guard let sid = a.surfaceID, let si = index[sid] else { return false }
+        let c0 = surfaces[si].c0
+        guard let r = visibleRun(si: si, bin: column(a.foot.x) - c0) else { return false }
+        return r.contains(column(b.foot.x) - c0)
     }
 
     private func endFight(_ k: Int) {
@@ -82,7 +94,7 @@ extension SnowField {
             defer { k -= 1 }
             let f = fights[k]
             guard let ia = figureIndex(f.a), let ib = figureIndex(f.b), figures[ia].active, figures[ib].active,
-                  figures[ia].surfaceID == figures[ib].surfaceID,
+                  figures[ia].surfaceID == figures[ib].surfaceID, sameRun(figures[ia], figures[ib]),
                   abs(figures[ia].foot.x - figures[ib].foot.x) <= Tuning.fightRange else { endFight(k); continue }   // surface changed, hidden, or one is gone
             fights[k].timer -= dt
             guard fights[k].timer <= 0 else { continue }
@@ -102,7 +114,7 @@ extension SnowField {
         var to = head ? at.head : at.body
         if !hit { to = SIMD2(at.body.x + dir * Float.random(in: 28...70, using: &rng), at.ground) }   // sails past
         to.x += drift
-        shots.append(Shot(pos: from.arm, from: from.arm, to: to, peak: 18 + 0.18 * d, dur: dur, hit: hit, head: head, target: you, surface: figures[i].surfaceID ?? Tuning.groundID, radius: 3.6 * snowmanScale))
+        shots.append(Shot(pos: from.arm, from: from.arm, to: to, peak: 18 + 0.18 * d, dur: dur, hit: hit, head: head, target: you, surface: figures[i].surfaceID ?? Tuning.groundID, radius: 3.6 * snowmanScale, rel: hit ? to - figures[j].foot : nil))
         fights[k].turn = 1 - f.turn; fights[k].thrown += 1
         fights[k].timer = Tuning.throwGap + Float.random(in: 0...0.4, using: &rng)
     }
@@ -118,6 +130,7 @@ extension SnowField {
                 continue
             }
             s.t += dt
+            if let rel = s.rel, let j = figureIndex(s.target) { s.to = figures[j].foot + rel }   // the target walked / its window moved: aim at where it is now
             let u = min(s.t / s.dur, 1)
             s.pos = s.from + (s.to - s.from) * u + SIMD2(0, 4 * s.peak * u * (1 - u))
             guard u >= 1 else { shots[k] = s; continue }
@@ -140,7 +153,9 @@ extension SnowField {
         var rel = s.to + SIMD2(0, 1), scale = snowmanScale
         if onBody, let j { rel = s.to - figures[j].foot; scale = figures[j].scale }
         let cursor = s.target == SnowField.cursorTarget   // a throw at the cursor: bigger blot, longer fade
-        addSplat(Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: cursor && s.hit ? 14.0 / 12 * snowmanScale : scale, life: cursor && s.hit ? 1.5 : Tuning.splatLife))
+        var sp = Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: cursor && s.hit ? 14.0 / 12 * snowmanScale : scale, life: cursor && s.hit ? 1.5 : Tuning.splatLife)
+        sp.last = s.to
+        addSplat(sp)
         spray(at: s.to, reflected: refl, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
         if onBody, let j, figures[j].fight != nil { registerHit(s.target, head: s.head) }
         if onBody, let j, figures[j].kind == .rabbit { rabbitHit(j) }
@@ -155,6 +170,7 @@ extension SnowField {
         var i = splats.count - 1
         while i >= 0 {
             splats[i].age += dt
+            if splats[i].target >= 0, let j = figureIndex(splats[i].target) { splats[i].last = figures[j].foot + splats[i].rel }
             if splats[i].age >= splats[i].life { splats.remove(at: i) }
             i -= 1
         }
@@ -176,14 +192,14 @@ extension SnowField {
     /// Splat position now (it follows its figure), or nil when the figure is gone.
     public func position(of s: Splat) -> SIMD2<Float>? {
         guard s.target >= 0 else { return s.rel }
-        return figureIndex(s.target).map { figures[$0].foot + s.rel }
+        return figureIndex(s.target).map { figures[$0].foot + s.rel } ?? s.last
     }
 
     /// Splats, trails and shots as prims. `shift` gives the drag offset of a surface id (windows being dragged).
     public func writeShotPrims(_ w: inout PrimWriter, trails: Bool, shift: (Int?) -> SIMD2<Float>) {
         for s in splats {
             guard let p = position(of: s) else { continue }
-            let sid = s.target >= 0 ? figureIndex(s.target).flatMap { figures[$0].surfaceID } : s.surface
+            let sid = s.target >= 0 ? figureIndex(s.target).flatMap { figures[$0].surfaceID } ?? s.surface : s.surface
             Rig.splat(center: p + shift(sid), scale: s.scale, alpha: s.alpha, into: &w)
         }
         for s in shots {
