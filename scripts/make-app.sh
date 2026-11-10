@@ -16,6 +16,11 @@ fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Neve.icns "$APP/Contents/Resources/Neve.icns"
+# Localized strings (SwiftPM resource bundle; found in Contents/Resources by NeveCore/Localization.swift) + the Info.plist strings.
+cp -R "$(swift build -c release --show-bin-path)/Neve_NeveCore.bundle" "$APP/Contents/Resources/"
+for L in en pt-BR; do mkdir -p "$APP/Contents/Resources/$L.lproj"; done
+printf '%s\n' '"NSAudioCaptureUsageDescription" = "Neve uses the audio playing on your Mac only to make the snow dance to the music. Nothing is recorded or sent.";' > "$APP/Contents/Resources/en.lproj/InfoPlist.strings"
+printf '%s\n' '"NSAudioCaptureUsageDescription" = "A Neve usa o áudio que está tocando no Mac só para fazer a neve dançar no ritmo da música. Nada é gravado ou enviado.";' > "$APP/Contents/Resources/pt-BR.lproj/InfoPlist.strings"
 if [ -n "${NEVE_UNIVERSAL:-}" ]; then
   lipo -create "$(swift build -c release --show-bin-path)/Neve" .build/x86_64-apple-macosx/release/Neve -output "$APP/Contents/MacOS/$EXE"
 else
@@ -27,6 +32,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key><string>$BID</string>
+	<key>CFBundleDevelopmentRegion</key><string>pt-BR</string>
+	<key>CFBundleLocalizations</key><array><string>pt-BR</string><string>en</string></array>
 	<key>CFBundleName</key><string>Neve</string>
 	<key>CFBundleDisplayName</key><string>Neve</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>

@@ -115,7 +115,7 @@ public enum Tuning {
 public enum Intensity: Int, CaseIterable {
     case leve, media, forte, nevasca
     public static let key = "intensity"
-    public var title: String { ["Leve", "Média", "Forte", "Nevasca"][rawValue] }
+    public var title: String { [tr("Leve"), tr("Média"), tr("Forte"), tr("Nevasca")][rawValue] }
     var multiplier: Float { [0.4, 1.0, 1.8, 3.0][rawValue] }
     var windGain: Float { self == .nevasca ? 100 : 8 }   // peak sideways speed, points/s
 }

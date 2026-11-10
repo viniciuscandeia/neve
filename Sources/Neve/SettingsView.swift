@@ -37,14 +37,14 @@ private struct PrefBinding<Content: View>: View {
 }
 
 private struct Option { let pref: Pref; let title: String; let symbol: String }
-private let figures = [Option(pref: .snowman, title: "Boneco de neve", symbol: "figure.stand"),
-                       Option(pref: .walk, title: "Andam e brigam", symbol: "figure.walk"),
-                       Option(pref: .visitors, title: "Visitantes", symbol: "pawprint"),
-                       Option(pref: .sleigh, title: "Trenó do Papai Noel", symbol: "gift")]
-private let economyOpt = Option(pref: .economy, title: "Modo econômico", symbol: "leaf")
-private let ambientOpt = Option(pref: .ambient, title: "Modo ambiente", symbol: "sun.max")
-private let musicOpt = Option(pref: .music, title: "Neve dança com a música", symbol: "music.note")
-private let stillOpt = Option(pref: .stillSnow, title: "Neve parada", symbol: "pause.circle")
+private let figures = [Option(pref: .snowman, title: tr("Boneco de neve"), symbol: "figure.stand"),
+                       Option(pref: .walk, title: tr("Andam e brigam"), symbol: "figure.walk"),
+                       Option(pref: .visitors, title: tr("Visitantes"), symbol: "pawprint"),
+                       Option(pref: .sleigh, title: tr("Trenó do Papai Noel"), symbol: "gift")]
+private let economyOpt = Option(pref: .economy, title: tr("Modo econômico"), symbol: "leaf")
+private let ambientOpt = Option(pref: .ambient, title: tr("Modo ambiente"), symbol: "sun.max")
+private let musicOpt = Option(pref: .music, title: tr("Neve dança com a música"), symbol: "music.note")
+private let stillOpt = Option(pref: .stillSnow, title: tr("Neve parada"), symbol: "pause.circle")
 private let intensitySymbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
 
 // MARK: menu items
@@ -70,7 +70,7 @@ struct IntensityTile: View {
     var body: some View {
         let current = Intensity(rawValue: level)?.title ?? ""
         VStack(alignment: .leading, spacing: 8) {
-            (Text("Quantidade").font(.callout.weight(.medium)) + Text(" · \(current)").font(.caption).foregroundColor(.secondary))
+            (Text(tr("Quantidade")).font(.callout.weight(.medium)) + Text(" · \(current)").font(.caption).foregroundColor(.secondary))
                 .accessibilityHidden(true)
             HStack(spacing: 6) {
                 ForEach(Intensity.allCases, id: \.rawValue) { v in
@@ -93,14 +93,14 @@ struct IntensityTile: View {
         .frame(width: menuWidth)
         .environment(\.controlActiveState, .key)   // menu windows are never key: without this the controls draw dimmed
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Quantidade")
+        .accessibilityLabel(tr("Quantidade"))
         .accessibilityValue(current)
         .accessibilityAdjustableAction { d in level = steppedLevel(level, by: d == .increment ? 1 : -1) }
     }
 }
 
 /// Shown wherever the Accessibility permission is offered; the app works fully without it.
-let axHint = "Opcional. Sem ela, não há neve no Dock e as janelas são seguidas com menos rapidez."
+var axHint: String { tr("Opcional. Sem ela, não há neve no Dock e as janelas são seguidas com menos rapidez.") }
 
 /// Top item of the menu: the Nevar switch with the live status under it.
 struct MenuHeader: View {
@@ -111,16 +111,16 @@ struct MenuHeader: View {
             PrefBinding(.enabled, env.store) { on in
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Nevar").font(.headline)
+                        Text(tr("Nevar")).font(.headline)
                         Text(panel.status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Toggle("Nevar", isOn: on).labelsHidden().toggleStyle(.switch)
+                    Toggle(tr("Nevar"), isOn: on).labelsHidden().toggleStyle(.switch)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { on.wrappedValue.toggle() }
             }
-            if panel.metalMissing { Label("Este Mac não consegue desenhar a neve. Ela fica desativada.", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            if panel.metalMissing { Label(tr("Este Mac não consegue desenhar a neve. Ela fica desativada."), systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
         .padding(.horizontal, 14).padding(.vertical, 6)
         .frame(width: menuWidth)
@@ -133,7 +133,7 @@ private struct AccessRow: View {
     let ask: () -> Void
     var body: some View {
         if panel.axMissing {
-            Button(action: ask) { Label("Permitir Acessibilidade…", systemImage: "hand.raised") }
+            Button(action: ask) { Label(tr("Permitir Acessibilidade…"), systemImage: "hand.raised") }
             Text(axHint).font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -143,7 +143,7 @@ private struct MusicNote: View {
     @ObservedObject var panel: PanelState
     let reduceMotion: Bool
     var body: some View {
-        let t = !MusicTap.supported ? "Precisa do macOS 14.2 ou mais novo." : reduceMotion ? "Desativado porque Reduzir movimento está ligado." : panel.musicNote
+        let t = !MusicTap.supported ? tr("Precisa do macOS 14.2 ou mais novo.") : reduceMotion ? tr("Desativado porque Reduzir movimento está ligado.") : panel.musicNote
         if !t.isEmpty { Text(t).font(.caption).foregroundStyle(.secondary) }
     }
 }
@@ -151,7 +151,8 @@ private struct MusicNote: View {
 // MARK: window (full)
 
 enum SettingsTab: String, CaseIterable {
-    case geral = "Geral", bonecos = "Bonecos", desempenho = "Desempenho", sistema = "Sistema"
+    case geral, bonecos, desempenho, sistema
+    var title: String { [tr("Geral"), tr("Bonecos"), tr("Desempenho"), tr("Sistema")][Self.allCases.firstIndex(of: self)!] }
     var symbol: String { ["slider.horizontal.3", "figure.walk", "speedometer", "gearshape.2"][Self.allCases.firstIndex(of: self)!] }
     static let key = "settingsTab"
 }
@@ -175,32 +176,32 @@ struct SettingsPane: View {
                 if !panel.screens.isEmpty {
                     PrefBinding(.economy, env.store) { eco in
                         Picker(selection: eco.wrappedValue ? .constant("main") : env.target) {
-                            Text("Todas as telas").tag("all")
-                            Text("Tela principal").tag("main")
+                            Text(tr("Todas as telas")).tag("all")
+                            Text(tr("Tela principal")).tag("main")
                             ForEach(panel.screens, id: \.id) { Text($0.title).tag($0.id) }
-                        } label: { Label("Nevar em", systemImage: "display") }
+                        } label: { Label(tr("Nevar em"), systemImage: "display") }
                             .disabled(eco.wrappedValue)
-                        if eco.wrappedValue { Text("O modo econômico usa só a tela principal.").font(.caption).foregroundStyle(.secondary) }
+                        if eco.wrappedValue { Text(tr("O modo econômico usa só a tela principal.")).font(.caption).foregroundStyle(.secondary) }
                     }
                 }
                 PrefBinding(.behindWindows, env.store) { behind in
                     VStack(alignment: .leading, spacing: 2) {
-                        Toggle(isOn: behind) { Label("Atrás das janelas", systemImage: "square.stack.3d.down.right") }
-                        Text("A neve cai só no chão, por trás das janelas.").font(.caption).foregroundStyle(.secondary)
+                        Toggle(isOn: behind) { Label(tr("Atrás das janelas"), systemImage: "square.stack.3d.down.right") }
+                        Text(tr("A neve cai só no chão, por trás das janelas.")).font(.caption).foregroundStyle(.secondary)
                     }
                     PrefBinding(.behindLarge, env.store) { b in
                         VStack(alignment: .leading, spacing: 2) {
-                            Toggle(isOn: b) { Label("Atrás de janelas grandes", systemImage: "macwindow") }.disabled(behind.wrappedValue)
-                            Text(behind.wrappedValue ? "Já incluído em Atrás das janelas." : "Os flocos passam por trás de janelas grandes.").font(.caption).foregroundStyle(.secondary)
+                            Toggle(isOn: b) { Label(tr("Atrás de janelas grandes"), systemImage: "macwindow") }.disabled(behind.wrappedValue)
+                            Text(behind.wrappedValue ? tr("Já incluído em Atrás das janelas.") : tr("Os flocos passam por trás de janelas grandes.")).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
-                Text("Dica: segure ⌥ e arraste a neve para fazer bolas.").font(.caption).foregroundStyle(.secondary)
+                Text(tr("Dica: segure ⌥ e arraste a neve para fazer bolas.")).font(.caption).foregroundStyle(.secondary)
             case .bonecos:
                 ForEach(figures, id: \.pref) { toggle($0) }
             case .desempenho:
                 toggle(economyOpt)
-                Text("20–30 fps, só a tela principal, menos efeitos.").font(.caption).foregroundStyle(.secondary)
+                Text(tr("20–30 fps, só a tela principal, menos efeitos.")).font(.caption).foregroundStyle(.secondary)
                 toggle(ambientOpt)
                 PrefBinding(.music, env.store) { b in
                     Toggle(isOn: b) { Label(musicOpt.title, systemImage: musicOpt.symbol) }
@@ -209,24 +210,24 @@ struct SettingsPane: View {
                 MusicNote(panel: env.panel, reduceMotion: panel.reduceMotion)
                 PrefBinding(.pointerPush, env.store) { b in
                     VStack(alignment: .leading, spacing: 2) {
-                        Toggle(isOn: b) { Label("Cursor empurra os flocos", systemImage: "cursorarrow.motionlines") }
-                        Text("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.").font(.caption).foregroundStyle(.secondary)
+                        Toggle(isOn: b) { Label(tr("Cursor empurra os flocos"), systemImage: "cursorarrow.motionlines") }
+                        Text(tr("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if panel.reduceMotion { toggle(stillOpt) }
             case .sistema:
                 PrefBinding(.showInCaptures, env.store) { b in
                     VStack(alignment: .leading, spacing: 2) {
-                        Toggle(isOn: b) { Label("Aparecer em capturas de tela", systemImage: "camera") }
-                        Text("Nem todo app de captura respeita esta opção.").font(.caption).foregroundStyle(.secondary)
+                        Toggle(isOn: b) { Label(tr("Aparecer em capturas de tela"), systemImage: "camera") }
+                        Text(tr("Nem todo app de captura respeita esta opção.")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 AccessRow(panel: env.panel, ask: env.askAccessibility)
                 if !env.isDev {
-                    Toggle(isOn: Binding(get: { panel.loginOn }, set: { env.login.wrappedValue = $0 })) { Label("Abrir ao iniciar sessão", systemImage: "power.circle") }
+                    Toggle(isOn: Binding(get: { panel.loginOn }, set: { env.login.wrappedValue = $0 })) { Label(tr("Abrir ao iniciar sessão"), systemImage: "power.circle") }
                     if !panel.loginNote.isEmpty { Text(panel.loginNote).font(.caption).foregroundStyle(.secondary) }
                 }
-                Button("Restaurar padrões", action: env.restoreDefaults)
+                Button(tr("Restaurar padrões"), action: env.restoreDefaults)
             }
         }
         .formStyle(.grouped)
@@ -242,7 +243,7 @@ private struct IntensityPicker: View {
     var body: some View {
         Picker(selection: $level) {
             ForEach(Intensity.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-        } label: { Label("Quantidade", systemImage: "snowflake") }
+        } label: { Label(tr("Quantidade"), systemImage: "snowflake") }
             .pickerStyle(.segmented)
     }
 }

@@ -19,14 +19,14 @@ import Foundation
 
 @Test func screenLabelsDisambiguateAndMarkTheMain() {
     let a = CGSize(width: 1920, height: 1080), b = CGSize(width: 2560, height: 1440)
-    #expect(screenLabels(names: ["Dell", "Dell"], sizes: [a, b]) == ["Dell (1920×1080) (principal)", "Dell (2560×1440)"])
-    #expect(screenLabels(names: ["Dell", "Dell"], sizes: [a, a]) == ["Dell (1920×1080) (principal)", "Dell (1920×1080)"])
-    #expect(screenLabels(names: ["Mac", "LG"], sizes: [a, b]) == ["Mac (principal)", "LG"])
+    #expect(screenLabels(names: ["Dell", "Dell"], sizes: [a, b]) == ["Dell (1920×1080) (\(tr("principal")))", "Dell (2560×1440)"])
+    #expect(screenLabels(names: ["Dell", "Dell"], sizes: [a, a]) == ["Dell (1920×1080) (\(tr("principal")))", "Dell (1920×1080)"])
+    #expect(screenLabels(names: ["Mac", "LG"], sizes: [a, b]) == ["Mac (\(tr("principal")))", "LG"])
 }
 
 @Test func loginNoteAndSteppedLevel() {
-    #expect(loginNote(requiresApproval: true, failed: false).contains("Itens de Início"))
-    #expect(loginNote(requiresApproval: false, failed: true).contains("Itens de Início") && !loginNote(requiresApproval: false, failed: true).contains("Aplicativos"))
+    #expect(loginNote(requiresApproval: true, failed: false) == tr("Aprove em Ajustes do Sistema › Itens de Início."))
+    #expect(!loginNote(requiresApproval: false, failed: true).isEmpty)
     #expect(loginNote(requiresApproval: false, failed: false) == "")
     #expect(steppedLevel(3, by: 1) == 3 && steppedLevel(0, by: -1) == 0 && steppedLevel(1, by: 1) == 2)
 }

@@ -14,6 +14,8 @@
 
 App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Metal, sem dependências externas. A neve cai por cima de tudo, se acumula nas janelas, no Dock e no pé da tela, e nunca bloqueia os seus cliques.
 
+O app segue o idioma do sistema (português ou inglês).
+
 ## 🎿 Como brincar
 
 1. **Deixe nevar.** Em alguns instantes a neve forma pilhas no topo das janelas, no Dock e no pé da tela.

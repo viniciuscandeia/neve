@@ -250,10 +250,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let want = flag(.music) && !reduceMotion && !calm && sceneKind == nil
         if want, !MusicTap.shared.running {
             // The cause is unknown (permission, output device or aggregate creation can all fail): say so neutrally.
-            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? "Sem acesso ao áudio. Veja Privacidade e Segurança e a saída de som." : "Precisa do macOS 14.2 ou mais novo.")
+            panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? tr("Sem acesso ao áudio. Veja Privacidade e Segurança e a saída de som.") : tr("Precisa do macOS 14.2 ou mais novo."))
         } else if !want {
             MusicTap.shared.stop()
-            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? (economy ? "Pausada: modo econômico ligado." : "Pausada: Modo de Baixo Consumo ligado.") : "" }
+            if MusicTap.supported { panel.musicNote = flag(.music) && calm && !reduceMotion && sceneKind == nil ? (economy ? tr("Pausada: modo econômico ligado.") : tr("Pausada: Modo de Baixo Consumo ligado.")) : "" }
         }
     }
 
@@ -300,12 +300,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addItem(custom(MenuHeader(panel: panel, env: env)))
         m.addItem(custom(IntensityTile(store: ud)))
         m.addItem(.separator())
-        m.addItem(item("Limpar neve", "eraser", #selector(clearSnow), "k", self))
-        let a = item("Ajustes…", "gearshape", #selector(showSettingsWindow), ",", self)
+        m.addItem(item(tr("Limpar neve"), "eraser", #selector(clearSnow), "k", self))
+        let a = item(tr("Ajustes…"), "gearshape", #selector(showSettingsWindow), ",", self)
         ajustesItem = a
         m.addItem(a)
         m.addItem(.separator())
-        m.addItem(item("Sair", "power", #selector(NSApplication.terminate(_:)), "q", NSApp))
+        m.addItem(item(tr("Sair"), "power", #selector(NSApplication.terminate(_:)), "q", NSApp))
         return m
     }
 
@@ -320,11 +320,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menuViews.forEach { $0.frame.size = $0.fittingSize }
         let dot = panel.axMissing && !ud.bool(forKey: Self.ajustesOpenedKey)
         if dot {
-            let t = NSMutableAttributedString(string: "Ajustes… ")
+            let t = NSMutableAttributedString(string: tr("Ajustes…") + " ")
             t.append(NSAttributedString(string: "●", attributes: [.foregroundColor: NSColor.systemOrange, .font: NSFont.systemFont(ofSize: 8)]))
             ajustesItem?.attributedTitle = t
         } else { ajustesItem?.attributedTitle = nil }
-        ajustesItem?.setAccessibilityHelp(dot ? "Falta a permissão de Acessibilidade, opcional." : nil)
+        ajustesItem?.setAccessibilityHelp(dot ? tr("Falta a permissão de Acessibilidade, opcional.") : nil)
     }
 
     /// Just enough of a main menu for the Ajustes window (and any key window): ⌘, ⌘W ⌘Q and the Edit commands. An accessory app shows it only while active.
@@ -341,20 +341,20 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             main.addItem(withTitle: title, action: nil, keyEquivalent: "").submenu = m
         }
         submenu("Neve") { m in
-            add(m, "Ajustes…", #selector(showSettingsWindow), ",", target: self)
+            add(m, tr("Ajustes…"), #selector(showSettingsWindow), ",", target: self)
             m.addItem(.separator())
-            add(m, "Sair do Neve", #selector(NSApplication.terminate(_:)), "q", target: NSApp)
+            add(m, tr("Sair"), #selector(NSApplication.terminate(_:)), "q", target: NSApp)
         }
-        submenu("Editar") { m in
-            add(m, "Desfazer", Selector(("undo:")), "z")
-            add(m, "Refazer", Selector(("redo:")), "z", [.command, .shift])
+        submenu(tr("Editar")) { m in
+            add(m, tr("Desfazer"), Selector(("undo:")), "z")
+            add(m, tr("Refazer"), Selector(("redo:")), "z", [.command, .shift])
             m.addItem(.separator())
-            add(m, "Recortar", #selector(NSText.cut(_:)), "x")
-            add(m, "Copiar", #selector(NSText.copy(_:)), "c")
-            add(m, "Colar", #selector(NSText.paste(_:)), "v")
-            add(m, "Selecionar Tudo", #selector(NSText.selectAll(_:)), "a")
+            add(m, tr("Recortar"), #selector(NSText.cut(_:)), "x")
+            add(m, tr("Copiar"), #selector(NSText.copy(_:)), "c")
+            add(m, tr("Colar"), #selector(NSText.paste(_:)), "v")
+            add(m, tr("Selecionar Tudo"), #selector(NSText.selectAll(_:)), "a")
         }
-        submenu("Janela") { m in add(m, "Fechar", #selector(NSWindow.performClose(_:)), "w") }
+        submenu(tr("Janela")) { m in add(m, tr("Fechar"), #selector(NSWindow.performClose(_:)), "w") }
         NSApp.mainMenu = main
     }
 
@@ -370,7 +370,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let host = NSHostingController(rootView: SettingsPane(env: env, tab: t))
                 host.sizingOptions = .preferredContentSize
                 let ti = NSTabViewItem(viewController: host)
-                ti.label = t.rawValue
+                ti.label = t.title
                 ti.image = NSImage(systemSymbolName: t.symbol, accessibilityDescription: nil)
                 tabs.addTabViewItem(ti)
             }
@@ -441,16 +441,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Read-only summary derived from the existing pause reasons; refreshed live while the panel is open.
     private var statusText: String {
         let level = Intensity.saved(ud)
-        if !enabled { return "Desligado" }
-        if screensAsleep || sessionInactive || userIdle { return "Pausado: sem atividade" }
-        if hot { return "Pausado: Mac esquentou" }
-        if fullscreenIdle { return "Pausado: app em tela cheia" }
-        if NSScreen.screens.isEmpty { return "Pausado: sem tela" }
-        if overlays.isEmpty { return panel.metalMissing ? "Sem neve: este Mac não consegue desenhá-la" : "Pausado" }
-        var s = "Nevando · \(level.title)"
+        if !enabled { return tr("Desligado") }
+        if screensAsleep || sessionInactive || userIdle { return tr("Pausado: sem atividade") }
+        if hot { return tr("Pausado: Mac esquentou") }
+        if fullscreenIdle { return tr("Pausado: app em tela cheia") }
+        if NSScreen.screens.isEmpty { return tr("Pausado: sem tela") }
+        if overlays.isEmpty { return panel.metalMissing ? tr("Sem neve: este Mac não consegue desenhá-la") : tr("Pausado") }
+        var s = tr("Nevando · \(level.title)")
         // At most one modifier; the other modes are already visible as tiles.
-        if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" && !economy ? wantedScreens[0].localizedName : "tela principal") }
-        else if reduceMotion { s += " · movimento reduzido" }
+        if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" && !economy ? wantedScreens[0].localizedName : tr("tela principal")) }
+        else if reduceMotion { s += " · " + tr("movimento reduzido") }
         return s
     }
 
@@ -460,8 +460,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem?.button?.setAccessibilityValue(panel.status)
         let paused = !enabled || !polling || userIdle || fullscreenIdle
         // Off: slashed flake; paused: the flake in a circle (a distinct template symbol instead of dimming); else the plain flake.
-        let img = !enabled ? (Self.symbol("snowflake.slash", "Neve — desligada") ?? Self.symbol("snowflake", "Neve — desligada"))
-            : paused ? (Self.symbol("snowflake.circle", "Neve — pausada") ?? Self.symbol("snowflake", "Neve — pausada"))
+        let img = !enabled ? (Self.symbol("snowflake.slash", tr("Neve — desligada")) ?? Self.symbol("snowflake", tr("Neve — desligada")))
+            : paused ? (Self.symbol("snowflake.circle", tr("Neve — pausada")) ?? Self.symbol("snowflake", tr("Neve — pausada")))
             : Self.symbol("snowflake", "Neve")
         statusItem?.button?.image = img
         panel.axMissing = !AXIsProcessTrusted()
