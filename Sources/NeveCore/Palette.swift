@@ -10,7 +10,8 @@ public struct Tone: Sendable {
 /// The one snow palette: shaders (flake, clump, slab, pile) and Rig prims (balls, splats, icicles) all read these. Every colour has both appearances;
 /// shaders blend with a `dark` uniform (see `msl`), the CPU side with `Tone.now`. Neutral shadows, one light from above (`light`).
 public enum Palette {
-    // Appearance blend. Written on the main thread, read by the render thread: a torn Float is harmless.
+    // Appearance blend. Every access is on the main thread (AppearanceWatcher, and the display link is added to the main run loop, so tick / encode run there);
+    // `nonisolated(unsafe)` only because NeveCore is nonisolated (tests, pure code).
     nonisolated(unsafe) public static var dark: Float = 0
     nonisolated(unsafe) public static var darkTarget: Float = 0
     nonisolated(unsafe) private static var lastTick: Double = 0
@@ -22,10 +23,14 @@ public enum Palette {
     }
     /// Advances `dark` by the time since the last call (absolute clock, so several overlays ticking in one frame do not speed it up).
     public static func tick(now: Double) {
-        let dt = lastTick == 0 ? 1 : Float(min(max(now - lastTick, 0), 1))
+        let dt = stepDt(now: now, last: lastTick)
         lastTick = now
         dark = blend(dark, toward: darkTarget, dt: dt)
     }
+    /// Pure: seconds to advance. Capped at 1/30 s (a first tick or one after a long pause is one ordinary frame), so a blend is always a smooth ~0.5 s, never a pop.
+    public static func stepDt(now: Double, last: Double) -> Float { last == 0 ? 1.0 / 60 : Float(min(max(now - last, 0), 1.0 / 30)) }
+    /// The overlays were asleep: the next tick is a first tick.
+    public static func resetClock() { lastTick = 0 }
     public static var isBlending: Bool { dark != darkTarget }
 
     /// Light from above, a touch from the left: the same vector for piles, clumps, chunks, figures and icicles (x right, y up).

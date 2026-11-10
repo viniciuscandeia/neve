@@ -375,6 +375,11 @@ extension SnowField {
             }
             }
         }
+        else if id == 0, !dockCarry.isEmpty {   // the Dock pile carried across a screen resize
+            for b in pile.heights.indices where c0 + b >= 0 && c0 + b < dockCarry.count { pile.heights[b] = pile.visible[b] ? min(dockCarry[c0 + b], pile.limit(b)) : dockCarry[c0 + b] }
+            pile.shown = pile.heights
+        }
+        if id == 0 { dockCarry = [] }
         return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel, radius: Float(min(radius, frame.width / 2, frame.height / 2)),
                        cover: rects[0..<front].filter { $0.intersects(frame) })
     }

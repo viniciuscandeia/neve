@@ -41,15 +41,43 @@ private func rw(_ n: Int, pid: Int = 10, layer: Int = 0, owner: String? = nil, _
     #expect(out.map(\.occluderOnly) == [true, false])
 }
 
-@Test func missionControlIsADockWindowAboveLayer20CoveringAScreen() {
+@Test func missionControlIsTwoOrMoreFullScreenDockWindowsAtLayers18To20() {
     let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
     let second = CGRect(x: 1440, y: 0, width: 1920, height: 1080)
-    func dock(_ l: Int, _ b: CGRect, _ o: String = "Dock") -> RawWindow { RawWindow(number: 1, pid: 1, layer: l, bounds: b, owner: o) }
-    #expect(isMissionControl([dock(25, screen)], screens: [screen]))
-    #expect(!isMissionControl([dock(20, screen)], screens: [screen]))          // the Dock bar's own layer
-    #expect(!isMissionControl([dock(25, CGRect(x: 0, y: 0, width: 400, height: 80))], screens: [screen]))
-    #expect(!isMissionControl([dock(25, screen, "Finder")], screens: [screen]))
-    #expect(isMissionControl([dock(25, second)], screens: [screen, second]))
+    func dock(_ l: Int, _ b: CGRect, alpha: Double = 1, _ o: String = "Dock") -> RawWindow { RawWindow(number: 1, pid: 1, layer: l, alpha: alpha, bounds: b, owner: o) }
+    let wall = dock(-2147483624, screen)
+    #expect(!isMissionControl([wall, dock(20, screen)], screens: [screen]))                          // normal: the "Dock" window only
+    #expect(!isMissionControl([dock(20, screen)], screens: [screen]))
+    #expect(isMissionControl([wall, dock(20, screen), dock(20, screen), dock(18, screen)], screens: [screen]))   // Mission Control open
+    #expect(!isMissionControl([dock(20, screen), dock(20, screen, alpha: 0.1)], screens: [screen]))
+    #expect(!isMissionControl([dock(20, screen), dock(19, CGRect(x: 0, y: 0, width: 400, height: 80))], screens: [screen]))
+    #expect(!isMissionControl([dock(20, screen), dock(18, screen, "Finder")], screens: [screen]))
+    #expect(isMissionControl([dock(20, second), dock(18, second)], screens: [screen, second]))
+}
+
+@Test func missionControlGateDebouncesReleasesAndHasAWatchdog() {
+    var g = MissionControlGate()
+    func r(_ p: Bool, _ t: Double) -> Bool { g.read(p, now: t) }
+    #expect(!r(true, 0) && g.pending)          // one positive read: not yet
+    #expect(!r(false, 0.25) && !g.pending)     // a blip resets
+    #expect(!r(true, 1)); #expect(r(true, 1.25))
+    #expect(r(true, 5))
+    #expect(!r(false, 5.25))                   // first negative read releases
+    _ = r(true, 6); #expect(r(true, 6.25))
+    #expect(!r(true, 6.25 + 15.5))             // watchdog
+    #expect(!r(true, 30)); #expect(!r(true, 31))   // stays off while the reads stay positive
+    _ = r(false, 32)
+    _ = r(true, 33); #expect(r(true, 33.25))
+    g.release()                                // Esc / click
+    #expect(!g.active); #expect(!r(true, 34))
+}
+
+@Test func fullScreenOverlayOfAnotherAppIsIgnored() {
+    let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    let dimmer = rw(1, pid: 50, layer: 8, screen), nearly = rw(2, pid: 50, layer: 8, CGRect(x: 0, y: 0, width: 1440, height: 850)), panel = rw(3, pid: 51, layer: 8)
+    #expect(classifyWindows([dimmer, nearly, panel], screens: [screen]) == [.ignore, .ignore, .surface])
+    #expect(classifyWindows([dimmer], screens: []) == [.surface])
+    #expect(filterWindows([dimmer, panel, rw(4, pid: 52, layer: 0, screen)], primaryHeight: 900, screens: [screen]).map(\.number) == [3, 4])   // layer 0 is untouched
 }
 
 @Test func occluderOnlyWindowsCarryNoSnow() {
@@ -89,4 +117,24 @@ private func rw(_ n: Int, pid: Int = 10, layer: Int = 0, owner: String? = nil, _
     f.update(windows: [win(1, 100, 200, 300, 200)], now: 1)   // the window returns
     let back = f.surfaces.first { $0.id == 1 }!.pile.heights
     #expect(back == win1)
+}
+
+@Test func resizeCarriesTheDockPile() {
+    let f = makeField()
+    f.update(windows: [win(0, 300, 10, 600, 60)])
+    pileUp(f, id: 0)
+    let before = f.surfaces.first { $0.id == 0 }!.pile.heights.reduce(0, +)
+    #expect(before > 0)
+    f.resize(size: CGSize(width: 2000, height: 1000), origin: .zero, groundY: 100, visibleTop: 980)
+    f.update(windows: [win(0, 600, 10, 1200, 60)], now: 1)
+    let after = f.surfaces.first { $0.id == 0 }!.pile.heights
+    #expect(after.reduce(0, +) > 0)
+}
+
+@Test func menuShortcutAndScreensaverPredicates() {
+    #expect(optionClickOpensSettings(option: true, control: false, mouse: true))
+    #expect(!optionClickOpensSettings(option: true, control: true, mouse: true))    // VoiceOver
+    #expect(!optionClickOpensSettings(option: true, control: false, mouse: false))  // keyboard open
+    #expect(!optionClickOpensSettings(option: false, control: false, mouse: true))
+    #expect(isScreensaverEngine("com.apple.ScreenSaver.Engine") && !isScreensaverEngine(nil) && !isScreensaverEngine("com.apple.finder"))
 }

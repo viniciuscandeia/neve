@@ -16,7 +16,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var screensAsleep = false
     private var sessionInactive = false
     private var screensaver = false   // the screen saver covers the displays: nothing to draw under it
-    private var missionControl = false, mcTimer: Timer?
+    private var missionControl = false, mcTimer: Timer?, mcGate = MissionControlGate(), mcMonitor: Any?
+    private var ssTimer: Timer?   // screen saver on: polling is off, so this slow timer notices it ended without a didstop
     private let panel = PanelState()
     private var loggedMetal = false
     private var mouseDown = false
@@ -98,8 +99,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watcher.onSettle = { [weak self] in self?.settlePoll() }       // minimize / hide animations outlast the burst: one more read afterwards
         syncOverlays()
         // First launch only: open the menu once so the icon is found (no dialog).
-        if neveInstance == nil, sceneKind == nil, takeOnce("firstLaunchMenuShown", in: ud) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.statusItem?.button?.performClick(nil) }
+        if neveInstance == nil, sceneKind == nil, !ud.bool(forKey: "firstLaunchMenuShown") { firstRunMenu(triesLeft: 20) }
+    }
+
+    /// The status button's window may not be placed yet at launch: look every 0.1 s for up to ~2 s; the once-flag is consumed only when the click fires.
+    private func firstRunMenu(triesLeft: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let b = self.statusItem?.button, let w = b.window, w.frame.width > 0, w.frame.height > 0 {
+                    if takeOnce("firstLaunchMenuShown", in: self.ud) { b.performClick(nil) }
+                } else if triesLeft > 1 { self.firstRunMenu(triesLeft: triesLeft - 1) }
+            }
         }
     }
 
@@ -311,19 +322,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Refresh before it shows: live status, item heights (the status text may wrap), the Accessibility dot. ⌥-click skips the menu for Ajustes.
     func menuWillOpen(_ menu: NSMenu) {
-        if NSEvent.modifierFlags.contains(.option) {
+        let mods = NSEvent.modifierFlags, evType = NSApp.currentEvent?.type
+        let mouse = evType == .leftMouseDown || evType == .leftMouseUp || evType == .rightMouseDown || evType == .rightMouseUp || evType == .otherMouseDown || evType == .otherMouseUp
+        if optionClickOpensSettings(option: mods.contains(.option), control: mods.contains(.control), mouse: mouse) {   // ⌃⌥ is VoiceOver's modifier pair
             menu.cancelTracking()
             DispatchQueue.main.async { [weak self] in self?.showSettingsWindow() }
             return
         }
         updateStatus()
         menuViews.forEach { $0.frame.size = $0.fittingSize }
+        ajustesItem?.attributedTitle = nil
+        let plainTitle = ajustesItem?.title
         let dot = panel.axMissing && !ud.bool(forKey: Self.ajustesOpenedKey)
         if dot {
             let t = NSMutableAttributedString(string: "Ajustes… ")
             t.append(NSAttributedString(string: "●", attributes: [.foregroundColor: NSColor.systemOrange, .font: NSFont.systemFont(ofSize: 8)]))
             ajustesItem?.attributedTitle = t
         } else { ajustesItem?.attributedTitle = nil }
+        ajustesItem?.setAccessibilityLabel(dot ? plainTitle : nil)   // VoiceOver must not read the "●"
         ajustesItem?.setAccessibilityHelp(dot ? "Falta a permissão de Acessibilidade, opcional." : nil)
     }
 
@@ -561,9 +577,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let raw = read.windows
-        if read.missionControl != missionControl { missionControl = read.missionControl; for o in overlays { o.setSuspended(missionControl) } }
+        let mcNow = mcGate.read(read.missionControl, now: CACurrentMediaTime())   // 2 consecutive reads to suspend, 1 to release, 15 s watchdog
+        setMissionControl(mcNow)
         mcTimer?.invalidate(); mcTimer = nil
-        if missionControl {   // the window list is the Exposé layout: leave the piles alone and look again in 0.25 s (the only poll while it lasts)
+        if missionControl || mcGate.pending {   // the window list is the Exposé layout: leave the piles alone and look again in 0.25 s (the only poll while it lasts)
             sched.didRead(ok: true, changed: false, frameMoved: false)
             mcTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.requestPoll() } }
             return
@@ -594,6 +611,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             scheduleTimers()
             if !fullscreenIdle { refreshDock() }
         }
+    }
+
+    private func setMissionControl(_ on: Bool) {
+        guard on != missionControl else { return }
+        missionControl = on
+        for o in overlays { o.setSuspended(on) }
+        if on, mcMonitor == nil {   // Esc / a click closes Mission Control: release at once instead of waiting for the next read
+            mcMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
+                guard e.type == .leftMouseDown || e.keyCode == 53 else { return }
+                MainActor.assumeIsolated { self?.mcGate.release(); self?.setMissionControl(false); self?.requestPoll() }
+            }
+        } else if !on, let m = mcMonitor { NSEvent.removeMonitor(m); mcMonitor = nil }
     }
 
     // MARK: scene mode (NEVE_SCENE)
@@ -742,17 +771,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
-    @objc private func screensaverStarted() { screensaver = true; refreshRunState() }
+    @objc private func screensaverStarted() {
+        screensaver = true
+        ssTimer?.invalidate()
+        ssTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in   // didstop can be missed; the engine process is the truth
+            MainActor.assumeIsolated {
+                if !NSWorkspace.shared.runningApplications.contains(where: { isScreensaverEngine($0.bundleIdentifier) }) { self?.screensaverStopped() }
+            }
+        }
+        refreshRunState()
+    }
     /// Back from the screen saver: the snow starts gently again (like after the idle pause), piles kept.
     @objc private func screensaverStopped() {
+        ssTimer?.invalidate(); ssTimer = nil
+        guard screensaver else { return }
         screensaver = false
         for o in overlays { o.resume() }
         refreshRunState()
     }
     @objc private func screensSlept() { screensAsleep = true; refreshRunState() }
-    @objc private func screensWoke() { screensAsleep = false; refreshRunState() }
+    @objc private func screensWoke() { screensAsleep = false; screensaverStopped(); refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
-    @objc private func sessionBecameActive() { sessionInactive = false; refreshRunState() }
+    @objc private func sessionBecameActive() { sessionInactive = false; screensaverStopped(); refreshRunState() }
     @objc private func accessibilityChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.reduceMotion = reduceMotion

@@ -5,7 +5,15 @@ import Metal
 /// Follows the system appearance: `Palette.darkTarget` is 1 under Dark Aqua; the overlays ease `Palette.dark` toward it.
 @MainActor enum AppearanceWatcher {
     private static var started = false
-    static func read() { Palette.darkTarget = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 1 : 0 }
+    static let changed = Notification.Name("NeveAppearanceTargetChanged")
+    /// A new target wakes every overlay (a still-paused one would never run the blend) and restarts the palette clock: the fade is a smooth 0.5 s.
+    static func read() {
+        let t: Float = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 1 : 0
+        guard t != Palette.darkTarget else { return }
+        Palette.darkTarget = t
+        Palette.resetClock()
+        NotificationCenter.default.post(name: changed, object: nil)
+    }
     static func start() {
         guard !started else { return }
         started = true

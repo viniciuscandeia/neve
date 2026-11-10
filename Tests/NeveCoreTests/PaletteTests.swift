@@ -31,4 +31,12 @@ import Testing
         #expect(1 / Tuning.glintLife <= 3)
         #expect(Tuning.maxGlints * 6 * 6 < 400)
     }
+    @Test func tickStepIsCappedSoTheBlendNeverPops() {
+        #expect(Palette.stepDt(now: 10, last: 0) == 1.0 / 60)
+        #expect(Palette.stepDt(now: 10, last: 9) == 1.0 / 30)       // after a long sleep: one short frame
+        #expect(Palette.stepDt(now: 10.01, last: 10) < 1.0 / 30 && Palette.stepDt(now: 9, last: 10) == 0)
+        var d: Float = 0
+        for _ in 0..<2 { d = Palette.blend(d, toward: 1, dt: Palette.stepDt(now: 100, last: 1)) }
+        #expect(d < 0.2)
+    }
 }

@@ -57,10 +57,8 @@ enum Perf {
         private var winStart: UInt64 = 0, cpuStart = 0.0
         private let gpu = OSAllocatedUnfairLock(initialState: (sum: 0.0, count: 0))
         private let hitch = OSAllocatedUnfairLock(initialState: HitchMeter())
-        private var target = 0.0   // target timestamp of the tick being drawn (main thread)
-        func setTarget(_ t: Double) { target = t }
-        /// Presented handler of the frame's drawable (any thread).
-        func presented(_ at: Double) { let t = target; hitch.withLock { $0.present(at: at, target: t) } }
+        /// Presented handler of the frame's drawable (any thread); `target` is the tick's own target timestamp, captured when it was encoded.
+        func presented(_ at: Double, target: Double) { hitch.withLock { $0.present(at: at, target: target) } }
         init(label: String) { self.label = label }
 
         func add(_ s: Slot, _ t0: UInt64) { stat[s.rawValue].add(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- t0) }
