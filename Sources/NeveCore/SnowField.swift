@@ -21,10 +21,10 @@ struct Stashed {
 }
 
 public final class SnowField {
-    public let size: SIMD2<Float>
-    let origin: CGPoint
-    private(set) var groundY: Float
-    private(set) var visibleTop: Float
+    public internal(set) var size: SIMD2<Float>
+    var origin: CGPoint
+    var groundY: Float
+    var visibleTop: Float
     var boundsDirty = false
     var dragOnlyRebuild = true   // false (tests): every snapshot rebuilds all surfaces
     public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
@@ -61,7 +61,7 @@ public final class SnowField {
     var bankLevel: (l: Float, r: Float) = (Tuning.groundMaxHeight, Tuning.groundMaxHeight), bankT: Float = 0   // ground bank ramp level per Dock side, DockPush.swift
     /// Window moved (same size) in the last poll: the overlay may slide its pile layer with the mouse until the next poll.
     public internal(set) var draggingID: Int?
-    let numCols: Int
+    var numCols: Int
     let invBin = 1 / Tuning.binWidth
     let skyCount: Int      // sky pool size; the rest of `flakes` is background
     var nearLimit = 0       // sky slots [0, nearLimit) respawn as out-of-focus `.near` flakes (set each step)

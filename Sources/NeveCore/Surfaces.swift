@@ -97,6 +97,7 @@ extension SnowField {
         if only != nil { for r in [dockPrev, dockTarget?.offsetBy(dx: -ox, dy: -oy)] { if let r { reach = reach.map { $0.union(r) } ?? r } } }
         for (i, r) in rects.enumerated() {
             let id = windows[i].number, edge = Float(r.maxY)
+            if windows[i].occluderOnly { continue }   // hides piles and ground (it stays in `rects`) but carries no snow
             // Dock bar (id 0) sits below the visible frame's bottom; hidden/offscreen Dock has minY < 0.
             let lowOk = id == 0 ? r.minY >= -1 : edge > groundY
             guard lowOk, visibleTop - edge >= Tuning.minHeadroom, r.maxX > 0, r.minX < CGFloat(size.x) else { continue }
@@ -118,21 +119,8 @@ extension SnowField {
         let gone = old.filter { $0.id > 0 && spaceSwitchIDs.contains($0.id) }
         if !gone.isEmpty {   // Space switch: windows that went away are not closed, they are elsewhere: snow (and frost) set aside, balls and figures on them go, no debris
             let ids = Set(gone.map(\.id))
-            let onIt = { (sid: Int?) in sid.map { ids.contains($0) } ?? false }
-            let keptFigures = dropWindowFigures(on: ids)
-            let keptBalls = balls.filter { $0.state != .held && onIt($0.surfaceID) }   // resting stacks go with the window (a falling ball has no surface)
-            balls.removeAll { $0.state != .held && onIt($0.surfaceID) }
-            let keptGifts = giftState.gifts.filter { onIt($0.surface) }
-            giftState.gifts.removeAll { onIt($0.surface) }
-            for s in gone {
-                let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }
-                guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty else { continue }
-                stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id },
-                                      overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
-                                      topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
-            }
+            stashAway(gone)
             spaceSwitchIDs.subtract(gone.map(\.id))
-            while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
             old.removeAll { ids.contains($0.id) }
         }
         for s in old { spawned += knockOff(s) }   // gone surfaces
@@ -148,6 +136,25 @@ extension SnowField {
         restoreStashed()
         pilesDirty = true
         return spawned
+    }
+
+    /// Windows that went away without closing (another Space, a resolution change): their snow (and frost) is set aside by id, balls / figures / gifts on them go with it (kept in the stash), no debris.
+    func stashAway(_ gone: [Surface]) {
+        let ids = Set(gone.map(\.id))
+        let onIt = { (sid: Int?) in sid.map { ids.contains($0) } ?? false }
+        let keptFigures = dropWindowFigures(on: ids)
+        let keptBalls = balls.filter { $0.state != .held && onIt($0.surfaceID) }   // resting stacks go with the window (a falling ball has no surface)
+        balls.removeAll { $0.state != .held && onIt($0.surfaceID) }
+        let keptGifts = giftState.gifts.filter { onIt($0.surface) }
+        giftState.gifts.removeAll { onIt($0.surface) }
+        for s in gone {
+            let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }
+            guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty else { continue }
+            stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id },
+                                  overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
+                                  topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
+        }
+        while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
     }
 
     /// What stood on a window that came back from another Space returns with it (shifted by the window's move), without the transports above knocking it off.

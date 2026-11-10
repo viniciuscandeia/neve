@@ -48,6 +48,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let pass = MTLRenderPassDescriptor()   // reused every frame; only the texture changes
     private var run = false, fullscreen = false   // run: the controller's single decision (enabled, awake, not hot, user active)
     private var occluded = false
+    private var suspended = false, dipGen = 0   // Mission Control hides the snow (fade 0.2 s); a Space change dips it
+    private var pressing = false              // between our own mouseDown and mouseUp: stays interactive so the release is ours
     private var lowPower = false
     private var contrast: Float = 0
     private var reduceMotion = false
@@ -59,7 +61,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var fastUntil: CFTimeInterval = 0, slow = false   // adaptive fps: 30 fps once nothing fast happened for FrameRate.holdDown
     private var groundY: CGFloat
     private var visibleTop: CGFloat
-    private let frame: CGRect, scale: CGFloat
+    private var frame: CGRect, scale: CGFloat
     private var fps: Int
     // MARK: maximized window (Coverage.swift)
     private let root = CALayer()                       // screen-local coordinates: bounds.origin = the live rect's origin while shrunk
@@ -69,7 +71,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var coverPause = false                     // `covered`: nothing live, paused like a fullscreen app
     private var coverActive = false                    // compact mode entered (until the exit ramp ends)
     private var occStrength: Float = 0, occTarget: Float = 0   // flake occluders 0...1
-    private var occ = [SIMD4<Float>](repeating: .zero, count: 9)   // 4 rects hiding every flake, 4 hiding background flakes, strength
+    private var occ = [SIMD4<Float>](repeating: .zero, count: 17)   // 4 rects hiding every flake, 4 hiding background flakes, 8 hard rects (floating panels), strength
     private var shrunk: CGRect?                        // live rect applied to panel + Metal layer (screen-local); nil = whole screen
 
     init?(screen: NSScreen, prefs: OverlayPrefs) {
@@ -114,7 +116,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         super.init()
         view.onDown = { [weak self] e in MainActor.assumeIsolated { self?.mouseDown(e) } }
         view.onDrag = { [weak self] e in MainActor.assumeIsolated { self?.mouseDragged(e) } }
-        view.onUp = { [weak self] e in MainActor.assumeIsolated { self?.mouseUp(throwing: e.timestamp - (self?.lastDragTime ?? 0) < 0.08) } }
+        view.onUp = { [weak self] e in MainActor.assumeIsolated { self?.pressing = false; self?.mouseUp(throwing: e.timestamp - (self?.lastDragTime ?? 0) < 0.08) } }
 
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -170,16 +172,67 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// True when the screen's frame or scale differs from creation: needs a full rebuild.
     func screenChanged(_ s: NSScreen) -> Bool { s.frame != frame || s.backingScaleFactor != scale }
 
-    /// A display that came back after a short drop: take the fresh NSScreen object (same frame / scale).
-    /// The park may have outlived pref / frame-rate / bounds changes: the display link is rebuilt by present(), the window re-framed.
+    /// The same display with the same or a new frame / scale (resolution change, arrangement change, a display that came back after a short drop):
+    /// piles and figures are kept (window piles come back with their windows). The park may have outlived pref / frame-rate / bounds changes:
+    /// the display link is rebuilt by present(), the window re-framed.
     func adopt(_ s: NSScreen, prefs p: OverlayPrefs) {
         screen = s
         link?.invalidate(); link = nil
-        window.setFrame(s.frame, display: false)
+        if screenChanged(s) { rebuildGeometry(s) } else { window.setFrame(s.frame, display: false) }
         apply(p)
         fps = s.maximumFramesPerSecond
         refreshBounds()
         present()
+    }
+
+    private func rebuildGeometry(_ s: NSScreen) {
+        let f = s.frame, v = s.visibleFrame
+        frame = f
+        scale = s.backingScaleFactor
+        groundY = sceneKind == nil ? v.minY - f.minY : 0
+        visibleTop = v.maxY - f.minY
+        shrunk = nil; liveLocal = nil; coverKey = nil
+        cover = CompactState(); coverFraction = 0; coverActive = false; coverPause = false; occStrength = 0; occTarget = 0
+        for i in occ.indices { occ[i] = .zero }
+        held = nil; pressing = false; lastCursor = nil; shiftID = nil; shift = .zero
+        lastWindows = []; pileSeen = -1; pileForce = true
+        field.resize(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop)
+        field.setLive(nil)
+        let bounds = CGRect(origin: .zero, size: f.size)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.setFrame(f, display: false)
+        view.frame = bounds
+        root.frame = bounds; root.bounds = bounds
+        metalLayer.contentsScale = scale
+        metalLayer.frame = bounds
+        metalLayer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        CATransaction.commit()
+        wake()
+    }
+
+    private func fadeAlpha(_ a: CGFloat, _ duration: Double) {
+        guard window.isVisible else { return }
+        NSAnimationContext.runAnimationGroup { $0.duration = duration; window.animator().alphaValue = a }
+    }
+
+    /// Mission Control: the snow fades out in 0.2 s and back in once it is over.
+    func setSuspended(_ on: Bool) {
+        guard on != suspended else { return }
+        suspended = on
+        dipGen += 1
+        fadeAlpha(on ? 0 : 1, 0.2)
+    }
+
+    /// Space change: the snow dips to nothing in 0.12 s and returns after ~0.5 s, so restored piles appear under the fade.
+    func dip() {
+        guard window.isVisible, !suspended else { return }
+        dipGen += 1
+        let g = dipGen
+        fadeAlpha(0, 0.12)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            MainActor.assumeIsolated { guard let self, self.dipGen == g, !self.suspended, self.showing else { return }; self.fadeAlpha(1, 0.4) }
+        }
     }
 
     /// Dock / menu bar moved (visibleFrame changed, frame unchanged): updated in place, piles kept.
@@ -267,12 +320,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     private func computeCover(_ windows: [WindowInfo], _ vis: CGRect) {
         let o = frame.origin
-        let rects = windows.filter { $0.number != 0 && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
+        let rects = windows.filter { $0.number != 0 && !$0.occluderOnly && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
         let c = coverage(of: rects, in: vis)
         coverFraction = c.fraction;
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
-        for i in 0..<8 { occ[i] = .zero }
+        for i in 0..<16 { occ[i] = .zero }
+        if !prefs.behind { for (i, w) in windows.filter({ $0.occluderOnly && $0.frame.intersects(frame) }).prefix(8).enumerated() { occ[8 + i] = box(w.frame) } }
         for (i, r) in rects.prefix(4).enumerated() { occ[i] = box(r) }
         if prefs.behindLarge {
             let big = rects.filter { $0.width * $0.height >= 0.35 * vis.width * vis.height }
@@ -441,19 +495,19 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Presents only when `run` and not under a fullscreen app. Piles are kept while paused.
     private func present() {
         guard run && !fullscreen && !coverPause else {
-            guard window.isVisible else { link?.isPaused = true; return }
+            guard window.isVisible else { pauseLink(); return }
             // Fade out (~0.4s), then hide; the link keeps running meanwhile. Fullscreen/thermal hides are the same path.
             NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; window.animator().alphaValue = 0 }) { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self, !(self.run && !self.fullscreen && !self.coverPause) else { return }
-                    self.link?.isPaused = true
+                    self.pauseLink()
                     self.window.orderOut(nil)
                 }
             }
             return
         }
         if !window.isVisible { occluded = false; window.alphaValue = 0; window.orderFrontRegardless(); lastTimestamp = 0 }
-        if window.alphaValue < 1 { NSAnimationContext.runAnimationGroup { $0.duration = 0.4; window.animator().alphaValue = 1 } }
+        if window.alphaValue < 1, !suspended { NSAnimationContext.runAnimationGroup { $0.duration = 0.4; window.animator().alphaValue = 1 } }
         if link == nil {
             // CAMetalDisplayLink hands over a ready drawable, so the main thread never blocks in nextDrawable.
             let l = CAMetalDisplayLink(metalLayer: metalLayer)
@@ -463,7 +517,14 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             l.add(to: .main, forMode: .common)
             link = l
         }
-        link?.isPaused = occluded
+        if occluded { pauseLink() } else { link?.isPaused = false }
+    }
+
+    /// Every pause path: the display link stops and the panel stops catching the mouse (a paused tick can no longer let go of it).
+    private func pauseLink() {
+        link?.isPaused = true
+        pressing = false
+        if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
     }
 
     /// Only meaningful while ordered in (orderOut also reports "not visible"); pauses the link, never the window.
@@ -471,7 +532,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         guard window.isVisible else { return }
         occluded = !window.occlusionState.contains(.visible)
         if !occluded { lastTimestamp = 0 }
-        link?.isPaused = occluded
+        if occluded { pauseLink() } else { link?.isPaused = false }
     }
 
     func teardown() {
@@ -516,7 +577,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let here = CGPoint(x: cursor.x - o.x, y: cursor.y - o.y)
         if held != nil, !option { mouseUp() }   // ⌥ released mid-drag: let go
         // Interactive only where there is snow or a snowball (and ⌥ is down): everywhere else clicks pass through.
-        let interactive = held != nil || (option && frame.contains(cursor) && field.hitTest(point: here))
+        let buttons = NSEvent.pressedMouseButtons
+        if buttons == 0 { pressing = false }   // the release was lost (another app took it): never stay interactive
+        let interactive = held != nil || pressing || (option && buttons == 0 && showing && !suspended && frame.contains(cursor) && field.hitTest(point: here))
         if window.ignoresMouseEvents == interactive { window.ignoresMouseEvents = !interactive }
         let prevCursor = lastCursor ?? cursor
         let sweeping = !resumed && !still && lastCursor != nil && prevCursor != cursor && NSEvent.pressedMouseButtons & 1 == 0 && !option && held == nil
@@ -554,7 +617,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
-        if still, !dirty, field.pilesSettled, !Palette.isBlending { stillPaused = true; link?.isPaused = true }
+        if still, !dirty, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }
     }
 
     /// Tells the simulation today's date (sleigh frequency); re-read every 10 minutes so a Mac left on rolls over into December.
@@ -566,7 +629,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func mouseDown(_ e: NSEvent) {
-        guard e.modifierFlags.contains(.option) || NSEvent.modifierFlags.contains(.option) else { return }
+        pressing = true
+        guard e.modifierFlags.contains(.option) else { return }
         let p = local(e)
         if field.openGift(at: p) { return }
         held = field.pickSnowball(at: p) ?? field.scoop(at: p)
@@ -692,7 +756,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             var streakDt = frameDt * Self.slowmo   // streak length = distance per SIM frame, so it matches the (slowed) velocity
             enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
-            occ[8] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, Palette.dark, 0)   // rects 0-3 only mask with strength > 0; 4-7 always
+            occ[16] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, (8..<16).contains { occ[$0].z > occ[$0].x } ? 1 : 0, Palette.dark)   // rects 0-3 only mask with strength > 0; 4-7 always
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()
