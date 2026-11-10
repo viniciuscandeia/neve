@@ -15,6 +15,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var idleWatch = false   // the timer is the 1 Hz fullscreen watch
     private var screensAsleep = false
     private var sessionInactive = false
+    private var screensaver = false   // the screen saver covers the displays: nothing to draw under it
+    private var missionControl = false, mcTimer: Timer?
     private let panel = PanelState()
     private var loggedMetal = false
     private var mouseDown = false
@@ -79,6 +81,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         let dn = DistributedNotificationCenter.default()   // a screen lock keeps the displays awake and the session active
         dn.addObserver(self, selector: #selector(sessionResigned), name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
         dn.addObserver(self, selector: #selector(sessionBecameActive), name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
+        dn.addObserver(self, selector: #selector(screensaverStarted), name: NSNotification.Name("com.apple.screensaver.didstart"), object: nil)
+        dn.addObserver(self, selector: #selector(screensaverStopped), name: NSNotification.Name("com.apple.screensaver.didstop"), object: nil)
         ws.addObserver(self, selector: #selector(screensWoke), name: NSWorkspace.screensDidWakeNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionBecameActive), name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
         ws.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
@@ -139,18 +143,19 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func syncOverlays() {
         let wanted = wantedScreens
         let present = Set(NSScreen.screens.map(displayID))
-        func stale(_ o: Overlay) -> Bool { !wanted.contains { displayID($0) == displayID(o.screen) && !o.screenChanged($0) } }
+        func stale(_ o: Overlay) -> Bool { !wanted.contains { displayID($0) == displayID(o.screen) } }   // a new frame / scale is adopted in place (piles kept)
         for o in overlays.filter(stale) {
             let id = displayID(o.screen)
             if present.contains(id) { o.teardown() }   // a pref / frame change: as before
             else { o.setRun(false); parked[id]?.teardown(); parked[id] = o }   // unplugged: wait before throwing the piles away
         }
         overlays.removeAll(where: stale)
+        for o in overlays { if let s = wanted.first(where: { displayID($0) == displayID(o.screen) }), o.screenChanged(s) { o.adopt(s, prefs: overlayPrefs) } }
         applyPrefs()
         var missing = wanted.filter { s in !overlays.contains { displayID($0.screen) == displayID(s) } }
         for s in missing {
             guard let p = parked.removeValue(forKey: displayID(s)) else { continue }
-            if p.screenChanged(s) { p.teardown() } else { p.adopt(s, prefs: overlayPrefs); overlays.append(p) }
+            p.adopt(s, prefs: overlayPrefs); overlays.append(p)
         }
         missing.removeAll { s in overlays.contains { displayID($0.screen) == displayID(s) } }
         for (id, p) in parked where present.contains(id) { p.teardown(); parked[id] = nil }   // back but unwanted
@@ -400,7 +405,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.reply(toApplicationShouldTerminate: true)
     }
 
-    private var running: Bool { (enabled || outroing) && !screensAsleep && !sessionInactive }
+    private var running: Bool { (enabled || outroing) && !screensAsleep && !sessionInactive && !screensaver }
     /// The one source of truth for thermal throttling.
     private var hot: Bool { ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue }
     /// Polling timers only run while snow is actually shown (not disabled / asleep / locked / hot).
@@ -531,8 +536,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
         let mouse = NSEvent.mouseLocation   // read with the bounds: the drag offset is the mouse's move over the SAME interval as the window's
-        guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber) + [menuPanel?.windowNumber].compactMap { $0 })) else {
+        guard let read = readWindowsAndMC(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber) + [menuPanel?.windowNumber].compactMap { $0 })) else {
             sched.didRead(ok: false, changed: false, frameMoved: false)   // CGWindowList failed: keep the last snapshot, retry shortly
+            return
+        }
+        let raw = read.windows
+        if read.missionControl != missionControl { missionControl = read.missionControl; for o in overlays { o.setSuspended(missionControl) } }
+        mcTimer?.invalidate(); mcTimer = nil
+        if missionControl {   // the window list is the Exposé layout: leave the piles alone and look again in 0.25 s (the only poll while it lasts)
+            sched.didRead(ok: true, changed: false, frameMoved: false)
+            mcTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.requestPoll() } }
             return
         }
         // Drag bookkeeping: the target is the one window whose move matches the mouse's over this same interval.
@@ -635,7 +648,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Switching Spaces hides every window at once: drop piles silently instead of an avalanche.
     @objc private func spaceChanged() {
-        for o in overlays { o.dropPiles(); o.markStale() }   // keep the ground pile; window surfaces take no snow until the next snapshot
+        for o in overlays { o.dropPiles(); o.markStale(); o.dip() }   // keep the ground pile; window surfaces take no snow until the next snapshot
         transitionPoll()
     }
 
@@ -710,6 +723,13 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
     @objc private func powerOff() { shuttingDown = true }
+    @objc private func screensaverStarted() { screensaver = true; refreshRunState() }
+    /// Back from the screen saver: the snow starts gently again (like after the idle pause), piles kept.
+    @objc private func screensaverStopped() {
+        screensaver = false
+        for o in overlays { o.resume() }
+        refreshRunState()
+    }
     @objc private func screensSlept() { screensAsleep = true; refreshRunState() }
     @objc private func screensWoke() { screensAsleep = false; refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }

@@ -98,7 +98,7 @@ Clicar no ícone abre um painel enxuto, sem seta, com só esses itens; ele fecha
 - **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
 - **Desempenho:** *Modo econômico* (20 fps com a neve calma, 30 com movimento; só a tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso), *Neve dança com a música*, *Cursor empurra os flocos* e *Neve parada* (só com Reduzir Movimento).
-- **Sistema:** *Aparecer em capturas de tela*, *Permitir Acessibilidade…* (só quando falta) e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
+- **Sistema:** *Aparecer em capturas de tela* (no macOS 15.4 ou mais novo o ScreenCaptureKit ignora esta opção, então alguns apps de captura mostram a neve mesmo assim), *Permitir Acessibilidade…* (só quando falta) e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
 - **Dicas:** atalhos e gestos (⌥-clique, varrer o cursor sobre presentes, ⌥ parado perto de um boneco).
 
 ## 🔥 Instalação
@@ -152,7 +152,7 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 - Apenas os limites (bounds) das janelas são lidos. Não exige Gravação de Tela.
 - A permissão de Acessibilidade é opcional e serve para dois ganhos: a neve acumular no Dock (Dock na parte inferior da tela) e o acompanhamento de janelas guiado por eventos, mais rápido que o poll. Sem ela, todo o resto funciona (as janelas são lidas por poll).
 - *Neve dança com a música* pede a permissão de Gravação de Áudio do Sistema: o áudio é analisado na hora (volume, grave e batidas), nada é gravado nem sai do Mac. Desligar a opção encerra a captura.
-- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; alguns gravadores podem mostrá-la). Ative **Aparecer em capturas de tela** para incluí-la.
+- Por padrão a neve tenta ficar fora de capturas e compartilhamentos (funciona com as ferramentas do sistema; no macOS 15.4 ou mais novo o ScreenCaptureKit ignora a opção, então alguns apps de captura e gravadores mostram a neve de qualquer jeito). Ative **Aparecer em capturas de tela** para incluí-la.
 
 ## ♿ Acessibilidade
 

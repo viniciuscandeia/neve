@@ -86,8 +86,8 @@ extension SnowField {
     /// to the front top). Side by side: gap <= 6 and tops within 4 join both ends. Rects are front to back.
     func computeSeams(rects: [CGRect], windows: [WindowInfo]) -> [SeamLink] {
         var out: [SeamLink] = []
-        for i in rects.indices where windows[i].number != 0 {
-            for k in (i + 1)..<max(rects.count, i + 1) where windows[k].number != 0 {
+        for i in rects.indices where windows[i].number != 0 && !windows[i].occluderOnly {
+            for k in (i + 1)..<max(rects.count, i + 1) where windows[k].number != 0 && !windows[k].occluderOnly {
                 let f = rects[i], b = rects[k], step = f.maxY - b.maxY
                 if step > 1, step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
                     if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: windows[k].number, right: windows[i].number, rightSupported: true)) }

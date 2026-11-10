@@ -5,8 +5,9 @@ public struct WindowInfo: Equatable, Sendable {
     public let number: Int     // 0 = Dock bar
     public let frame: CGRect   // global AppKit coordinates (y up)
     public var radius: CGFloat = Tuning.defaultWindowRadius
-    public init(number: Int, frame: CGRect, radius: CGFloat = Tuning.defaultWindowRadius) {
-        self.number = number; self.frame = frame; self.radius = radius
+    public var occluderOnly = false   // a floating panel / HUD: hides piles and flakes but holds no snow of its own
+    public init(number: Int, frame: CGRect, radius: CGFloat = Tuning.defaultWindowRadius, occluderOnly: Bool = false) {
+        self.number = number; self.frame = frame; self.radius = radius; self.occluderOnly = occluderOnly
     }
 }
 
@@ -20,19 +21,22 @@ public struct RawWindow {
     public var number: Int?, pid: Int?, layer: Int?
     public var alpha: Double
     public var bounds: CGRect?   // CG coordinates
-    public init(number: Int?, pid: Int?, layer: Int?, alpha: Double = 1, bounds: CGRect?) {
-        self.number = number; self.pid = pid; self.layer = layer; self.alpha = alpha; self.bounds = bounds
+    public var owner: String?, title: String?   // owner name needs no permission; the title is empty without Screen Recording
+    public init(number: Int?, pid: Int?, layer: Int?, alpha: Double = 1, bounds: CGRect?, owner: String? = nil, title: String? = nil) {
+        self.number = number; self.pid = pid; self.layer = layer; self.alpha = alpha; self.bounds = bounds; self.owner = owner; self.title = title
     }
 }
 
-/// Keeps layer-0, visible (alpha > 0.3: a window fading out on close stops holding snow early), at-least-40x20 windows (Neve's own normal windows such as Ajustes included; only `exclude`, the overlay panels, is dropped); converts bounds to AppKit coordinates. Order preserved.
+/// Keeps layer-0 (plus other window levels, see `classifyWindows`: floating panels become surfaces or occluder-only), visible (alpha > 0.3: a window fading out on close stops holding snow early), at-least-40x20 windows (Neve's own normal windows such as Ajustes included; only `exclude`, the overlay panels, is dropped); converts bounds to AppKit coordinates. Order preserved.
 /// Scene mode (`NEVE_SCENE`): `scene` holds the window numbers of Neve's own scene windows; then ONLY those are kept (own pid or not),
 /// so the overlay and every other app stay out of the picture.
-public func filterWindows(_ raw: [RawWindow], exclude: Set<Int> = [], primaryHeight: CGFloat, radius: CGFloat = Tuning.defaultWindowRadius, scene: Set<Int>? = nil) -> [WindowInfo] {
-    raw.compactMap { w in
-        guard w.layer == 0, w.alpha > 0.3, let number = w.number, !exclude.contains(number), scene?.contains(number) ?? true, let r = w.bounds,
-              r.width >= 40, r.height >= 20 else { return nil }
-        return WindowInfo(number: number, frame: appKitFrame(fromCG: r, primaryHeight: primaryHeight), radius: radius)
+public func filterWindows(_ raw: [RawWindow], exclude: Set<Int> = [], primaryHeight: CGFloat, radius: CGFloat = Tuning.defaultWindowRadius, scene: Set<Int>? = nil, ownPID: Int? = nil) -> [WindowInfo] {
+    let kinds = classifyWindows(raw, ownPID: scene == nil ? ownPID : nil)   // scene mode: only the scene windows, no other levels
+    return raw.indices.compactMap { i in
+        let w = raw[i]
+        guard kinds[i] != .ignore, w.alpha > 0.3, let number = w.number, !exclude.contains(number), scene?.contains(number) ?? true, let r = w.bounds,
+              kinds[i] == .occluder || (r.width >= 40 && r.height >= 20) else { return nil }
+        return WindowInfo(number: number, frame: appKitFrame(fromCG: r, primaryHeight: primaryHeight), radius: radius, occluderOnly: kinds[i] == .occluder)
     }
 }
 
