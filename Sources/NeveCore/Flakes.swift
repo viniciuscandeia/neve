@@ -84,8 +84,12 @@ extension SnowField {
 
     func stepFlakes(dt: Float) {
         let gt = Float((time * 0.12).truncatingRemainder(dividingBy: 4096))   // gust clock (noise lattice wraps at 4096), once per call
-        let dn = Float((time * 0.05).truncatingRemainder(dividingBy: 4096))   // per-flake drift clock (lattice ~20 s)
+        let dn = Float((time * 0.05).truncatingRemainder(dividingBy: 4096)) * 6.2832   // per-flake drift clock (~20 s)
         let x0 = liveX0 - 10, w = liveX1 - liveX0 + 20
+        // The gust field depends on one diagonal coordinate s = 0.004x + 0.0025y: sample it once per step into a table.
+        let gs0 = (x0 - 60) * 0.004 + (-300) * 0.0025 + 33, gs1 = (x0 + w + 60) * 0.004 + (size.y + 300) * 0.0025 + 33
+        let gn = gustLUT.count - 1, gStep = max(1e-3, (gs1 - gs0) / Float(gn)), gInv = 1 / gStep
+        for k in 0...gn { gustLUT[k] = 1 + 0.6 * valueNoise(gs0 + Float(k) * gStep, gt) }
         nearLimit = calm || economy || lowPower ? 0 : Int((Float(skyLimit) * Tuning.nearFraction).rounded())   // off in the economy modes (still snow never steps)
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
         for n in 0..<(skyEnd + bgEnd) {
@@ -101,12 +105,17 @@ extension SnowField {
             if q, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             let p0 = f.pos
             // Frequency and amplitude drift slowly per flake (seeded noise); amplitude is cut near 0.2 Hz.
-            let sd = f.seed * 913
-            let omega = f.freq * (1 + 0.25 * valueNoise(dn, sd))
+            // Each sky flake drifts at its own slow rate and phase (one sin/cos pair); far background flakes keep their own constant sway.
+            var omega = f.freq, ampNow = f.amp
+            if f.kind != .background {
+                let dp = dn * (0.7 + 0.6 * f.seed) + f.seed * 40
+                omega *= 1 + 0.25 * sin(dp); ampNow *= 1 + 0.3 * cos(dp)
+            }
             f.phase += omega * dt
-            let ampNow = f.amp * (1 + 0.3 * valueNoise(dn, sd + 0.5 + 400)) * Self.bandGain(omega)
-            // Wind: a gust field (2D value noise over position and time, no travelling band); flakes relax toward it (heavier = slower to respond).
-            let gust = 1 + 0.6 * valueNoise(f.pos.x * 0.004 + f.pos.y * 0.0025 + 33, gt)
+            ampNow *= Self.bandGain(omega)
+            // Wind: a gust field (value noise over position and time, no travelling band); flakes relax toward it (heavier = slower to respond).
+            let gq = min(max((f.pos.x * 0.004 + f.pos.y * 0.0025 + 33 - gs0) * gInv, 0), Float(gn) - 0.001)
+            let gk = Int(gq), gust = gustLUT[gk] + (gustLUT[gk + 1] - gustLUT[gk]) * (gq - Float(gk))
             f.wv += (wind * gust * f.vx / Tuning.wind - f.wv) * min(1, dt / (0.4 + 0.25 * f.size))
             // Sway: two incommensurate sines (flutter) instead of one.
             let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)

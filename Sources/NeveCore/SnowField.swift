@@ -81,6 +81,7 @@ public final class SnowField {
     var time: Double = 0
     var windGain: Float = 8
     var wind: Float = 0
+    var gustLUT = [Float](repeating: 1, count: 129)   // gust along the diagonal coordinate, rebuilt once per step (one lerp per flake instead of a 2D noise)
     var windSlow: Float = 0   // wind relaxed over ~6 s: only sustained wind biases landings
     public var music = MusicInput.silent   // injected each frame by the app (Music.swift)
     var musicKick: Float = 0, musicDir: Float = 1, musicEdge = false, musicSway: Float = 1, musicGlint: Float = 1, musicBoost: Float = 1

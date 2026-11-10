@@ -107,8 +107,8 @@ private func maxSway(calm: Bool) -> Float {
 }
 
 @Test func calmModeReducesSwayToAQuarter() {
-    // |vx| <= 6 * 1.3 = 7.8 pt/s (calm: no wind) plus sway amplitude <= 25 * 0.25 = 6.25.
-    #expect(maxSway(calm: true) <= 7.8 + 6.25 + 0.01)
+    // |vx| <= 6 * 1.3 = 7.8 pt/s (calm: no wind) plus sway amplitude <= 25 * 1.3 (per-flake drift) * 0.25 = 8.125.
+    #expect(maxSway(calm: true) <= 7.8 + 8.125 + 0.01)
     #expect(maxSway(calm: false) > 20)
 }
 

@@ -5,14 +5,14 @@
 # Report: build/perf-report.md. Never touches the user's Neve (own dev bundle and defaults suite).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SECS=${SECS:-30}; RUNS=${RUNS:-2}; MAX_CPU=${MAX_CPU:-10}; MAX_HITCH=${MAX_HITCH:-5}; MAX_MEM=${MAX_MEM:-60}
+SECS=${SECS:-30}; RUNS=${RUNS:-2}; MAX_CPU=${MAX_CPU:-10}; MAX_HITCH=${MAX_HITCH:-5}; MAX_MEM=${MAX_MEM:-150}
 [ "${1:-}" = --quick ] && { SECS=15; RUNS=1; }
 NAME=perf-$(basename "$ROOT" | shasum | cut -c1-4)
 NEVE_DEV=$NAME "$ROOT/scripts/make-app.sh" >&2
 BIN="$ROOT/build/Neve-$NAME.app/Contents/MacOS/Neve-dev-$NAME"
 
 # name | perf.sh args | extra check (awk condition on fps / cpu / base = fps of the first scenario; empty = CPU budget only) | what the check means
-# Verdict also fails when hitch > MAX_HITCH ms/s (5) or memory > MAX_MEM MB (60).
+# Verdict also fails when hitch > MAX_HITCH ms/s (5) or memory > MAX_MEM MB (150: three full-screen drawables plus Metal are ~100 MB).
 # Optional 5th field: this scenario's own CPU limit. The Nevasca sweep is a worst case (cursor cutting through the piles nonstop for the whole run;
 # the snow it throws up keeps 60 fps), so it gets 11% instead of MAX_CPU.
 SCENARIOS=(
