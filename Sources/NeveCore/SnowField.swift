@@ -56,6 +56,7 @@ public final class SnowField {
     var offsets: [Int32]       // CSR: per column range into entries
     var entries: [Entry] = []
     var lastWindows: [WindowInfo] = []
+    var dockCarry: [Float] = []   // Resize.swift: Dock pile heights by (new) global column, waiting for the Dock surface to be rebuilt
     var dockTarget: CGRect?, dockCur: CGRect?, dockPrev: CGRect?   // DockPush.swift: read frame, animated frame, frame before this rebuild
     var dockSlump: Float = 0
     var bankLevel: (l: Float, r: Float) = (Tuning.groundMaxHeight, Tuning.groundMaxHeight), bankT: Float = 0   // ground bank ramp level per Dock side, DockPush.swift
@@ -250,7 +251,8 @@ public final class SnowField {
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         if !balls.isEmpty { balls.removeAll() }
         for i in surfaces.indices { surfaces[i].pile.empty() }
-        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []
+        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []; dockCarry = []
+        windSlow = 0; stashBack.removeAll()
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
         giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)

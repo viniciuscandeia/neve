@@ -51,6 +51,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var suspended = false, dipGen = 0   // Mission Control hides the snow (fade 0.2 s); a Space change dips it
     private var pressing = false              // between our own mouseDown and mouseUp: stays interactive so the release is ours
     private var lowPower = false
+    private var tickTarget = 0.0   // target timestamp of the tick being drawn
     private var contrast: Float = 0
     private var reduceMotion = false
     private var prefs: OverlayPrefs
@@ -150,6 +151,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        NotificationCenter.default.addObserver(self, selector: #selector(appearanceChanged), name: AppearanceWatcher.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
 
         window.setAccessibilityElement(false)   // decoration: VoiceOver must not announce it
@@ -221,7 +223,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         guard on != suspended else { return }
         suspended = on
         dipGen += 1
-        fadeAlpha(on ? 0 : 1, 0.2)
+        if on { fadeAlpha(0, 0.2) } else if showing { fadeAlpha(1, 0.2) }   // back only if the overlay should be showing (the condition dip() uses)
+        if on { pauseLink() } else { lastTimestamp = 0; wake(); if !occluded { link?.isPaused = !window.isVisible } }   // the link sleeps under Mission Control
     }
 
     /// Space change: the snow dips to nothing in 0.12 s and returns after ~0.5 s, so restored piles appear under the fade.
@@ -326,7 +329,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
         for i in 0..<16 { occ[i] = .zero }
-        if !prefs.behind { for (i, w) in windows.filter({ $0.occluderOnly && $0.frame.intersects(frame) }).prefix(8).enumerated() { occ[8 + i] = box(w.frame) } }
+        if !prefs.behind { for (i, w) in windows.filter({ $0.occluderOnly && $0.frame.intersects(frame) && $0.frame.width >= 4 && $0.frame.height >= 4 }).sorted(by: { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }).prefix(8).enumerated() { occ[8 + i] = box(w.frame) } }
         for (i, r) in rects.prefix(4).enumerated() { occ[i] = box(r) }
         if prefs.behindLarge {
             let big = rects.filter { $0.width * $0.height >= 0.35 * vis.width * vis.height }
@@ -405,7 +408,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         return CGPoint(x: p.x + o.x, y: p.y + o.y)
     }
 
-    func clear() { field.clear(); wake() }
+    func clear() { field.clear(); held = nil; pressing = false; wake() }
     func stage(_ s: Scenario) { field.stage(s); wake() }
     /// Scene mode: starts the script (after the scene windows are in the field) / seconds into its loop.
     func beginScene(_ k: SceneKind) { field.beginScene(k); wake() }
@@ -527,6 +530,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
     }
 
+    @objc private func appearanceChanged() { wake() }
+
     /// Only meaningful while ordered in (orderOut also reports "not visible"); pauses the link, never the window.
     @objc private func occlusionChanged() {
         guard window.isVisible else { return }
@@ -558,7 +563,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
-        perf?.bump(.ticks); perf?.setTarget(time)
+        perf?.bump(.ticks); tickTarget = time   // captured per frame at encode (the handler runs later, after newer ticks)
         guard window.isVisible else { perf?.bump(.hidden); return }
         dirty = false
         var t0 = Perf.now()
@@ -629,8 +634,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func mouseDown(_ e: NSEvent) {
+        guard e.modifierFlags.contains(.option) else { window.ignoresMouseEvents = true; return }   // not ours (⌥ let go meanwhile): hand the click back, post nothing
         pressing = true
-        guard e.modifierFlags.contains(.option) else { return }
         let p = local(e)
         if field.openGift(at: p) { return }
         held = field.pickSnowball(at: p) ?? field.scoop(at: p)
@@ -702,7 +707,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             return
         }
         let sp = Perf.signposter.beginInterval("encode"); defer { Perf.signposter.endInterval("encode", sp) }
-        if let m = perf { drawable.addPresentedHandler { m.presented($0.presentedTime) } }
+        if let m = perf { let tt = tickTarget; drawable.addPresentedHandler { m.presented($0.presentedTime, target: tt) } }
         let buffer = buffers[bufferIndex]
         bufferIndex = (bufferIndex + 1) % buffers.count
         var t0 = Perf.now()

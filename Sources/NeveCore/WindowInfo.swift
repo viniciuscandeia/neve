@@ -30,8 +30,8 @@ public struct RawWindow {
 /// Keeps layer-0 (plus other window levels, see `classifyWindows`: floating panels become surfaces or occluder-only), visible (alpha > 0.3: a window fading out on close stops holding snow early), at-least-40x20 windows (Neve's own normal windows such as Ajustes included; only `exclude`, the overlay panels, is dropped); converts bounds to AppKit coordinates. Order preserved.
 /// Scene mode (`NEVE_SCENE`): `scene` holds the window numbers of Neve's own scene windows; then ONLY those are kept (own pid or not),
 /// so the overlay and every other app stay out of the picture.
-public func filterWindows(_ raw: [RawWindow], exclude: Set<Int> = [], primaryHeight: CGFloat, radius: CGFloat = Tuning.defaultWindowRadius, scene: Set<Int>? = nil, ownPID: Int? = nil) -> [WindowInfo] {
-    let kinds = classifyWindows(raw, ownPID: scene == nil ? ownPID : nil)   // scene mode: only the scene windows, no other levels
+public func filterWindows(_ raw: [RawWindow], exclude: Set<Int> = [], primaryHeight: CGFloat, radius: CGFloat = Tuning.defaultWindowRadius, scene: Set<Int>? = nil, ownPID: Int? = nil, screens: [CGRect] = []) -> [WindowInfo] {
+    let kinds = classifyWindows(raw, ownPID: scene == nil ? ownPID : nil, screens: scene == nil ? screens : [])   // scene mode: only the scene windows, no other levels
     return raw.indices.compactMap { i in
         let w = raw[i]
         guard kinds[i] != .ignore, w.alpha > 0.3, let number = w.number, !exclude.contains(number), scene?.contains(number) ?? true, let r = w.bounds,
