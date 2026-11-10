@@ -109,7 +109,7 @@ extension SnowField {
             var omega = f.freq, ampNow = f.amp
             if f.kind != .background {
                 let dp = dn * (0.7 + 0.6 * f.seed) + f.seed * 40
-                omega *= 1 + 0.25 * sin(dp); ampNow *= 1 + 0.3 * cos(dp)
+                omega *= 1 + 0.25 * fastSin(dp); ampNow *= 1 + 0.3 * fastCos(dp)
             }
             f.phase += omega * dt
             ampNow *= Self.bandGain(omega)
@@ -120,7 +120,7 @@ extension SnowField {
             // Sway: two incommensurate sines (flutter) instead of one.
             let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)
             f.pos.x += (f.vx + f.wv + 0.69 * ampNow * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
-            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(1.37 * f.phase + f.seed * 6.2832 + 2))   // vertical flutter (own frequency, not locked to the sway), a bit more for big flakes
+            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * fastSin(1.37 * f.phase + f.seed * 6.2832 + 2))   // vertical flutter (own frequency, not locked to the sway), a bit more for big flakes
             if pointerPush, let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
                 if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {

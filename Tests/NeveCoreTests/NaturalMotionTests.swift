@@ -60,3 +60,9 @@ private func snow(_ seed: UInt64 = 5) -> SnowField {
     #expect(Tuning.interpolateCalm == false)
     #expect(FrameRate.interpAlpha(sinceStep: 0.5, stepPeriod: 1) == 0.5 && FrameRate.interpAlpha(sinceStep: 3, stepPeriod: 1) == 1)
 }
+
+@Test func fastSinStaysCloseToSin() {
+    var worst: Float = 0
+    for k in 0..<2000 { let x = Float(k) * 0.05 - 50; worst = max(worst, abs(fastSin(x) - sin(x)), abs(fastCos(x) - cos(x))) }
+    #expect(worst < 0.07)
+}
