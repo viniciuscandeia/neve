@@ -2,7 +2,7 @@
 # Usage: scripts/perf.sh [heavy|media|nevasca|max|still] [secs=60] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--runs N=3] [--bin PATH]
 # Before measuring, every other app is hidden and other Finder windows are minimised, so only the test windows hold snow; all of it is restored on exit (--keep-windows skips this).
 # --sweep moves the real cursor along the window tops and the ground during each run (put back after). --no-figures turns visitors / snowman / sleigh off (steadier frame rate).
-# Last line: SUMMARY key=value ... (medians over runs) for scripts/perf-suite.sh.
+# Last line: SUMMARY key=value ... (medians over runs) for scripts/perf-suite.sh: cpu idlew ws fps step flakesim gpu hitch (ms of lateness per s) power / wspower (Energy Impact, an estimate from top's POWER column) memMB (end) memGrowMB (end minus first sample).
 # Runs its own dev instance (never touches the user's Neve) under the screen lock. Measures Neve CPU / idle wakeups and WindowServer CPU (top) over N runs. See README "Desenvolvimento".
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -127,28 +127,35 @@ if pgrep -f "/Contents/MacOS/Neve( |$)" >/dev/null; then
   echo "WARNING: another Neve.app is running; WindowServer numbers include it. Not killed."
 fi
 echo "mode=$MODE secs=$SECS runs=$RUNS drag=$DRAG sweep=$SWEEP pointer=${POINTER:-default} nofig=$NOFIG bin=$BIN"
-: > "$TMP/runs"; : > "$TMP/app"
+: > "$TMP/runs"; : > "$TMP/app"; : > "$TMP/mem"
+# Memory footprint in MB (footprint if available, else RSS from ps).
+memmb() { local m; m=$(footprint "$1" 2>/dev/null | awk '/Footprint:/ { for (i = 1; i < NF; i++) if ($i == "Footprint:") { v = $(i+1); u = $(i+2); print (u == "KB" ? v/1024 : u == "GB" ? v*1024 : u == "B" ? v/1048576 : v); exit } }')
+  [ -n "$m" ] || m=$(ps -o rss= -p "$1" | awk '{ print $1 / 1024 }'); echo "${m:-0}"; }
 for r in $(seq 1 "$RUNS"); do
   mkdir -p "$ROOT/build/perf-logs"; LOG="$ROOT/build/perf-logs/$MODE$([ "$SWEEP" = 1 ] && echo -sweep || true)${POINTER:+-pointer-$POINTER}-run$r.log"; : > "$LOG"   # kept for inspection
   env "${ENVV[@]}" NEVE_PERF_LOG="$LOG" "$BIN" >/dev/null 2>&1 & NEVE_PID=$!
   sleep 10 # warm-up
   kill -0 "$NEVE_PID" 2>/dev/null || { echo "Neve exited early" >&2; exit 1; }
   [ -n "$SWEEP_BIN" ] && { "$SWEEP_BIN" "$((SECS + 2))" "${SEGS[@]}" & SWEEP_PID=$!; }
+  MEM0=$(memmb "$NEVE_PID")
   # top's first sample is an average since start, so take secs+1 and drop it.
-  top -l $((SECS + 1)) -s 1 -stats pid,command,cpu,idlew | awk -v p="$NEVE_PID" '
+  top -l $((SECS + 1)) -s 1 -stats pid,command,cpu,idlew,power | awk -v p="$NEVE_PID" '
     function st(x,c,  i,m,t,t2,y){ t=0; for(i=1;i<=c;i++){t+=x[i]; y[i]=x[i]}
       for(i=1;i<=c;i++)for(m=i+1;m<=c;m++)if(y[m]<y[i]){t2=y[i];y[i]=y[m];y[m]=t2}
       return sprintf("%.2f %.2f", c?t/c:0, c?((c%2)?y[(c+1)/2]:(y[c/2]+y[c/2+1])/2):0) }
+    function mn(x,c,  i,t){ t=0; for(i=1;i<=c;i++)t+=x[i]; return sprintf("%.2f", c?t/c:0) }
     $1=="PID" {s++; next}
-    s>=2 && $1==p {n[++a]=$3; w[a]=$4}
-    s>=2 && $2=="WindowServer" {ws[++b]=$3}
-    END { print st(n,a), st(w,a), st(ws,b) }' >> "$TMP/runs"
-  echo "run $r: $(tail -1 "$TMP/runs")  (neve cpu mean/med, idlew mean/med, WS cpu mean/med)"
+    s>=2 && $1==p {n[++a]=$3; w[a]=$4; pw[a]=$5}
+    s>=2 && $2=="WindowServer" {ws[++b]=$3; wp[b]=$5}
+    END { print st(n,a), st(w,a), st(ws,b), mn(pw,a), mn(wp,b) }' >> "$TMP/runs"
+  MEM1=$(memmb "$NEVE_PID")
+  echo "$MEM1 $MEM0" | awk '{ printf "%.1f %.1f\n", $1, $1 - $2 }' >> "$TMP/mem"
+  echo "run $r: $(tail -1 "$TMP/runs")  (neve cpu mean/med, idlew mean/med, WS cpu mean/med, neve power, WS power); mem $(tail -1 "$TMP/mem") MB (end, growth)"
   [ -n "$SWEEP_PID" ] && { wait "$SWEEP_PID" 2>/dev/null || true; SWEEP_PID=""; }
   # Frame rate and in-app costs over the measured part (lines after warm-up), averaged.
-  awk '/^\[screen/ { n++; for (i = 1; i <= NF; i++) { split($i, kv, "="); if (kv[1] == "ticks/s") f += kv[2]; if (kv[1] == "step") { sub("/f.*", "", kv[2]); st += kv[2] }
+  awk '/^\[screen/ { n++; for (i = 1; i <= NF; i++) { split($i, kv, "="); if (kv[1] == "ticks/s") f += kv[2]; if (kv[1] == "hitch") h += kv[2]; if (kv[1] == "step") { sub("/f.*", "", kv[2]); st += kv[2] }
        if (kv[1] == "flakesim") { sub("ms.*", "", kv[2]); fs += kv[2] }; if (kv[1] == "gpu") { sub("ms.*", "", kv[2]); g += kv[2] } } }
-       END { if (n) printf "%.1f %.3f %.3f %.3f\n", f / n, st / n, fs / n, g / n; else print "0 0 0 0" }' <(tail -n +3 "$LOG" 2>/dev/null) >> "$TMP/app"
+       END { if (n) printf "%.1f %.3f %.3f %.3f %.2f\n", f / n, st / n, fs / n, g / n, h / n; else print "0 0 0 0 0" }' <(tail -n +3 "$LOG" 2>/dev/null) >> "$TMP/app"
   if [ -s "$LOG" ]; then echo "  perf log:"; tail -n 3 "$LOG" | sed 's/^/    /'; else echo "  (no NEVE_PERF_LOG output)"; fi
   kill "$NEVE_PID" 2>/dev/null || true; wait "$NEVE_PID" 2>/dev/null || true; NEVE_PID=""
   sleep 1
@@ -164,8 +171,8 @@ awk 'function med(i,  j,k,t,y){ for(j=1;j<=N;j++)y[j]=v[i,j]
     for(i=1;i<=6;i++) printf "%-24s %10.2f %10.2f\n",nm[i],med(i),sd(i) }' "$TMP/runs"
 
 # One machine-readable line: medians over runs.
-paste -d' ' "$TMP/runs" "$TMP/app" | awk 'function med(i,  j,k,t,y){ for(j=1;j<=N;j++)y[j]=v[i,j]
+paste -d' ' "$TMP/runs" "$TMP/app" "$TMP/mem" | awk 'function med(i,  j,k,t,y){ for(j=1;j<=N;j++)y[j]=v[i,j]
     for(j=1;j<=N;j++)for(k=j+1;k<=N;k++)if(y[k]<y[j]){t=y[j];y[j]=y[k];y[k]=t}
     return (N%2)?y[(N+1)/2]:(y[N/2]+y[N/2+1])/2 }
-  { for(i=1;i<=10;i++) v[i,NR]=$i; N=NR }
-  END { printf "SUMMARY cpu=%.2f idlew=%.1f ws=%.2f fps=%.1f step=%.3f flakesim=%.3f gpu=%.3f\n", med(2), med(4), med(6), med(7), med(8), med(9), med(10) }'
+  { for(i=1;i<=15;i++) v[i,NR]=$i; N=NR }
+  END { printf "SUMMARY cpu=%.2f idlew=%.1f ws=%.2f fps=%.1f step=%.3f flakesim=%.3f gpu=%.3f hitch=%.2f power=%.1f wspower=%.1f memMB=%.1f memGrowMB=%.1f\n", med(2), med(4), med(6), med(9), med(10), med(11), med(12), med(13), med(7), med(8), med(14), med(15) }'

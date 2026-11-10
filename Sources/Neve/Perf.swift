@@ -14,6 +14,9 @@ enum Perf {
     nonisolated static let on = ProcessInfo.processInfo.environment["NEVE_PERF"] == "1"
     nonisolated static let logPath = ProcessInfo.processInfo.environment["NEVE_PERF_LOG"]
 
+    /// Signposts for Instruments (zero cost when no trace is recording).
+    nonisolated static let signposter = OSSignposter(subsystem: "io.github.viniciuscandeia.neve", category: "frame")
+
     @inline(__always) static func now() -> UInt64 { on ? clock_gettime_nsec_np(CLOCK_UPTIME_RAW) : 0 }
 
     /// Seconds clock injected into `SnowField.timer` (only when NEVE_PERF=1).
@@ -53,6 +56,11 @@ enum Perf {
         private var instances = 0, truncPrims = 0, truncPiles = 0, segs = 0
         private var winStart: UInt64 = 0, cpuStart = 0.0
         private let gpu = OSAllocatedUnfairLock(initialState: (sum: 0.0, count: 0))
+        private let hitch = OSAllocatedUnfairLock(initialState: HitchMeter())
+        private var target = 0.0   // target timestamp of the tick being drawn (main thread)
+        func setTarget(_ t: Double) { target = t }
+        /// Presented handler of the frame's drawable (any thread).
+        func presented(_ at: Double) { let t = target; hitch.withLock { $0.present(at: at, target: t) } }
         init(label: String) { self.label = label }
 
         func add(_ s: Slot, _ t0: UInt64) { stat[s.rawValue].add(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- t0) }
@@ -84,6 +92,7 @@ enum Perf {
             let wall = Double(t &- winStart) / 1e9
             let c = Self.cpu()
             let g = gpu.withLock { let v = $0; $0 = (0, 0); return v }
+            let h = hitch.withLock { $0.take(wall: wall) }
             let presents = count[Count.commits.rawValue], writes = count[Count.pileWrites.rawValue]
             var line = String(format: "[%@] ticks/s=%.1f presents/s=%.1f", label, Double(count[0]) / wall, Double(presents) / wall)
             var mainNs: UInt64 = 0
@@ -98,6 +107,7 @@ enum Perf {
             let fl = field.flakeSteps == 0 ? 0 : field.flakeSeconds / Double(field.flakeSteps) * 1000
             line += String(format: " flakesim=%.3fms(n=%d)", fl, field.flakeSteps)
             field.flakeSeconds = 0; field.flakeSteps = 0
+            line += String(format: " hitch=%.2f drops=%.2f", h.msPerSecond, h.dropsPerSecond)
             line += String(format: " gpu=%.3fms(n=%d) cpu=%.1f%% main=%.1f%%", g.count == 0 ? 0 : g.sum / Double(g.count) * 1000, g.count, (c - cpuStart) / wall * 100, Double(mainNs) / 1e9 / wall * 100)
             for (i, nm) in Self.countNames.enumerated() { line += " \(nm)=\(count[i])" }
             line += " busy=\(busyFrames)[" + BusyReasons.names.enumerated().map { "\($1.1)=\(busy[$0])" }.joined(separator: " ") + "]"
