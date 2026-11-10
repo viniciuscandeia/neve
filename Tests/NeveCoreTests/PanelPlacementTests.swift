@@ -1,14 +1,20 @@
 import Testing
 import CoreGraphics
+import Foundation
 @testable import NeveCore
 
-@Test func panelSitsBelowAnchorAndClampsToScreen() {
-    let vis = CGRect(x: 0, y: 0, width: 1000, height: 780), size = CGSize(width: 280, height: 200)
-    let mid = panelFrame(size: size, anchor: CGRect(x: 500, y: 780, width: 30, height: 24), visible: vis)
-    #expect(mid.minX == 500 && mid.maxY == 775)
-    let edge = panelFrame(size: size, anchor: CGRect(x: 980, y: 780, width: 30, height: 24), visible: vis)
-    #expect(edge.maxX == 996)
-    #expect(panelFrame(size: size, anchor: CGRect(x: -50, y: 780, width: 30, height: 24), visible: vis).minX == 4)
+@Test func takeOnceFiresOnce() {
+    let d = UserDefaults(suiteName: "neve.test.once")!; d.removePersistentDomain(forName: "neve.test.once")
+    #expect(takeOnce("firstRun", in: d)); #expect(!takeOnce("firstRun", in: d)); #expect(takeOnce("other", in: d))
+}
+
+@Test func restoreDefaultsReturnsToPrefDefaults() {
+    let d = UserDefaults(suiteName: "neve.test.reset")!; d.removePersistentDomain(forName: "neve.test.reset")
+    for p in Pref.allCases { d.set(!p.defaultValue, forKey: p.rawValue) }
+    d.set(3, forKey: Intensity.key); d.set("main", forKey: "snowOn")
+    restoreDefaults(in: d)
+    for p in Pref.allCases { #expect(OverlayPrefs({ d.object(forKey: $0.rawValue) as? Bool ?? $0.defaultValue }) == OverlayPrefs()) ; #expect(d.object(forKey: p.rawValue) == nil) }
+    #expect(d.object(forKey: Intensity.key) == nil && d.string(forKey: "snowOn") == nil)
 }
 
 @Test func screenLabelsDisambiguateAndMarkTheMain() {

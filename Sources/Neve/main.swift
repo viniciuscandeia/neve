@@ -8,7 +8,7 @@ import SwiftUI
 let neveInstance: String? = Bundle.main.object(forInfoDictionaryKey: "NeveInstance") as? String ?? ProcessInfo.processInfo.environment["NEVE_INSTANCE"]
 
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate {
+final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var overlays: [Overlay] = []
     private var timer: Timer?
@@ -31,10 +31,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// The one defaults store: a per-instance suite for dev builds, so concurrent instances never share prefs.
     private let ud = neveInstance.flatMap { UserDefaults(suiteName: "io.github.viniciuscandeia.neve.dev.\($0)") } ?? .standard
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
-    private var menuPanel: NSPanel?
-    private var panelTeardown: [() -> Void] = []
-    private var panelSize: NSKeyValueObservation?
-    private var menuHost: NSViewController?   // the hosting controller must outlive togglePopover: place() and the size observation need it while the panel is open
+    private var menuViews: [NSView] = []   // the custom-view items, re-fitted each time the menu opens
+    private var ajustesItem: NSMenuItem?
+    private var tabsObservation: NSKeyValueObservation?
+    private static let ajustesOpenedKey = "ajustesOpened"   // the Accessibility dot on Ajustes… shows until the window was opened once
     private var settingsWindow: NSWindow?
     private var intensitySnapshot = Intensity.media
     private var prefSnapshot: [Pref: Bool] = [:]
@@ -58,11 +58,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.symbol("snowflake", "Neve")
         if let n = neveInstance { item.button?.title = " \(n)"; item.button?.imagePosition = .imageLeft }
-        item.button?.target = self
-        item.button?.action = #selector(statusClicked)
-        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        updateStatus()
+        item.menu = buildMenu()   // a real menu for left and right click alike (HIG: a menu, not a popover)
         statusItem = item
+        updateStatus()
+        installMainMenu()
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
         prefSnapshot = prefValues()
@@ -73,7 +72,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         nc.addObserver(forName: UserDefaults.didChangeNotification, object: ud, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.syncPrefs() } }
         nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         nc.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.powerChanged() } }
-        ws.addObserver(self, selector: #selector(powerOff), name: NSWorkspace.willPowerOffNotification, object: nil)
         ws.addObserver(self, selector: #selector(screensSlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionResigned), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         let dn = DistributedNotificationCenter.default()   // a screen lock keeps the displays awake and the session active
@@ -86,10 +84,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         ws.addObserver(self, selector: #selector(refreshDock), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.refreshRunState() } }
         ws.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
-        // Global mouse monitors need no Accessibility permission; the poll scheduler samples at ~25 Hz while a window drag is under way (with or without AX).
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] e in
-            MainActor.assumeIsolated { self?.mouseEvent(e.type) }
-        }
         dock.onChange = { [weak self] in self?.refreshDock() }
         for n in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification,
                   NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification] {
@@ -99,6 +93,30 @@ final class AppController: NSObject, NSApplicationDelegate {
         watcher.onChange = { [weak self] in self?.transitionPoll() }   // an AX event is a transition: the window may still be animating
         watcher.onSettle = { [weak self] in self?.settlePoll() }       // minimize / hide animations outlast the burst: one more read afterwards
         syncOverlays()
+        // First launch only: open the menu once so the icon is found (no dialog).
+        if neveInstance == nil, sceneKind == nil, takeOnce("firstLaunchMenuShown", in: ud) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.statusItem?.button?.performClick(nil) }
+        }
+    }
+
+    /// Double-click in Finder while running: the menu-bar extra may be hidden or crowded out, so show Ajustes and make sure the item is visible.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        statusItem?.isVisible = true
+        showSettingsWindow()
+        return true
+    }
+
+    /// Global mouse monitors need no Accessibility permission. Installed only while snow is polling (the poll scheduler samples at ~25 Hz during a window drag).
+    private func syncMouseMonitor() {
+        if polling, mouseMonitor == nil {
+            mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] e in
+                MainActor.assumeIsolated { self?.mouseEvent(e.type) }
+            }
+        } else if !polling, let m = mouseMonitor {
+            NSEvent.removeMonitor(m)
+            mouseMonitor = nil
+            mouseDown = false
+        }
     }
 
     private func displayID(_ s: NSScreen) -> Int { (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0 }
@@ -250,95 +268,116 @@ final class AppController: NSObject, NSApplicationDelegate {
                            login: Binding(get: { [weak self] in self?.panel.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
                            openWindow: { [weak self] in self?.showSettingsWindow() },
                            panel: panel, askAccessibility: { [weak self] in self?.askAccessibility() },
-                           clear: { [weak self] in self?.clearSnow(); self?.closePanel() },
-                           quit: { NSApp.terminate(nil) })
+                           restoreDefaults: { [weak self] in if let ud = self?.ud { restoreDefaults(in: ud) } })
     }
 
-    /// Right-click / ctrl-click: a small menu (fallback if the panel fails); left click: the panel.
-    @objc private func statusClicked() {
-        guard let e = NSApp.currentEvent, e.type == .rightMouseUp || e.modifierFlags.contains(.control) else { return togglePopover() }
-        closePanel()
+    // MARK: menu (NSMenu on the status item; custom-view items for Nevar and Quantidade, the rest plain items)
+
+    private func buildMenu() -> NSMenu {
+        let env = settingsEnv()
         let m = NSMenu()
-        m.addItem(withTitle: "Ajustes…", action: #selector(showSettingsWindow), keyEquivalent: "").target = self
-        m.addItem(withTitle: "Sair do Neve", action: #selector(quitApp), keyEquivalent: "").target = self
-        statusItem?.menu = m
-        statusItem?.button?.performClick(nil)
-        statusItem?.menu = nil
+        m.delegate = self
+        m.autoenablesItems = false
+        func custom<V: View>(_ v: V) -> NSMenuItem {
+            let h = NSHostingView(rootView: v)
+            h.frame.size = h.fittingSize
+            menuViews.append(h)
+            let i = NSMenuItem()
+            i.view = h
+            return i
+        }
+        func item(_ title: String, _ symbol: String, _ sel: Selector, _ key: String, _ target: AnyObject) -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: sel, keyEquivalent: key)
+            i.target = target
+            i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            return i
+        }
+        m.addItem(custom(MenuHeader(panel: panel, env: env)))
+        m.addItem(custom(IntensityTile(store: ud)))
+        m.addItem(.separator())
+        m.addItem(item("Limpar neve", "eraser", #selector(clearSnow), "k", self))
+        let a = item("Ajustes…", "gearshape", #selector(showSettingsWindow), ",", self)
+        ajustesItem = a
+        m.addItem(a)
+        m.addItem(.separator())
+        m.addItem(item("Sair", "power", #selector(NSApplication.terminate(_:)), "q", NSApp))
+        return m
     }
-    @objc private func quitApp() { NSApp.terminate(nil) }
 
-    /// Status-item click: the menu panel (⌥-click opens the full window directly).
-    @objc private func togglePopover() {
-        if NSEvent.modifierFlags.contains(.option) { return showSettingsWindow() }
-        if menuPanel != nil { return closePanel() }
-        guard let button = statusItem?.button, let bw = button.window else { return }
+    /// Refresh before it shows: live status, item heights (the status text may wrap), the Accessibility dot. ⌥-click skips the menu for Ajustes.
+    func menuWillOpen(_ menu: NSMenu) {
+        if NSEvent.modifierFlags.contains(.option) {
+            menu.cancelTracking()
+            DispatchQueue.main.async { [weak self] in self?.showSettingsWindow() }
+            return
+        }
         updateStatus()
-        let host = NSHostingController(rootView: QuickSettingsView(env: settingsEnv()))
-        host.sizingOptions = .preferredContentSize
-        menuHost = host
-        let fx = NSVisualEffectView()
-        fx.material = .popover; fx.blendingMode = .behindWindow; fx.state = .active
-        fx.wantsLayer = true; fx.layer?.cornerRadius = 10; fx.layer?.masksToBounds = true
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        fx.addSubview(host.view)
-        NSLayoutConstraint.activate([host.view.leadingAnchor.constraint(equalTo: fx.leadingAnchor), host.view.topAnchor.constraint(equalTo: fx.topAnchor)])
-        let panel = MenuPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.contentView = fx
-        panel.contentViewController = nil
-        panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
-        panel.level = .popUpMenu; panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-        panel.setAccessibilityLabel("Neve")
-        let anchor = bw.convertToScreen(button.convert(button.bounds, to: nil))
-        nonisolated(unsafe) let place = { [weak panel, weak host] in
-            guard let panel, let host else { return }
-            host.view.layoutSubtreeIfNeeded()
-            let size = host.view.fittingSize
-            let vis = (panel.screen ?? bw.screen ?? NSScreen.main)?.visibleFrame ?? anchor
-            panel.setFrame(panelFrame(size: size, anchor: anchor, visible: vis), display: true)
-        }
-        place()
-        panelSize = host.observe(\.preferredContentSize) { _, _ in MainActor.assumeIsolated { place() } }
-        menuPanel = panel
-        button.highlight(true)
-        DispatchQueue.main.async { [weak self] in if self?.menuPanel != nil { button.highlight(true) } }   // status-item tracking may reset it as it ends
-        // Accessory app: activate first and make the panel key, else SwiftUI renders switches inactive (grey).
-        NSApp.activate()
-        panel.makeKeyAndOrderFront(nil)
-        let close: @Sendable (Any?) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.closePanel() } }
-        let down: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        let g = NSEvent.addGlobalMonitorForEvents(matching: down, handler: close)
-        let l = NSEvent.addLocalMonitorForEvents(matching: down.union(.keyDown)) { [weak self] e in
-            guard let self, let p = self.menuPanel else { return e }
-            if e.type == .keyDown { if e.keyCode == 53 { self.closePanel(); return nil }; return e }
-            if e.window !== p && e.window !== self.statusItem?.button?.window { self.closePanel() }   // the status button's own click toggles
-            return e
-        }
-        let o1 = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: close)
-        let o2 = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main, using: close)
-        panelTeardown = [{ [g, l].compactMap { $0 }.forEach(NSEvent.removeMonitor) },
-                         { NotificationCenter.default.removeObserver(o1); NSWorkspace.shared.notificationCenter.removeObserver(o2) }]
+        menuViews.forEach { $0.frame.size = $0.fittingSize }
+        let dot = panel.axMissing && !ud.bool(forKey: Self.ajustesOpenedKey)
+        if dot {
+            let t = NSMutableAttributedString(string: "Ajustes… ")
+            t.append(NSAttributedString(string: "●", attributes: [.foregroundColor: NSColor.systemOrange, .font: NSFont.systemFont(ofSize: 8)]))
+            ajustesItem?.attributedTitle = t
+        } else { ajustesItem?.attributedTitle = nil }
+        ajustesItem?.setAccessibilityHelp(dot ? "Falta a permissão de Acessibilidade, opcional." : nil)
     }
 
-    private func closePanel() {
-        guard let p = menuPanel else { return }
-        menuPanel = nil
-        panelSize = nil
-        menuHost = nil
-        panelTeardown.forEach { $0() }
-        panelTeardown = []
-        statusItem?.button?.highlight(false)
-        p.orderOut(nil)
+    /// Just enough of a main menu for the Ajustes window (and any key window): ⌘, ⌘W ⌘Q and the Edit commands. An accessory app shows it only while active.
+    private func installMainMenu() {
+        let main = NSMenu()
+        func add(_ menu: NSMenu, _ title: String, _ sel: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) {
+            let i = menu.addItem(withTitle: title, action: sel, keyEquivalent: key)
+            i.keyEquivalentModifierMask = mods
+            i.target = target
+        }
+        func submenu(_ title: String, _ build: (NSMenu) -> Void) {
+            let m = NSMenu(title: title)
+            build(m)
+            main.addItem(withTitle: title, action: nil, keyEquivalent: "").submenu = m
+        }
+        submenu("Neve") { m in
+            add(m, "Ajustes…", #selector(showSettingsWindow), ",", target: self)
+            m.addItem(.separator())
+            add(m, "Sair do Neve", #selector(NSApplication.terminate(_:)), "q", target: NSApp)
+        }
+        submenu("Editar") { m in
+            add(m, "Desfazer", Selector(("undo:")), "z")
+            add(m, "Refazer", Selector(("redo:")), "z", [.command, .shift])
+            m.addItem(.separator())
+            add(m, "Recortar", Selector(("cut:")), "x")
+            add(m, "Copiar", Selector(("copy:")), "c")
+            add(m, "Colar", Selector(("paste:")), "v")
+            add(m, "Selecionar Tudo", Selector(("selectAll:")), "a")
+        }
+        submenu("Janela") { m in add(m, "Fechar", #selector(NSWindow.performClose(_:)), "w") }
+        NSApp.mainMenu = main
     }
 
-    /// The single "Ajustes" window (rebuilt on each open so the screen list is fresh).
+    /// The single "Ajustes" window: toolbar tabs (System Settings style, title = selected tab), not resizable, last tab remembered.
     @objc private func showSettingsWindow() {
-        closePanel()
+        ud.set(true, forKey: Self.ajustesOpenedKey)
+        syncPanelInfo()
         if settingsWindow == nil {
-            let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            w.title = "Ajustes"
-            w.styleMask.insert(.resizable)
+            let env = settingsEnv()
+            let tabs = NSTabViewController()
+            tabs.tabStyle = .toolbar
+            for t in SettingsTab.allCases {
+                let host = NSHostingController(rootView: SettingsPane(env: env, tab: t))
+                host.sizingOptions = .preferredContentSize
+                let ti = NSTabViewItem(viewController: host)
+                ti.label = t.rawValue
+                ti.image = NSImage(systemSymbolName: t.symbol, accessibilityDescription: nil)
+                tabs.addTabViewItem(ti)
+            }
+            tabs.selectedTabViewItemIndex = min(max(0, ud.integer(forKey: SettingsTab.key)), SettingsTab.allCases.count - 1)
+            tabsObservation = tabs.observe(\.selectedTabViewItemIndex) { [weak self] t, _ in
+                MainActor.assumeIsolated { self?.ud.set(t.selectedTabViewItemIndex, forKey: SettingsTab.key) }
+            }
+            let w = NSWindow(contentViewController: tabs)
+            w.styleMask = [.titled, .closable]
+            w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false
+            w.center()
             settingsWindow = w
             // In-process window: AXObserver skips our own pid, so refresh the snow surfaces from NSWindow events.
             for n in [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.willCloseNotification,
@@ -347,12 +386,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
             NotificationCenter.default.addObserver(self, selector: #selector(syncLoginState), name: NSWindow.didBecomeKeyNotification, object: w)   // the user may have changed it in System Settings
         }
-        let host = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
-        host.sizingOptions = .preferredContentSize
-        let first = settingsWindow?.contentViewController == nil
-        settingsWindow?.contentViewController = host
-        if first { settingsWindow?.center() }   // after the content sets the size
-        // after the panel has finished closing, or the activation is lost
+        // after the menu has finished closing, or the activation is lost
         DispatchQueue.main.async { [weak self] in
             NSApp.activate()
             self?.settingsWindow?.makeKeyAndOrderFront(nil)
@@ -369,7 +403,6 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private var outroing = false   // an outro is playing: the overlays stay up until it ends
     private var outroGen = 0       // bumped to cancel the previous outro's completion
-    private var shuttingDown = false, replied = false
 
     /// Plays the outro on every overlay on screen, then `done`.
     private func runOutro(_ done: @escaping @MainActor () -> Void) {
@@ -385,19 +418,6 @@ final class AppController: NSObject, NSApplicationDelegate {
                 done()
             }
         }
-    }
-
-    /// Quit plays the outro first (terminateLater), with a hard 1.9s limit; a second quit, or a system shutdown, skips it.
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !outroing, !shuttingDown, running, !hot, !userIdle, overlays.contains(where: \.showing) else { return .terminateNow }
-        runOutro { [weak self] in self?.finishQuit() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) { [weak self] in MainActor.assumeIsolated { self?.finishQuit() } }
-        return .terminateLater
-    }
-    private func finishQuit() {
-        guard !replied else { return }
-        replied = true
-        NSApp.reply(toApplicationShouldTerminate: true)
     }
 
     private var running: Bool { (enabled || outroing) && !screensAsleep && !sessionInactive }
@@ -434,12 +454,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         statusItem?.button?.setAccessibilityLabel("Neve")
         statusItem?.button?.setAccessibilityValue(panel.status)
         let paused = !enabled || !polling || userIdle || fullscreenIdle
-        let slash = Self.symbol("snowflake.slash", "Neve — desligada")
-        let (img, alpha) = !enabled
-            ? (slash ?? Self.symbol("snowflake", "Neve — desligada"), slash == nil ? 0.75 : 1)
-            : (Self.symbol("snowflake", paused ? "Neve — pausada" : "Neve"), paused ? 0.85 : 1)
+        // Off: slashed flake; paused: the flake in a circle (a distinct template symbol instead of dimming); else the plain flake.
+        let img = !enabled ? (Self.symbol("snowflake.slash", "Neve — desligada") ?? Self.symbol("snowflake", "Neve — desligada"))
+            : paused ? (Self.symbol("snowflake.circle", "Neve — pausada") ?? Self.symbol("snowflake", "Neve — pausada"))
+            : Self.symbol("snowflake", "Neve")
         statusItem?.button?.image = img
-        statusItem?.button?.alphaValue = alpha
         panel.axMissing = !AXIsProcessTrusted()
     }
 
@@ -457,6 +476,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// With Accessibility trust, window events drive updates and the timer is a 2s safety poll; without it, a 0.5s poll (drags are sampled by the scheduler).
     /// Plus a 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
     private func scheduleTimers() {
+        syncMouseMonitor()
         slowTimer?.invalidate()
         slowTimer = nil
         scheduleSafety(slow: true)
@@ -531,7 +551,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let primary = NSScreen.screens.first else { return }
         if let k = sceneKind { pollScene(k, primary: primary); return }
         let mouse = NSEvent.mouseLocation   // read with the bounds: the drag offset is the mouse's move over the SAME interval as the window's
-        guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber) + [menuPanel?.windowNumber].compactMap { $0 })) else {
+        guard let raw = readWindows(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber) )) else {
             sched.didRead(ok: false, changed: false, frameMoved: false)   // CGWindowList failed: keep the last snapshot, retry shortly
             return
         }
@@ -709,7 +729,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
-    @objc private func powerOff() { shuttingDown = true }
     @objc private func screensSlept() { screensAsleep = true; refreshRunState() }
     @objc private func screensWoke() { screensAsleep = false; refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
@@ -737,6 +756,3 @@ let controller = AppController()
 app.delegate = controller
 app.setActivationPolicy(.accessory)
 app.run()
-
-/// Borderless menu-bar panel: nonactivating, but able to take key so the SwiftUI switches render active.
-final class MenuPanel: NSPanel { override var canBecomeKey: Bool { true } }

@@ -1,11 +1,16 @@
 import CoreGraphics
+import Foundation
 
-/// Where the menu-bar panel goes: `gap` below the status item, left edge aligned to it, clamped inside the screen's visible frame.
-public func panelFrame(size: CGSize, anchor: CGRect, visible: CGRect, gap: CGFloat = 5, margin: CGFloat = 4) -> CGRect {
-    let maxX = visible.maxX - margin - size.width, minX = visible.minX + margin
-    let x = max(minX, min(anchor.minX, maxX))
-    let y = max(visible.minY + margin, anchor.minY - gap - size.height)
-    return CGRect(origin: CGPoint(x: x, y: y), size: size)
+/// True the first time it is asked for `key`, false after: first-launch menu, one-time hints. Persisted in `store`.
+public func takeOnce(_ key: String, in store: UserDefaults) -> Bool {
+    if store.bool(forKey: key) { return false }
+    store.set(true, forKey: key)
+    return true
+}
+
+/// "Restaurar padrões": drops every stored option (the Bool prefs, Quantidade, "Nevar em") so each reads its default again from `Pref` / `Intensity`.
+public func restoreDefaults(in store: UserDefaults) {
+    (Pref.allCases.map(\.rawValue) + [Intensity.key, "snowOn"]).forEach(store.removeObject(forKey:))
 }
 
 /// Names for the "Nevar em" picker: the main screen is marked, and identical names get their resolution (then a number) appended.

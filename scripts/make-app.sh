@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 [ "${1:-}" = "--dev" ] && NEVE_DEV=$2
 # NEVE_VERSION sets the bundle version; NEVE_UNIVERSAL=1 builds arm64+x86_64 (two builds + lipo; --arch needs Xcode); NEVE_SIGN overrides the identity. NEVE_APP_DIR puts Neve.app elsewhere (release builds go to dist/, never over the running build/Neve.app).
 VERSION=${NEVE_VERSION:-1.0}
+BUILD=${NEVE_BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}   # CFBundleVersion: an incrementing build number
 swift build -c release
 [ -z "${NEVE_UNIVERSAL:-}" ] || swift build -c release --triple x86_64-apple-macosx14.0
 BID=io.github.viniciuscandeia.neve; APP=${NEVE_APP_DIR:-build}/Neve.app; EXE=Neve; EXTRA=""
@@ -13,7 +14,8 @@ if [ -n "${NEVE_DEV:-}" ]; then
   EXTRA="<key>NeveInstance</key><string>$NEVE_DEV</string>"
 fi
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp Resources/Neve.icns "$APP/Contents/Resources/Neve.icns"
 if [ -n "${NEVE_UNIVERSAL:-}" ]; then
   lipo -create "$(swift build -c release --show-bin-path)/Neve" .build/x86_64-apple-macosx/release/Neve -output "$APP/Contents/MacOS/$EXE"
 else
@@ -26,11 +28,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
 	<key>CFBundleIdentifier</key><string>$BID</string>
 	<key>CFBundleName</key><string>Neve</string>
+	<key>CFBundleDisplayName</key><string>Neve</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleIconFile</key><string>Neve</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
+	<key>NSHumanReadableCopyright</key><string>© 2026 Vinicius Candeia</string>
 	<key>CFBundleExecutable</key><string>$EXE</string>
 	$EXTRA
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$VERSION</string>
-	<key>CFBundleVersion</key><string>$VERSION</string>
+	<key>CFBundleVersion</key><string>$BUILD</string>
 	<key>LSUIElement</key><true/>
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
 	<key>NSHighResolutionCapable</key><true/>
