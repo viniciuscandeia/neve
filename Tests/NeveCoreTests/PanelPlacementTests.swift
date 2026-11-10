@@ -20,7 +20,7 @@ import CoreGraphics
 
 @Test func loginNoteAndSteppedLevel() {
     #expect(loginNote(requiresApproval: true, failed: false).contains("Itens de Início"))
-    #expect(loginNote(requiresApproval: false, failed: true).contains("Aplicativos"))
+    #expect(loginNote(requiresApproval: false, failed: true).contains("Itens de Início") && !loginNote(requiresApproval: false, failed: true).contains("Aplicativos"))
     #expect(loginNote(requiresApproval: false, failed: false) == "")
     #expect(steppedLevel(3, by: 1) == 3 && steppedLevel(0, by: -1) == 0 && steppedLevel(1, by: 1) == 2)
 }

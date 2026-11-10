@@ -150,7 +150,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var missing = wanted.filter { s in !overlays.contains { displayID($0.screen) == displayID(s) } }
         for s in missing {
             guard let p = parked.removeValue(forKey: displayID(s)) else { continue }
-            if p.screenChanged(s) { p.teardown() } else { p.adopt(s); overlays.append(p) }
+            if p.screenChanged(s) { p.teardown() } else { p.adopt(s, prefs: overlayPrefs); overlays.append(p) }
         }
         missing.removeAll { s in overlays.contains { displayID($0.screen) == displayID(s) } }
         for (id, p) in parked where present.contains(id) { p.teardown(); parked[id] = nil }   // back but unwanted
@@ -245,9 +245,8 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func settingsEnv() -> SettingsEnv {
         syncPanelInfo()
-        let valid = ["all", "main"] + panel.screens.map(\.id)
         return SettingsEnv(store: ud, isDev: neveInstance != nil,
-                           target: Binding(get: { [weak self] in self.map { valid.contains($0.target) ? $0.target : "all" } ?? "all" }, set: { [weak self] in self?.setTarget($0) }),
+                           target: Binding(get: { [weak self] in self.map { s in (["all", "main"] + s.panel.screens.map(\.id)).contains(s.target) ? s.target : "all" } ?? "all" }, set: { [weak self] in self?.setTarget($0) }),
                            login: Binding(get: { [weak self] in self?.panel.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
                            openWindow: { [weak self] in self?.showSettingsWindow() },
                            panel: panel, askAccessibility: { [weak self] in self?.askAccessibility() },
@@ -346,6 +345,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                       NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
                 NotificationCenter.default.addObserver(self, selector: #selector(settingsWindowChanged), name: n, object: w)
             }
+            NotificationCenter.default.addObserver(self, selector: #selector(syncLoginState), name: NSWindow.didBecomeKeyNotification, object: w)   // the user may have changed it in System Settings
         }
         let host = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
         host.sizingOptions = .preferredContentSize
@@ -359,6 +359,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             self?.settingsWindowChanged()
         }
     }
+
+    @objc private func syncLoginState() { panel.loginOn = loginOn }
 
     /// Coalesced through the window watcher's rate limit; the async hop lets a closing window leave the on-screen list first.
     @objc private func settingsWindowChanged() {
@@ -418,7 +420,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         if screensAsleep || sessionInactive || userIdle { return "Pausado: sem atividade" }
         if hot { return "Pausado: Mac esquentou" }
         if fullscreenIdle { return "Pausado: app em tela cheia" }
-        if overlays.isEmpty { return "Sem neve: este Mac não consegue desenhá-la" }
+        if NSScreen.screens.isEmpty { return "Pausado: sem tela" }
+        if overlays.isEmpty { return panel.metalMissing ? "Sem neve: este Mac não consegue desenhá-la" : "Pausado" }
         var s = "Nevando · \(level.title)"
         // At most one modifier; the other modes are already visible as tiles.
         if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" && !economy ? wantedScreens[0].localizedName : "tela principal") }

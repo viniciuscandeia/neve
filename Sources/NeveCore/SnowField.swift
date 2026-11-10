@@ -15,6 +15,7 @@ struct Stashed {
     var heights: [Float], stamp: Double
     var ice: WinIce? = nil
     var overhang: [Int: Float] = [:]   // snow past the screen edge, by column relative to the old surface's c0
+    var topY: Float = 0                // ... and its top edge (the window may return at another height)
     var minX: Float = 0                // the window's left edge then: what stood on it is shifted by the move when it returns
     var balls: [Snowball] = [], figures: [Figure] = [], gifts: [Gift] = []   // what stood on it (user snowmen, resting balls, gifts)
 }
@@ -27,7 +28,7 @@ public final class SnowField {
     var boundsDirty = false
     var dragOnlyRebuild = true   // false (tests): every snapshot rebuilds all surfaces
     public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
-    var stashBack: [(dx: Float, e: Stashed)] = []   // windows back from another Space this update: their snowmen / balls / gifts are put back after the transports
+    var stashBack: [(dx: Float, dy: Float, x: ClosedRange<Float>, e: Stashed)] = []   // windows back from another Space this update: their snowmen / balls / gifts are put back after the transports
     var stash: [Int: Stashed] = [:]   // window piles (and their frost) kept across a Space switch, by window number (cap 64, 30 min)
     var overhang: [Int: [Int: Float]] = [:]   // per window: snow on columns past the screen edge (global column -> height), kept until they come back on screen
     var spaceSwitchIDs: Set<Int> = []; var spaceSwitchUntil = 0.0   // windows present at the Space switch; they may be stashed (if they vanish) until the monotonic `clock` passes this

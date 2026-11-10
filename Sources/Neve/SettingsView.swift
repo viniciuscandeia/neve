@@ -92,11 +92,11 @@ private struct IntensityTile: View {
         .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .focusable()
         .focused($focused)
-        .focusEffectDisabled()
         .onMoveCommand { d in
             if d == .left { level = steppedLevel(level, by: -1) } else if d == .right { level = steppedLevel(level, by: 1) }
         }
-        .onAppear { DispatchQueue.main.async { focused = true } }   // the panel opens on Quantidade: ←/→ work at once
+        .onAppear { for d in [0.0, 0.25] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { focused = true } } }   // 2nd try: the panel is key only after it has opened
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in focused = true }   // the panel opens on Quantidade: ←/→ work at once
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Quantidade")
         .accessibilityValue(current)

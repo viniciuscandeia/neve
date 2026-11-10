@@ -501,6 +501,14 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
     #expect(coversScreen(below, frame: screen, notchTop: 38))
     #expect(!coversScreen(below, frame: screen, notchTop: 0))
     #expect(!coversScreen(CGRect(x: 0, y: 0, width: 1512, height: 700), frame: screen, notchTop: 38))
+    // true fullscreen with the Dock visible (visibleFrame is shorter at the bottom): covers; a zoomed window equal to visibleFrame does not
+    let vis = CGRect(x: 0, y: 70, width: 1512, height: 982 - 38 - 70)
+    #expect(coversScreen(below, frame: screen, notchTop: 38, visible: vis))
+    #expect(!coversScreen(vis, frame: screen, notchTop: 38, visible: vis))
+    let flat = CGRect(x: 0, y: 0, width: 1512, height: 982 - 38)
+    #expect(!coversScreen(flat, frame: screen, notchTop: 38, visible: flat))   // zoomed, no Dock, menu bar at the notch line
+    #expect(coversScreen(screen, frame: screen, notchTop: 0, visible: screen))   // non-notched unchanged
+    #expect(!coversScreen(vis, frame: screen, notchTop: 0, visible: vis))
 }
 
 // MARK: - Window snow kept across a Space switch

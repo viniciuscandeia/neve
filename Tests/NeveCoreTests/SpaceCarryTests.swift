@@ -178,3 +178,17 @@ private func switchSpace(_ f: SnowField) { f.dropPiles(); f.markStale() }
     f.update(windows: [w], now: 2)
     #expect(f.overhang[1] == [-10: 3])
 }
+
+@Test func stashedBallsFollowTheWindowInBothAxesAndSurviveAWidthChange() {
+    let f = makeField()
+    f.update(windows: [win(1, 100, 200, 300, 200)], now: 0)
+    pileUp(f, id: 1)
+    var b = Snowball(id: 50, pos: [350, 400], radius: 8, surfaceID: 1); b.state = .resting
+    f.balls.append(b)
+    switchSpace(f)
+    f.update(windows: [], now: 1)
+    #expect(f.stash[1] != nil)
+    f.update(windows: [win(1, 150, 260, 120, 200)], now: 2)   // back narrower, 50 right and 60 higher
+    let r = f.balls.first { $0.id == 50 }
+    #expect(r != nil && r!.pos.x <= 270 && r!.pos.x >= 150 && r!.pos.y > 400 + 50)
+}

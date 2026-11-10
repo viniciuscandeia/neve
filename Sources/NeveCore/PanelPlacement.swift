@@ -20,7 +20,7 @@ public func screenLabels(names: [String], sizes: [CGSize]) -> [String] {
 
 /// Caption under "Abrir ao iniciar sessão" after a register / unregister attempt ("" = nothing to say).
 public func loginNote(requiresApproval: Bool, failed: Bool) -> String {
-    requiresApproval ? "Aprove em Ajustes do Sistema › Itens de Início." : failed ? "Mova o Neve para Aplicativos e tente de novo." : ""
+    requiresApproval ? "Aprove em Ajustes do Sistema › Itens de Início." : failed ? "Não foi possível alterar; tente em Ajustes do Sistema › Itens de Início." : ""
 }
 
 /// Quantidade stepped by an arrow key / VoiceOver adjust, clamped to 0...3.

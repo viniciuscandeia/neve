@@ -194,9 +194,15 @@ public struct PollScheduler: Sendable {
 }
 
 /// A window (AppKit coords) covers the screen when it holds the whole frame (1pt slack) or, on a notched display, the frame minus the
-/// camera housing: a fullscreen app lives below the notch band (`notchTop` = safeAreaInsets.top).
-public func coversScreen(_ r: CGRect, frame: CGRect, notchTop: CGFloat) -> Bool {
+/// camera housing: a fullscreen app lives below the notch band (`notchTop` = safeAreaInsets.top). A zoomed window ends at `visible`'s
+/// top (below the menu bar) and fills `visible`: with `visible` given, a window that is not taller than it is never fullscreen.
+public func coversScreen(_ r: CGRect, frame: CGRect, notchTop: CGFloat, visible: CGRect? = nil) -> Bool {
     let slack = r.insetBy(dx: -1, dy: -1)
     if slack.contains(frame) { return true }
-    return notchTop > 0 && slack.contains(CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height - notchTop))
+    guard notchTop > 0, slack.contains(CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height - notchTop)),
+          r.maxY >= frame.maxY - notchTop - 1, r.maxY <= frame.maxY - notchTop + 1 else { return false }
+    // A zoomed window fills the visible frame (its top is the menu bar's bottom, which can sit at the notch line): not fullscreen.
+    // ponytail: a fullscreen app whose visibleFrame also excludes the notch band looks the same; the caller's settle/fullscreen state covers it.
+    if let v = visible, abs(r.maxY - v.maxY) <= 1, abs(r.minY - v.minY) <= 1, abs(r.width - v.width) <= 2 { return false }
+    return true
 }

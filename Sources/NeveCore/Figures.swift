@@ -404,7 +404,7 @@ extension SnowField {
             if figures[i].kind != .snowman { figures[i].dying = true; continue }
             var f = figures[i]
             removeFigure(i)   // ends its fight (the foe rests)
-            if f.fromBalls { f.fight = nil; f.motion = Motion(speed: f.motion.speed, nextIdle: f.motion.nextIdle); f.pose = Pose(); kept.append(f) }
+            if f.fromBalls { f.fight = nil; f.critter.fetchX = nil; f.motion = Motion(speed: f.motion.speed, nextIdle: f.motion.nextIdle); f.pose = Pose(); kept.append(f) }
         }
         return kept
     }

@@ -129,7 +129,7 @@ extension SnowField {
                 guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty else { continue }
                 stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id },
                                       overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
-                                      minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
+                                      topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
             }
             spaceSwitchIDs.subtract(gone.map(\.id))
             while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
@@ -152,10 +152,11 @@ extension SnowField {
 
     /// What stood on a window that came back from another Space returns with it (shifted by the window's move), without the transports above knocking it off.
     private func restoreStashed() {
-        for (dx, e) in stashBack {
-            for var b in e.balls { b.pos.x += dx; balls.append(b) }
-            for var f in e.figures where canSpawnFigure { f.foot.x += dx; f.at = f.surfaceID.map { .surface(id: $0, x: f.foot.x) } ?? .air; figures.append(f) }
-            for var g in e.gifts { g.pos.x += dx; giftState.gifts.append(g) }
+        for (dx, dy, xr, e) in stashBack {   // shifted by the window's move (x and y), clamped onto its (maybe narrower) new span; caps respected
+            let cx = { (x: Float) in min(max(x + dx, xr.lowerBound), xr.upperBound) }
+            for var b in e.balls where balls.lazy.filter({ !$0.melting }).count < Tuning.maxBalls { b.pos = SIMD2(cx(b.pos.x), b.pos.y + dy); balls.append(b) }
+            for var f in e.figures where canSpawnFigure { f.foot.x = cx(f.foot.x); f.foot.y += dy; f.critter.fetchX = nil; f.at = f.surfaceID.map { .surface(id: $0, x: f.foot.x) } ?? .air; figures.append(f) }
+            for var g in e.gifts where giftState.gifts.count < Tuning.maxGifts { g.pos = SIMD2(cx(g.pos.x), g.pos.y + dy); giftState.gifts.append(g) }
         }
         stashBack.removeAll()
     }
@@ -352,10 +353,11 @@ extension SnowField {
                 }
             }
         }
-        else if let e = stash.removeValue(forKey: id), clock - e.stamp < 1800, e.heights.count == pile.heights.count {   // back from another Space: same width, same snow
+        else if let e = stash.removeValue(forKey: id) {   // back from another Space: same width -> same snow; always what stood on it (a different width / a long absence only loses the snow)
+            stashBack.append((dx: Float(frame.minX) - e.minX, dy: Float(frame.maxY) - e.topY, x: Float(frame.minX)...Float(frame.maxX), e: e))
+            if clock - e.stamp < 1800, e.heights.count == pile.heights.count {
             for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
             pile.shown = pile.heights
-            stashBack.append((Float(frame.minX) - e.minX, e))
             let u0 = Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)), u1 = Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1
             let oh = e.overhang.compactMap { r, h -> (Int, Float)? in let nc = c0 + r; return (nc < c0 || nc >= c0 + pile.heights.count) && nc >= u0 && nc < u1 ? (nc, h) : nil }
             if !oh.isEmpty { overhang[id] = Dictionary(uniqueKeysWithValues: oh) }
@@ -363,6 +365,7 @@ extension SnowField {
                 ice.w0 = Float(frame.width); ice.h0 = Float(frame.height)
                 if ice.frozen { ice.frozen = false; ice.acc = Tuning.frozenAfter }
                 iceWin.removeAll { $0.id == id }; iceWin.append(ice)
+            }
             }
         }
         return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel, radius: Float(min(radius, frame.width / 2, frame.height / 2)),

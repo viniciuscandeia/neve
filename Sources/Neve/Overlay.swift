@@ -171,7 +171,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     func screenChanged(_ s: NSScreen) -> Bool { s.frame != frame || s.backingScaleFactor != scale }
 
     /// A display that came back after a short drop: take the fresh NSScreen object (same frame / scale).
-    func adopt(_ s: NSScreen) { screen = s }
+    /// The park may have outlived pref / frame-rate / bounds changes: the display link is rebuilt by present(), the window re-framed.
+    func adopt(_ s: NSScreen, prefs p: OverlayPrefs) {
+        screen = s
+        link?.invalidate(); link = nil
+        window.setFrame(s.frame, display: false)
+        apply(p)
+        fps = s.maximumFramesPerSecond
+        refreshBounds()
+        present()
+    }
 
     /// Dock / menu bar moved (visibleFrame changed, frame unchanged): updated in place, piles kept.
     func refreshBounds() {
@@ -422,7 +431,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
-    func covers(_ r: CGRect) -> Bool { coversScreen(r, frame: screen.frame, notchTop: screen.safeAreaInsets.top) }
+    func covers(_ r: CGRect) -> Bool { coversScreen(r, frame: screen.frame, notchTop: screen.safeAreaInsets.top, visible: screen.visibleFrame) }
     var isFullscreen: Bool { fullscreen }
     func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; present() } }
 
