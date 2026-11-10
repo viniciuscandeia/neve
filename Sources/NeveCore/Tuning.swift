@@ -28,7 +28,9 @@ public enum Tuning {
     /// The visible Dock glass sits this many pt below the AX list's frame (CG coordinates, y down), same size. Measured on macOS 26 by capturing the
     /// Dock window alone: AX list y 806..890, opaque glass y 811..895. Calibration knob if a later macOS moves it.
     public static let dockGlassOffset: CGFloat = 5
-    public static func dockGlass(fromAX r: CGRect) -> CGRect { r.offsetBy(dx: 0, dy: dockGlassOffset) }
+    /// The 5pt offset was measured on macOS 26 only; earlier systems draw the glass at the AX frame.
+    public static func dockGlassOffset(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? dockGlassOffset : 0 }
+    public static func dockGlass(fromAX r: CGRect, for v: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion) -> CGRect { r.offsetBy(dx: 0, dy: dockGlassOffset(for: v)) }
     static let dockSpeed: Float = 800       // pt/s: the sim moves each Dock end toward the read frame at most this fast (a visible plow)
     static let dockSlumpTime: Float = 3   // s the bank keeps relaxing near the Dock ends after one moved
     static let dockPushReach: Float = 40    // pt behind a moving Dock end still counted as swept (the old rounded corner)

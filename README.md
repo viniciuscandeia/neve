@@ -57,7 +57,7 @@ App nativo de barra de menus para macOS 14+, escrito em Swift 6 com AppKit e Met
 
 ### 🐇 Visitantes e eventos
 
-Um "diretor de eventos" sorteia visitas com intervalos mínimos (no máximo 3 por tela, nunca todas ao mesmo tempo; no modo econômico, 1). Tudo é desligado com Reduzir Movimento, com *Bonecos andam e brigam* desligado e quando a opção *Visitantes* está desligada.
+Um "diretor de eventos" sorteia visitas com intervalos mínimos (no máximo 3 por tela, nunca todas ao mesmo tempo; no modo econômico, 1). Tudo é desligado com Reduzir Movimento, com *Andam e brigam* desligado e quando a opção *Visitantes* está desligada.
 
 - **Coelho ladrão:** chega saltitando e deixa pegadas na neve, fareja o boneco, rouba a cenoura e foge; o boneco vira e joga bolas nele. Se acertar, a cenoura cai e o boneco corre para recolhê-la; se não, o nariz volta a crescer depois de um tempo.
 - **Passarinho:** pousa no topo de uma janela, sacode a neve das penas e fica um pouco. Um tiro por perto, o cursor passando rápido, uma janela mexendo ou um impacto o assusta: ele decola derrubando neve e, se o monte estiver cheio, provoca uma avalanche.
@@ -91,10 +91,12 @@ O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve est
 | **Ajustes…** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto). Um pontinho laranja aparece aqui quando falta a permissão de Acessibilidade (opcional) |
 | **Sair** (⌘Q) | Encerra o Neve |
 
+Clique com o botão direito (ou ctrl-clique) no ícone para um menu pequeno com **Ajustes…** e **Sair do Neve**.
+
 Clicar no ícone abre um painel enxuto, sem seta, com só esses itens; ele fecha ao clicar fora, com Esc, clicando no ícone de novo, ao trocar de Space ou quando o Neve deixa de ser o app ativo. Todo o resto fica em **Ajustes**, a janela com tudo por abas:
 
 - **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
-- **Bonecos:** *Boneco de neve*, *Bonecos andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
+- **Bonecos:** *Boneco de neve*, *Andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
 - **Desempenho:** *Modo econômico* (20 fps com a neve calma, 30 com movimento; só a tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso), *Neve dança com a música*, *Cursor empurra os flocos* e *Neve parada* (só com Reduzir Movimento).
 - **Sistema:** *Aparecer em capturas de tela*, *Permitir Acessibilidade…* (só quando falta) e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
 - **Dicas:** atalhos e gestos (⌥-clique, varrer o cursor sobre presentes, ⌥ parado perto de um boneco).

@@ -192,3 +192,11 @@ public struct PollScheduler: Sendable {
         else if dragging, held, identical >= 3 { dragging = false }   // stopped moving mid-hold: back to events only
     }
 }
+
+/// A window (AppKit coords) covers the screen when it holds the whole frame (1pt slack) or, on a notched display, the frame minus the
+/// camera housing: a fullscreen app lives below the notch band (`notchTop` = safeAreaInsets.top).
+public func coversScreen(_ r: CGRect, frame: CGRect, notchTop: CGFloat) -> Bool {
+    let slack = r.insetBy(dx: -1, dy: -1)
+    if slack.contains(frame) { return true }
+    return notchTop > 0 && slack.contains(CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height - notchTop))
+}

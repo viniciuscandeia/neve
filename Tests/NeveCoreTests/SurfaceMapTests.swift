@@ -483,8 +483,24 @@ private func barBottom(x: Float) -> Float { Tuning.barUnderside(x: x, minX: 171,
 @Test func dockGlassMapsFromTheAXListFrame() {
     // Measured: AX list y 806..890 (CG), visible glass y 811..895 on a 900pt screen -> AppKit y 5..89, snow base (maxY) 89.
     let ax = CGRect(x: 171, y: 806, width: 1098, height: 84)
-    let g = appKitFrame(fromCG: Tuning.dockGlass(fromAX: ax), primaryHeight: 900)
+    let v26 = OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)
+    let g = appKitFrame(fromCG: Tuning.dockGlass(fromAX: ax, for: v26), primaryHeight: 900)
     #expect(g == CGRect(x: 171, y: 5, width: 1098, height: 84))
+}
+
+@Test func dockGlassOffsetAppliesOnlyFromMacOS26() {
+    let ax = CGRect(x: 0, y: 806, width: 100, height: 84)
+    let v15 = OperatingSystemVersion(majorVersion: 15, minorVersion: 6, patchVersion: 0)
+    #expect(Tuning.dockGlass(fromAX: ax, for: v15) == ax)
+}
+
+@Test func notchedFullscreenWindowCountsAsCoveringTheScreen() {
+    let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let below = CGRect(x: 0, y: 0, width: 1512, height: 982 - 38)   // fullscreen app under the camera band
+    #expect(coversScreen(screen, frame: screen, notchTop: 38))
+    #expect(coversScreen(below, frame: screen, notchTop: 38))
+    #expect(!coversScreen(below, frame: screen, notchTop: 0))
+    #expect(!coversScreen(CGRect(x: 0, y: 0, width: 1512, height: 700), frame: screen, notchTop: 38))
 }
 
 // MARK: - Window snow kept across a Space switch

@@ -5,8 +5,6 @@ import NeveCore
 /// the controller reacts through its UserDefaults observer. Target screen and login go through controller closures.
 struct SettingsEnv {
     let store: UserDefaults
-    let screens: [(title: String, id: String)]
-    let reduceMotion: Bool
     let isDev: Bool
     let target: Binding<String>
     let login: Binding<Bool>
@@ -21,6 +19,10 @@ struct SettingsEnv {
     @Published var axMissing = false
     @Published var metalMissing = false
     @Published var musicNote = ""
+    @Published var reduceMotion = false
+    @Published var screens: [(title: String, id: String)] = []   // empty with one screen
+    @Published var loginOn = false
+    @Published var loginNote = ""
 }
 
 /// Hands a Bool pref's binding (backed by the app's defaults store) to `content`.
@@ -62,6 +64,7 @@ private extension View {
 private struct IntensityTile: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage(Intensity.key) private var level = 1
+    @FocusState private var focused: Bool
     init(store: UserDefaults) { _level = AppStorage(wrappedValue: 1, Intensity.key, store: store) }
     var body: some View {
         let current = Intensity(rawValue: level)?.title ?? ""
@@ -87,14 +90,22 @@ private struct IntensityTile: View {
         }
         .padding(10)
         .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .focusable()
+        .focused($focused)
+        .focusEffectDisabled()
+        .onMoveCommand { d in
+            if d == .left { level = steppedLevel(level, by: -1) } else if d == .right { level = steppedLevel(level, by: 1) }
+        }
+        .onAppear { DispatchQueue.main.async { focused = true } }   // the panel opens on Quantidade: ←/→ work at once
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Quantidade")
         .accessibilityValue(current)
+        .accessibilityAdjustableAction { d in level = steppedLevel(level, by: d == .increment ? 1 : -1) }
     }
 }
 
 /// Shown wherever the Accessibility permission is offered; the app works fully without it.
-let axHint = "Opcional. Deixa a neve acompanhar janelas e o Dock com mais rapidez."
+let axHint = "Opcional. Sem ela, não há neve no Dock e as janelas são seguidas com menos rapidez."
 
 private struct Header: View {
     @ObservedObject var panel: PanelState
@@ -201,6 +212,8 @@ private struct Kbd: View {
 /// The "Ajustes" window: every option, by tab.
 struct SettingsWindowView: View {
     let env: SettingsEnv
+    @ObservedObject var panel: PanelState
+    init(env: SettingsEnv) { self.env = env; panel = env.panel }
 
     private func toggle(_ o: Option) -> some View {
         PrefBinding(o.pref, env.store) { b in Toggle(isOn: b) { Label(o.title, systemImage: o.symbol) } }
@@ -216,46 +229,65 @@ struct SettingsWindowView: View {
             Form {
                 switch tab {
                 case .geral:
-                    PrefBinding(.economy, env.store) { eco in
-                        Picker(selection: env.target) {
-                            Text("Todas as telas").tag("all")
-                            Text("Só na tela principal").tag("main")
-                            ForEach(env.screens, id: \.id) { Text($0.title).tag($0.id) }
-                        } label: { Label("Nevar em", systemImage: "display") }
-                            .disabled(eco.wrappedValue)
-                        if eco.wrappedValue { Text("O modo econômico usa só a tela principal.").font(.caption).foregroundStyle(.secondary) }
+                    if !panel.screens.isEmpty {
+                        PrefBinding(.economy, env.store) { eco in
+                            Picker(selection: eco.wrappedValue ? .constant("main") : env.target) {
+                                Text("Todas as telas").tag("all")
+                                Text("Tela principal").tag("main")
+                                ForEach(panel.screens, id: \.id) { Text($0.title).tag($0.id) }
+                            } label: { Label("Nevar em", systemImage: "display") }
+                                .disabled(eco.wrappedValue)
+                            if eco.wrappedValue { Text("O modo econômico usa só a tela principal.").font(.caption).foregroundStyle(.secondary) }
+                        }
                     }
-                    PrefBinding(.behindWindows, env.store) { b in Toggle(isOn: b) { Label("Atrás das janelas", systemImage: "square.stack.3d.down.right") } }
-                    PrefBinding(.behindLarge, env.store) { b in Toggle(isOn: b) { Label("Atrás de janelas grandes", systemImage: "macwindow") } }
+                    PrefBinding(.behindWindows, env.store) { behind in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle(isOn: behind) { Label("Atrás das janelas", systemImage: "square.stack.3d.down.right") }
+                            Text("A neve cai só no chão, por trás das janelas.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        PrefBinding(.behindLarge, env.store) { b in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Toggle(isOn: b) { Label("Atrás de janelas grandes", systemImage: "macwindow") }.disabled(behind.wrappedValue)
+                                Text(behind.wrappedValue ? "Já incluído em Atrás das janelas." : "Os flocos passam por trás de janelas grandes.").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 case .bonecos:
                     ForEach(figures, id: \.pref) { toggle($0) }
                 case .desempenho:
                     toggle(economyOpt)
+                    Text("20–30 fps, só a tela principal, menos efeitos.").font(.caption).foregroundStyle(.secondary)
                     toggle(ambientOpt)
                     PrefBinding(.music, env.store) { b in
                         Toggle(isOn: b) { Label(musicOpt.title, systemImage: musicOpt.symbol) }
-                            .disabled(!MusicTap.supported || env.reduceMotion)
+                            .disabled(!MusicTap.supported || panel.reduceMotion)
                     }
-                    MusicNote(panel: env.panel, reduceMotion: env.reduceMotion)
+                    MusicNote(panel: env.panel, reduceMotion: panel.reduceMotion)
                     PrefBinding(.pointerPush, env.store) { b in
                         VStack(alignment: .leading, spacing: 2) {
                             Toggle(isOn: b) { Label("Cursor empurra os flocos", systemImage: "cursorarrow.motionlines") }
                             Text("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    if env.reduceMotion { toggle(stillOpt) }
+                    if panel.reduceMotion { toggle(stillOpt) }
                 case .sistema:
                     PrefBinding(.showInCaptures, env.store) { b in Toggle(isOn: b) { Label("Aparecer em capturas de tela", systemImage: "camera") } }
                     AccessRow(panel: env.panel, ask: env.askAccessibility)
-                    if !env.isDev { Toggle(isOn: env.login) { Label("Abrir ao iniciar sessão", systemImage: "power.circle") } }
+                    if !env.isDev {
+                        Toggle(isOn: Binding(get: { panel.loginOn }, set: { env.login.wrappedValue = $0 })) { Label("Abrir ao iniciar sessão", systemImage: "power.circle") }
+                        if !panel.loginNote.isEmpty { Text(panel.loginNote).font(.caption).foregroundStyle(.secondary) }
+                    }
                 case .dicas:
                     Label { HStack(spacing: 4) { Text("Segure"); Kbd("⌥"); Text("e arraste a neve para fazer bolas.") } } icon: { Image(systemName: "hand.draw") }
                     Label("Arraste uma janela devagar: a neve vai junto.", systemImage: "macwindow.on.rectangle")
+                    Label("Varra o cursor sobre um presente para estourá-lo em confete.", systemImage: "gift")
+                    Label { HStack(spacing: 4) { Kbd("⌥"); Text("e clique em um presente para abri-lo.") } } icon: { Image(systemName: "cursorarrow.click") }
+                    Label { HStack(spacing: 4) { Text("Segure"); Kbd("⌥"); Text("com o cursor parado perto de um boneco: ele joga uma bola em você.") } } icon: { Image(systemName: "snowflake") }
                 }
             }
             .formStyle(.grouped)
         }
         .frame(width: 460)
-        .frame(minHeight: 290)
+        .frame(minHeight: 400)
     }
 }

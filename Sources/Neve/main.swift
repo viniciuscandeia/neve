@@ -76,6 +76,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         ws.addObserver(self, selector: #selector(powerOff), name: NSWorkspace.willPowerOffNotification, object: nil)
         ws.addObserver(self, selector: #selector(screensSlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionResigned), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        let dn = DistributedNotificationCenter.default()   // a screen lock keeps the displays awake and the session active
+        dn.addObserver(self, selector: #selector(sessionResigned), name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
+        dn.addObserver(self, selector: #selector(sessionBecameActive), name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
         ws.addObserver(self, selector: #selector(screensWoke), name: NSWorkspace.screensDidWakeNotification, object: nil)
         ws.addObserver(self, selector: #selector(sessionBecameActive), name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
         ws.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
@@ -108,22 +111,56 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// only visibleFrame-only changes (Dock, menu bar) wait for a transitioning screen to settle.
     @objc private func screensChanged() {
         lastScreensCheck = CACurrentMediaTime()
+        syncPanelInfo()
         let wanted = wantedScreens
         let ids = Set(wanted.map(displayID))
         let changed = Set(overlays.map { displayID($0.screen) }) != ids
             || wanted.contains { s in overlays.contains { displayID($0.screen) == displayID(s) && $0.screenChanged(s) } }
         if changed { syncOverlays() }
-        for o in overlays where !(polling && settling(o)) { o.refreshBounds() }
+        var recheck = 0.0
+        for o in overlays {
+            if polling && settling(o) { recheck = max(recheck, settleUntil[displayID(o.screen), default: 0] - CACurrentMediaTime()) }
+            else { o.refreshBounds() }
+        }
+        if recheck > 0 {   // skipped while settling: look again once the settle window ends
+            settleTimer?.invalidate()
+            settleTimer = Timer.scheduledTimer(withTimeInterval: recheck + 0.05, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.requestPoll([.geometry]) }
+            }
+        }
     }
+    private var settleTimer: Timer?
+
+    /// A display that vanished (wake, KVM, cable): its overlay is hidden and kept this long in case the same display returns.
+    private var parked: [Int: Overlay] = [:]
+    private var parkTimer: Timer?
 
     /// Makes the overlays match wantedScreens: tears down unwanted / changed ones, creates missing ones; other screens keep their piles.
     private func syncOverlays() {
         let wanted = wantedScreens
+        let present = Set(NSScreen.screens.map(displayID))
         func stale(_ o: Overlay) -> Bool { !wanted.contains { displayID($0) == displayID(o.screen) && !o.screenChanged($0) } }
-        overlays.filter(stale).forEach { $0.teardown() }
+        for o in overlays.filter(stale) {
+            let id = displayID(o.screen)
+            if present.contains(id) { o.teardown() }   // a pref / frame change: as before
+            else { o.setRun(false); parked[id]?.teardown(); parked[id] = o }   // unplugged: wait before throwing the piles away
+        }
         overlays.removeAll(where: stale)
         applyPrefs()
-        let missing = wanted.filter { s in !overlays.contains { displayID($0.screen) == displayID(s) } }
+        var missing = wanted.filter { s in !overlays.contains { displayID($0.screen) == displayID(s) } }
+        for s in missing {
+            guard let p = parked.removeValue(forKey: displayID(s)) else { continue }
+            if p.screenChanged(s) { p.teardown() } else { p.adopt(s); overlays.append(p) }
+        }
+        missing.removeAll { s in overlays.contains { displayID($0.screen) == displayID(s) } }
+        for (id, p) in parked where present.contains(id) { p.teardown(); parked[id] = nil }   // back but unwanted
+        parkTimer?.invalidate()
+        parkTimer = nil
+        if !parked.isEmpty {
+            parkTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.parked.values.forEach { $0.teardown() }; self?.parked = [:] }
+            }
+        }
         let prefs = overlayPrefs
         let made = missing.compactMap { Overlay(screen: $0, prefs: prefs) }
         if made.count < missing.count && !loggedMetal {
@@ -197,13 +234,21 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Screen list, Reduce Motion and the login state shown live in Ajustes.
+    private func syncPanelInfo() {
+        let all = NSScreen.screens
+        let labels = screenLabels(names: all.map(\.localizedName), sizes: all.map { $0.frame.size })
+        panel.screens = all.count > 1 ? zip(all, labels).map { (title: $1, id: String(displayID($0))) } : []
+        panel.reduceMotion = reduceMotion
+        panel.loginOn = loginOn
+    }
+
     private func settingsEnv() -> SettingsEnv {
-        var rows: [(title: String, id: String)] = []
-        if NSScreen.screens.count > 1 { rows = NSScreen.screens.map { ($0.localizedName, String(displayID($0))) } }
-        let valid = ["all", "main"] + rows.map(\.id)
-        return SettingsEnv(store: ud, screens: rows, reduceMotion: reduceMotion, isDev: neveInstance != nil,
+        syncPanelInfo()
+        let valid = ["all", "main"] + panel.screens.map(\.id)
+        return SettingsEnv(store: ud, isDev: neveInstance != nil,
                            target: Binding(get: { [weak self] in self.map { valid.contains($0.target) ? $0.target : "all" } ?? "all" }, set: { [weak self] in self?.setTarget($0) }),
-                           login: Binding(get: { [weak self] in self?.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
+                           login: Binding(get: { [weak self] in self?.panel.loginOn ?? false }, set: { [weak self] in self?.setLogin($0) }),
                            openWindow: { [weak self] in self?.showSettingsWindow() },
                            panel: panel, askAccessibility: { [weak self] in self?.askAccessibility() },
                            clear: { [weak self] in self?.clearSnow(); self?.closePanel() },
@@ -216,7 +261,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         closePanel()
         let m = NSMenu()
         m.addItem(withTitle: "Ajustes…", action: #selector(showSettingsWindow), keyEquivalent: "").target = self
-        m.addItem(withTitle: "Sair Neve", action: #selector(quitApp), keyEquivalent: "").target = self
+        m.addItem(withTitle: "Sair do Neve", action: #selector(quitApp), keyEquivalent: "").target = self
         statusItem?.menu = m
         statusItem?.button?.performClick(nil)
         statusItem?.menu = nil
@@ -295,7 +340,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             w.title = "Ajustes"
             w.styleMask.insert(.resizable)
             w.isReleasedWhenClosed = false
-            w.center()
             settingsWindow = w
             // In-process window: AXObserver skips our own pid, so refresh the snow surfaces from NSWindow events.
             for n in [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.willCloseNotification,
@@ -303,7 +347,11 @@ final class AppController: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.addObserver(self, selector: #selector(settingsWindowChanged), name: n, object: w)
             }
         }
-        settingsWindow?.contentViewController = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
+        let host = NSHostingController(rootView: SettingsWindowView(env: settingsEnv()))
+        host.sizingOptions = .preferredContentSize
+        let first = settingsWindow?.contentViewController == nil
+        settingsWindow?.contentViewController = host
+        if first { settingsWindow?.center() }   // after the content sets the size
         // after the panel has finished closing, or the activation is lost
         DispatchQueue.main.async { [weak self] in
             NSApp.activate()
@@ -370,6 +418,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if screensAsleep || sessionInactive || userIdle { return "Pausado: sem atividade" }
         if hot { return "Pausado: Mac esquentou" }
         if fullscreenIdle { return "Pausado: app em tela cheia" }
+        if overlays.isEmpty { return "Sem neve: este Mac não consegue desenhá-la" }
         var s = "Nevando · \(level.title)"
         // At most one modifier; the other modes are already visible as tiles.
         if wantedScreens.count < NSScreen.screens.count { s += " · " + (wantedScreens.count == 1 && target != "main" && !economy ? wantedScreens[0].localizedName : "tela principal") }
@@ -505,6 +554,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         if scenarioHeavy, CACurrentMediaTime() - lastStage >= 20 { lastStage = CACurrentMediaTime(); overlays.forEach { $0.stage(.heavy) } }   // perf A/B load
         if fullscreenIdle != idleWatch {
+            updateStatus()
             scheduleTimers()
             if !fullscreenIdle { refreshDock() }
         }
@@ -567,12 +617,17 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Register / unregister as a login item (needs the app bundle; /Applications is most reliable).
     private func setLogin(_ on: Bool) {
         let svc = SMAppService.mainApp
+        var failed = false
         do {
             if on { try svc.register() } else { try svc.unregister() }
         } catch {
+            failed = true
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "login").error("login item: \(error.localizedDescription)")
         }
-        if svc.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+        let approval = svc.status == .requiresApproval
+        panel.loginOn = loginOn   // the real state, not what was asked
+        panel.loginNote = loginNote(requiresApproval: approval, failed: failed || (on && !approval && !loginOn))
+        if approval { SMAppService.openSystemSettingsLoginItems() }
     }
 
     /// Switching Spaces hides every window at once: drop piles silently instead of an avalanche.
@@ -658,6 +713,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func sessionBecameActive() { sessionInactive = false; refreshRunState() }
     @objc private func accessibilityChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        panel.reduceMotion = reduceMotion
         syncMusic()
         updateStatus()
     }

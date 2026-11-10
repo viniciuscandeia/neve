@@ -18,7 +18,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private static let sharedGpu = Gpu()
     private static let forceMotion = ProcessInfo.processInfo.environment["NEVE_REDUCE_MOTION"] == "1"   // perf / tests: behave as if Reduce Motion is on
 
-    let screen: NSScreen
+    private(set) var screen: NSScreen
     private var perf: Perf.Meter?   // NEVE_PERF=1 only
     private let field: SnowField
     private let gpu: Gpu
@@ -60,6 +60,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var groundY: CGFloat
     private var visibleTop: CGFloat
     private let frame: CGRect, scale: CGFloat
+    private var fps: Int
     // MARK: maximized window (Coverage.swift)
     private let root = CALayer()                       // screen-local coordinates: bounds.origin = the live rect's origin while shrunk
     private var cover = CompactState()
@@ -76,6 +77,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let f = screen.frame, v = screen.visibleFrame
         frame = f
         scale = screen.backingScaleFactor
+        fps = screen.maximumFramesPerSecond
         groundY = sceneKind == nil ? v.minY - f.minY : 0   // scenes have no Dock: the ground is the screen bottom
         visibleTop = v.maxY - f.minY
         let areaScale = Float(f.width * f.height) / (1440 * 900)
@@ -168,8 +170,15 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// True when the screen's frame or scale differs from creation: needs a full rebuild.
     func screenChanged(_ s: NSScreen) -> Bool { s.frame != frame || s.backingScaleFactor != scale }
 
+    /// A display that came back after a short drop: take the fresh NSScreen object (same frame / scale).
+    func adopt(_ s: NSScreen) { screen = s }
+
     /// Dock / menu bar moved (visibleFrame changed, frame unchanged): updated in place, piles kept.
     func refreshBounds() {
+        if screen.maximumFramesPerSecond != fps {   // refresh-rate change (ProMotion / external display mode): same frame, new frame-rate cap
+            fps = screen.maximumFramesPerSecond
+            link?.preferredFrameRateRange = frameRange
+        }
         let g: CGFloat = sceneKind == nil ? screen.visibleFrame.minY - frame.minY : 0, t = screen.visibleFrame.maxY - frame.minY
         guard g != groundY || t != visibleTop else { return }
         groundY = g
@@ -408,12 +417,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         accessibilityChanged()   // `still` follows the pref
     }
     private var frameRange: CAFrameRateRange {
-        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, quiet: slow, maxFPS: screen.maximumFramesPerSecond)
+        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, quiet: slow, maxFPS: fps)
         return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
     /// True when `r` (a window frame, AppKit coords) covers this whole screen, menu bar included = a fullscreen app.
-    func covers(_ r: CGRect) -> Bool { r.insetBy(dx: -1, dy: -1).contains(screen.frame) }
+    func covers(_ r: CGRect) -> Bool { coversScreen(r, frame: screen.frame, notchTop: screen.safeAreaInsets.top) }
     var isFullscreen: Bool { fullscreen }
     func setFullscreen(_ on: Bool) { if on != fullscreen { fullscreen = on; present() } }
 
