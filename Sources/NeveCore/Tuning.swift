@@ -59,7 +59,7 @@ public enum Tuning {
     static let penguinGroove: Float = 2.5           // belly-slide trench depth (pt, at most 35% of the pile)
     static let penguinBerm: Float = 0.4             // share of the plowed area banked in berms on both sides of a deep cut (shallow: 0.8); the rest sprays
     static let penguinPuff: Float = 8               // plowed area (pt^2) per spray puff
-    static let depositScale: Float = 0.8    // pile volume per flake size
+    static let depositScale: Float = 0.97   // pile volume per flake size (0.8 before the small-biased sizes: mean sky size 4.75 -> 3.9, same snowfall rate)
     static let wind: Float = 6
     static let nearFraction: Float = 0.02   // out-of-focus foreground flakes: share of the active sky count
     static let nearAlpha: Float = 0.28

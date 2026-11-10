@@ -59,11 +59,11 @@ private func instances(_ f: SnowField) -> [Instance] {
 }
 
 @Test func rigSnowColoursComeFromThePalette() {
-    #expect(Rig.snow == SIMD4(Palette.snow, 1))
-    #expect(Rig.lift == SIMD4(Palette.lift, 1))
-    #expect(Rig.shotSnow == SIMD4(Palette.lift, 1))
-    #expect(Rig.shadow == SIMD4(Palette.shadow, 1))
-    #expect(Rig.shadowHC == SIMD4(Palette.shadowHC, 1))
+    #expect(Rig.snow == SIMD4(Palette.snow.now, 1))
+    #expect(Rig.lift == SIMD4(Palette.lift.now, 1))
+    #expect(Rig.shotSnow == SIMD4(Palette.lift.now, 1))
+    #expect(Rig.shadow == SIMD4(Palette.shadow.now, Palette.figureShadowK))
+    #expect(Rig.shadowHC == SIMD4(Palette.shadowHC.now, 1))
 }
 
 @Test func instanceLayoutMatchesTheShader() {

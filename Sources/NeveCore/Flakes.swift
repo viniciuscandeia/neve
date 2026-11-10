@@ -35,7 +35,7 @@ extension SnowField {
         let phase = Float.random(in: 0...(2 * .pi), using: &rng)
         switch kind {
         case .background:
-            let s = Float.random(in: 1.5...3.5, using: &rng)
+            let s = Self.sampleSize(1.5, 3.5, u: Float.random(in: 0..<1, using: &rng))
             return Flake(pos: [x, y], vx: Tuning.wind * 0.6 * Float.random(in: 0.7...1.3, using: &rng), fall: 18 + s * 9 + Float.random(in: 0...8, using: &rng),   // terminal speed grows with size
                          phase: phase, amp: Float.random(in: 5...15, using: &rng) * swayAmp(s), freq: Float.random(in: 0.8...2, using: &rng) * swayFreq(s),
                          size: s, alpha: max(0.35, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .background,
@@ -47,13 +47,16 @@ extension SnowField {
                          size: s, alpha: Tuning.nearAlpha + Float.random(in: -0.04...0.04, using: &rng), kind: .near,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         default:
-            let s = Float.random(in: 2.5...7, using: &rng)
+            let s = Self.sampleSize(2.5, 7, u: Float.random(in: 0..<1, using: &rng))
             return Flake(pos: [x, y], vx: Tuning.wind * Float.random(in: 0.7...1.3, using: &rng), fall: 40 + s * 8 + Float.random(in: 0...10, using: &rng),
                          phase: phase, amp: Float.random(in: 8...25, using: &rng) * swayAmp(s), freq: Float.random(in: 0.8...2, using: &rng) * swayFreq(s),
                          size: s, alpha: min(1, depthAlpha(s) + Float.random(in: -0.06...0.06, using: &rng)), kind: .sky,
                          seed: Float.random(in: 0..<1, using: &rng), fade: anywhere ? 1 : 0)
         }
     }
+
+    /// Sizes biased small: lo + (hi - lo) * u^2.2 (median of the sky range ~3.5pt); only the rare big ones get the crystal outline.
+    static func sampleSize(_ lo: Float, _ hi: Float, u: Float) -> Float { lo + (hi - lo) * pow(u, 2.2) }
 
     /// Bigger flakes sway wider and slower.
     func swayAmp(_ s: Float) -> Float { 0.7 + 0.04 * s }

@@ -505,6 +505,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let realDt = lastTimestamp == 0 ? 1.0 / 60 : now - lastTimestamp   // real elapsed time: pointer speed and sweep use it, never the clamped step
         let dt = min(realDt, 0.06)   // 20 fps (economy, calm) steps 0.05
         lastTimestamp = now
+        Palette.tick(now: now)   // light/dark blend (~0.5 s)
         advanceCover(now)
         frameDt = Float(dt)
         // Cursor first, simulation after: the flakes, figures and piles of this frame already see this frame's pointer.
@@ -553,7 +554,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
-        if still, !dirty, field.pilesSettled { stillPaused = true; link?.isPaused = true }
+        if still, !dirty, field.pilesSettled, !Palette.isBlending { stillPaused = true; link?.isPaused = true }
     }
 
     /// Tells the simulation today's date (sleigh frequency); re-read every 10 minutes so a Mac left on rolls over into December.
@@ -674,7 +675,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                 enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
                 enc.setVertexBytes(&dragOffset, length: MemoryLayout<SIMD2<Float>>.size, index: 2)
                 enc.setFragmentBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
-                enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 1)
+                var tone = SIMD2<Float>(contrast, Palette.dark)   // (increase contrast, dark blend)
+                enc.setFragmentBytes(&tone, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pileCount)
             }
             if w.n > 0 {   // actors under the flakes
@@ -690,7 +692,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             var streakDt = frameDt * Self.slowmo   // streak length = distance per SIM frame, so it matches the (slowed) velocity
             enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
             enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
-            occ[8] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, 0, 0)   // rects 0-3 only mask with strength > 0; 4-7 always
+            occ[8] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, Palette.dark, 0)   // rects 0-3 only mask with strength > 0; 4-7 always
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()
