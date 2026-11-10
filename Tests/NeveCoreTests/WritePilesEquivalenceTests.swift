@@ -47,10 +47,11 @@ extension SnowField {
             func ceiling(_ i: Int) -> Float { edge + base[i] + s.pile.cap[i] }   // infinite where no window is in front
             // Stable irregularity keyed on the window-relative column (travels with the pile), interpolated between every 3rd column.
             func jitter(_ i: Int, _ sm: Float) -> Float {
-                let rel = s.c0 + i - s.anchor, r = ((rel % 3) + 3) % 3, g = rel - r
-                let u = Float(r) / 3, w = u * u * (3 - 2 * u)   // smoothstep weight: no kinks at the knots
-                let nz = Float(noise(g)) * (1 - w) + Float(noise(g + 3)) * w
-                let fine = 0.3 * Float(noise(rel &* 7 &+ 1013)) * min(sm / 4, 1)   // extra 1.5pt octave, stable per column
+                let rel = s.c0 + i - s.anchor, r = ((rel % 4) + 4) % 4, g = rel - r
+                let u = Float(r) / 4, w = u * u * (3 - 2 * u)   // smoothstep weight: no kinks at the knots
+                let nz = Float(noise(g)) * (1 - w) + Float(noise(g + 4)) * w
+                let r2 = ((rel % 2) + 2) % 2, g2 = rel - r2, w2: Float = r2 == 0 ? 0 : 0.5   // finer octave, interpolated between knots: rounded, never a per-column sawtooth
+                let fine = 0.3 * (Float(noise(g2 &* 7 &+ 1013)) * (1 - w2) + Float(noise((g2 + 2) &* 7 &+ 1013)) * w2) * min(sm / 4, 1)
                 return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5) + fine   // the Dock bank is bigger: a little more texture
             }
             // Dock pile, on its rounded corner: the bank's height beside the bar end eases (smoothstep) into the Dock snow level over the corner's width,
