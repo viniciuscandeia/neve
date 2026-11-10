@@ -15,10 +15,11 @@ while [ $# -gt 0 ]; do
     --pointer) POINTER=$2; shift ;;
     --no-figures) NOFIG=1 ;;
     --keep-windows) KEEP=1 ;;
+    --capture) CAPTURE=1 ;;   # snow visible to screencapture (for visual checks)
     --runs) RUNS=$2; shift ;;
     --bin) BIN=$2; shift ;;
     [0-9]*) SECS=$1 ;;
-    *) echo "usage: $0 [heavy|media|nevasca|max|still] [secs] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--runs N] [--bin PATH]" >&2; exit 2 ;;
+    *) echo "usage: $0 [heavy|media|nevasca|max|still] [secs] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--capture] [--runs N] [--bin PATH]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -54,6 +55,7 @@ defaults write "$SUITE" intensity -int "$([ "$MODE" = nevasca ] && echo 3 || ech
 case "$POINTER" in on) defaults write "$SUITE" pointerPush -bool true ;; off) defaults write "$SUITE" pointerPush -bool false ;; "") ;; *) echo "--pointer on|off" >&2; exit 2 ;; esac
 [ "$NOFIG" = 1 ] && for k in visitors snowman sleigh walk; do defaults write "$SUITE" "$k" -bool false; done
 defaults write "$SUITE" enabled -bool true
+[ "${CAPTURE:-0}" = 1 ] && defaults write "$SUITE" showInCaptures -bool true
 [ -n "${ADAPTIVE:-}" ] && defaults write "$SUITE" adaptiveFps -bool "$ADAPTIVE"   # A/B for the adaptive frame rate (ADAPTIVE=true|false)
 [ "$MODE" = still ] && defaults write "$SUITE" stillSnow -bool true
 defaults write "$SUITE" ambient -bool true   # Modo ambiente: Neve otherwise pauses after 5 min without input, which would measure 0%
