@@ -17,11 +17,13 @@ fail() { echo "release.sh: $*" >&2; exit 1; }
 [ -x "$APP/Contents/MacOS/Neve" ] || fail "missing executable $APP/Contents/MacOS/Neve"
 [ "$(pb CFBundleIdentifier)" = io.github.viniciuscandeia.neve ] || fail "unexpected bundle id $(pb CFBundleIdentifier)"
 [ "$(pb CFBundleShortVersionString)" = "$V" ] || fail "CFBundleShortVersionString is $(pb CFBundleShortVersionString), expected $V"
-[ "$(pb CFBundleVersion)" = "$V" ] || fail "CFBundleVersion is $(pb CFBundleVersion), expected $V"
+case "$(pb CFBundleVersion)" in ""|*[!0-9]*) fail "CFBundleVersion is '$(pb CFBundleVersion)', expected a build number";; esac
+for k in CFBundleIconFile NSHumanReadableCopyright LSApplicationCategoryType CFBundleDisplayName; do pb $k >/dev/null || fail "Info.plist lacks $k"; done
+[ -f "$APP/Contents/Resources/Neve.icns" ] || fail "missing Neve.icns"
 ARCHS=$(lipo -archs "$APP/Contents/MacOS/Neve")
 case " $ARCHS " in *" arm64 "*) ;; *) fail "no arm64 slice ($ARCHS)";; esac
 case " $ARCHS " in *" x86_64 "*) ;; *) fail "no x86_64 slice ($ARCHS)";; esac
-codesign --force --deep -s - dist/Neve.app
+codesign --force --deep --options runtime -s - dist/Neve.app
 rm -f "dist/Neve-$V.zip"
 ditto -c -k --keepParent dist/Neve.app "dist/Neve-$V.zip"
 lipo -archs dist/Neve.app/Contents/MacOS/Neve

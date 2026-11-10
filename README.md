@@ -80,26 +80,33 @@ Em modo "Atrás das janelas" ou com janela maximizada só aparecem os visitantes
 
 ## 🧣 Menu
 
-O ícone de floco ❄️ fica na barra de menus (com uma barra quando a neve está desligada; levemente mais suave quando pausada). Todas as opções são lembradas entre execuções.
+O ícone de floco ❄️ fica na barra de menus e abre um menu nativo (com o botão esquerdo ou o direito). O ícone muda com o estado: floco com uma barra quando a neve está desligada e floco em círculo quando pausada. Todas as opções são lembradas entre execuções. Na primeira vez que o app abre, o menu aparece sozinho uma vez para você achar o ícone; abrir o app de novo pelo Finder enquanto ele roda abre o **Ajustes** e traz o ícone de volta, se estiver oculto.
 
 | Item | O que faz |
 |---|---|
-| Linha de status | Ex.: "Nevando · Média", "Pausado: app em tela cheia", "Pausado: sem atividade", "Desligado" |
-| **Nevar** | Chave que liga e desliga a neve |
-| **Quantidade** | Quatro níveis, em uma linha de ícones, com efeito imediato |
+| **Nevar** + status | Chave que liga e desliga a neve, com a linha de status embaixo (ex.: "Nevando · Média", "Pausado: app em tela cheia", "Pausado: sem atividade", "Desligado") |
+| **Quantidade** | Quatro níveis, em uma linha de ícones, com efeito imediato (também em Ajustes > Geral, com o teclado) |
 | **Limpar neve** (⌘K) | Remove neve, bolas e bonecos |
-| **Ajustes…** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto). Um pontinho laranja aparece aqui quando falta a permissão de Acessibilidade (opcional) |
-| **Sair** (⌘Q) | Encerra o Neve |
+| **Ajustes…** (⌘,) | Abre a janela de ajustes (⌥-clique no ícone também abre a janela direto). Um pontinho laranja aparece aqui, até você abrir o Ajustes uma vez, quando falta a permissão de Acessibilidade (opcional) |
+| **Sair** (⌘Q) | Encerra o Neve na hora |
 
-Clique com o botão direito (ou ctrl-clique) no ícone para um menu pequeno com **Ajustes…** e **Sair do Neve**.
+Todo o resto fica em **Ajustes**, uma janela no estilo dos Ajustes do Sistema, com abas na barra de ferramentas (a última aberta é lembrada) e o botão **Restaurar padrões** na aba Sistema:
 
-Clicar no ícone abre um painel enxuto, sem seta, com só esses itens; ele fecha ao clicar fora, com Esc, clicando no ícone de novo, ao trocar de Space ou quando o Neve deixa de ser o app ativo. Todo o resto fica em **Ajustes**, a janela com tudo por abas:
-
-- **Geral:** *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
+- **Geral:** *Quantidade*, *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
 - **Bonecos:** *Boneco de neve*, *Andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
 - **Desempenho:** *Modo econômico* (20 fps com a neve calma, 30 com movimento; só a tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso), *Neve dança com a música*, *Cursor empurra os flocos* e *Neve parada* (só com Reduzir Movimento).
-- **Sistema:** *Aparecer em capturas de tela*, *Permitir Acessibilidade…* (só quando falta) e *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento).
-- **Dicas:** atalhos e gestos (⌥-clique, varrer o cursor sobre presentes, ⌥ parado perto de um boneco).
+- **Sistema:** *Aparecer em capturas de tela* (nem todo app de captura respeita esta opção), *Permitir Acessibilidade…* (só quando falta), *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento) e *Restaurar padrões*.
+
+### Dicas
+
+- Segure ⌥ e arraste a neve para fazer bolas.
+- Arraste uma janela devagar: a neve vai junto.
+- Varra o cursor sobre um presente para estourá-lo em confete; ⌥ e clique em um presente para abri-lo.
+- Segure ⌥ com o cursor parado perto de um boneco: ele joga uma bola em você.
+
+### Ícone
+
+`scripts/make-icon.sh` redesenha o ícone (CoreGraphics, `scripts/make-icon.swift`) e gera `Resources/Neve.icns`, que fica versionado; o `make-app.sh` só o copia.
 
 ## 🔥 Instalação
 

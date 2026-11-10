@@ -10,10 +10,10 @@ struct SettingsEnv {
     let login: Binding<Bool>
     let openWindow: () -> Void
     let panel: PanelState
-    let askAccessibility, clear, quit: () -> Void
+    let askAccessibility, restoreDefaults: () -> Void
 }
 
-/// Live status shown at the top of the menu panel; the controller keeps it current (updateStatus / syncOverlays).
+/// Live status shown at the top of the menu; the controller keeps it current (updateStatus / syncOverlays).
 @MainActor final class PanelState: ObservableObject {
     @Published var status = ""
     @Published var axMissing = false
@@ -47,7 +47,7 @@ private let musicOpt = Option(pref: .music, title: "Neve dança com a música", 
 private let stillOpt = Option(pref: .stillSnow, title: "Neve parada", symbol: "pause.circle")
 private let intensitySymbols = ["snowflake", "cloud.snow", "cloud.snow.fill", "wind.snow"]
 
-// MARK: popover (quick)
+// MARK: menu items
 
 private let onTileText = Color(nsColor: .alternateSelectedControlTextColor)
 
@@ -61,10 +61,11 @@ private extension View {
     }
 }
 
-private struct IntensityTile: View {
+let menuWidth: CGFloat = 270
+
+struct IntensityTile: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage(Intensity.key) private var level = 1
-    @FocusState private var focused: Bool
     init(store: UserDefaults) { _level = AppStorage(wrappedValue: 1, Intensity.key, store: store) }
     var body: some View {
         let current = Intensity(rawValue: level)?.title ?? ""
@@ -88,15 +89,9 @@ private struct IntensityTile: View {
                 }
             }
         }
-        .padding(10)
-        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .focusable()
-        .focused($focused)
-        .onMoveCommand { d in
-            if d == .left { level = steppedLevel(level, by: -1) } else if d == .right { level = steppedLevel(level, by: 1) }
-        }
-        .onAppear { for d in [0.0, 0.25] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { focused = true } } }   // 2nd try: the panel is key only after it has opened
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in focused = true }   // the panel opens on Quantidade: ←/→ work at once
+        .padding(.horizontal, 14).padding(.vertical, 6)
+        .frame(width: menuWidth)
+        .environment(\.controlActiveState, .key)   // menu windows are never key: without this the controls draw dimmed
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Quantidade")
         .accessibilityValue(current)
@@ -107,7 +102,8 @@ private struct IntensityTile: View {
 /// Shown wherever the Accessibility permission is offered; the app works fully without it.
 let axHint = "Opcional. Sem ela, não há neve no Dock e as janelas são seguidas com menos rapidez."
 
-private struct Header: View {
+/// Top item of the menu: the Nevar switch with the live status under it.
+struct MenuHeader: View {
     @ObservedObject var panel: PanelState
     let env: SettingsEnv
     var body: some View {
@@ -115,18 +111,20 @@ private struct Header: View {
             PrefBinding(.enabled, env.store) { on in
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Nevar").font(.callout.weight(.medium))
+                        Text("Nevar").font(.headline)
                         Text(panel.status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Toggle("Nevar", isOn: on).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    Toggle("Nevar", isOn: on).labelsHidden().toggleStyle(.switch)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { on.wrappedValue.toggle() }
             }
             if panel.metalMissing { Label("Este Mac não consegue desenhar a neve. Ela fica desativada.", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 14).padding(.vertical, 6)
+        .frame(width: menuWidth)
+        .environment(\.controlActiveState, .key)
     }
 }
 
@@ -150,144 +148,101 @@ private struct MusicNote: View {
     }
 }
 
-private struct FooterRow: View {
-    let title: String, symbol: String, shortcut: String?, badge: Bool, action: () -> Void
-    @State private var hover = false
-    init(_ title: String, _ symbol: String, shortcut: String? = nil, badge: Bool = false, action: @escaping () -> Void) {
-        self.title = title; self.symbol = symbol; self.shortcut = shortcut; self.badge = badge; self.action = action
-    }
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Label(title, systemImage: symbol)
-                if badge { Circle().fill(Color.orange).frame(width: 6, height: 6).accessibilityHidden(true) }
-                Spacer()
-                if let shortcut { Text(shortcut).font(.caption).foregroundStyle(.secondary) }
-            }
-            .padding(.vertical, 4).padding(.horizontal, 8)
-            .background(hover ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
-    }
-}
-
-/// The menu panel: Nevar, Quantidade and three actions; every other option lives in the Ajustes window. Sized by its content.
-struct QuickSettingsView: View {
-    let env: SettingsEnv
-    @ObservedObject var panel: PanelState
-
-    init(env: SettingsEnv) { self.env = env; panel = env.panel }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Header(panel: panel, env: env)
-            IntensityTile(store: env.store)
-            Divider()
-            VStack(spacing: 2) {
-                FooterRow("Limpar neve", "eraser", shortcut: "⌘K", action: env.clear).keyboardShortcut("k")
-                FooterRow("Ajustes…", "gearshape", shortcut: "⌘,", badge: panel.axMissing, action: env.openWindow).keyboardShortcut(",")
-                    .accessibilityHint(panel.axMissing ? "Falta a permissão de Acessibilidade, opcional." : "")
-                FooterRow("Sair", "power", shortcut: "⌘Q", action: env.quit).keyboardShortcut("q")
-            }
-        }
-        .padding(12)
-        .frame(width: 280)
-    }
-}
-
 // MARK: window (full)
 
-/// A key cap: the symbol on a small rounded background.
-private struct Kbd: View {
-    let key: String
-    init(_ key: String) { self.key = key }
-    var body: some View {
-        Text(key).font(.callout.weight(.medium)).padding(.horizontal, 6).padding(.vertical, 1)
-            .background(Color.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-    }
+enum SettingsTab: String, CaseIterable {
+    case geral = "Geral", bonecos = "Bonecos", desempenho = "Desempenho", sistema = "Sistema"
+    var symbol: String { ["slider.horizontal.3", "figure.walk", "speedometer", "gearshape.2"][Self.allCases.firstIndex(of: self)!] }
+    static let key = "settingsTab"
 }
 
-/// The "Ajustes" window: every option, by tab.
-struct SettingsWindowView: View {
+/// One tab of the "Ajustes" window (each is hosted by its own controller in an NSTabViewController with toolbar tabs).
+struct SettingsPane: View {
     let env: SettingsEnv
+    let tab: SettingsTab
     @ObservedObject var panel: PanelState
-    init(env: SettingsEnv) { self.env = env; panel = env.panel }
+    init(env: SettingsEnv, tab: SettingsTab) { self.env = env; self.tab = tab; panel = env.panel }
 
     private func toggle(_ o: Option) -> some View {
         PrefBinding(o.pref, env.store) { b in Toggle(isOn: b) { Label(o.title, systemImage: o.symbol) } }
     }
 
-    private enum Tab: String, CaseIterable { case geral = "Geral", bonecos = "Bonecos", desempenho = "Desempenho", sistema = "Sistema", dicas = "Dicas" }
-    @State private var tab = Tab.geral
-
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Seção", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue) } }
-                .pickerStyle(.segmented).labelsHidden().padding([.horizontal, .top], 16)
-            Form {
-                switch tab {
-                case .geral:
-                    if !panel.screens.isEmpty {
-                        PrefBinding(.economy, env.store) { eco in
-                            Picker(selection: eco.wrappedValue ? .constant("main") : env.target) {
-                                Text("Todas as telas").tag("all")
-                                Text("Tela principal").tag("main")
-                                ForEach(panel.screens, id: \.id) { Text($0.title).tag($0.id) }
-                            } label: { Label("Nevar em", systemImage: "display") }
-                                .disabled(eco.wrappedValue)
-                            if eco.wrappedValue { Text("O modo econômico usa só a tela principal.").font(.caption).foregroundStyle(.secondary) }
-                        }
+        Form {
+            switch tab {
+            case .geral:
+                IntensityPicker(store: env.store)
+                if !panel.screens.isEmpty {
+                    PrefBinding(.economy, env.store) { eco in
+                        Picker(selection: eco.wrappedValue ? .constant("main") : env.target) {
+                            Text("Todas as telas").tag("all")
+                            Text("Tela principal").tag("main")
+                            ForEach(panel.screens, id: \.id) { Text($0.title).tag($0.id) }
+                        } label: { Label("Nevar em", systemImage: "display") }
+                            .disabled(eco.wrappedValue)
+                        if eco.wrappedValue { Text("O modo econômico usa só a tela principal.").font(.caption).foregroundStyle(.secondary) }
                     }
-                    PrefBinding(.behindWindows, env.store) { behind in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Toggle(isOn: behind) { Label("Atrás das janelas", systemImage: "square.stack.3d.down.right") }
-                            Text("A neve cai só no chão, por trás das janelas.").font(.caption).foregroundStyle(.secondary)
-                        }
-                        PrefBinding(.behindLarge, env.store) { b in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Toggle(isOn: b) { Label("Atrás de janelas grandes", systemImage: "macwindow") }.disabled(behind.wrappedValue)
-                                Text(behind.wrappedValue ? "Já incluído em Atrás das janelas." : "Os flocos passam por trás de janelas grandes.").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                case .bonecos:
-                    ForEach(figures, id: \.pref) { toggle($0) }
-                case .desempenho:
-                    toggle(economyOpt)
-                    Text("20–30 fps, só a tela principal, menos efeitos.").font(.caption).foregroundStyle(.secondary)
-                    toggle(ambientOpt)
-                    PrefBinding(.music, env.store) { b in
-                        Toggle(isOn: b) { Label(musicOpt.title, systemImage: musicOpt.symbol) }
-                            .disabled(!MusicTap.supported || panel.reduceMotion)
-                    }
-                    MusicNote(panel: env.panel, reduceMotion: panel.reduceMotion)
-                    PrefBinding(.pointerPush, env.store) { b in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Toggle(isOn: b) { Label("Cursor empurra os flocos", systemImage: "cursorarrow.motionlines") }
-                            Text("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    if panel.reduceMotion { toggle(stillOpt) }
-                case .sistema:
-                    PrefBinding(.showInCaptures, env.store) { b in Toggle(isOn: b) { Label("Aparecer em capturas de tela", systemImage: "camera") } }
-                    AccessRow(panel: env.panel, ask: env.askAccessibility)
-                    if !env.isDev {
-                        Toggle(isOn: Binding(get: { panel.loginOn }, set: { env.login.wrappedValue = $0 })) { Label("Abrir ao iniciar sessão", systemImage: "power.circle") }
-                        if !panel.loginNote.isEmpty { Text(panel.loginNote).font(.caption).foregroundStyle(.secondary) }
-                    }
-                case .dicas:
-                    Label { HStack(spacing: 4) { Text("Segure"); Kbd("⌥"); Text("e arraste a neve para fazer bolas.") } } icon: { Image(systemName: "hand.draw") }
-                    Label("Arraste uma janela devagar: a neve vai junto.", systemImage: "macwindow.on.rectangle")
-                    Label("Varra o cursor sobre um presente para estourá-lo em confete.", systemImage: "gift")
-                    Label { HStack(spacing: 4) { Kbd("⌥"); Text("e clique em um presente para abri-lo.") } } icon: { Image(systemName: "cursorarrow.click") }
-                    Label { HStack(spacing: 4) { Text("Segure"); Kbd("⌥"); Text("com o cursor parado perto de um boneco: ele joga uma bola em você.") } } icon: { Image(systemName: "snowflake") }
                 }
+                PrefBinding(.behindWindows, env.store) { behind in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(isOn: behind) { Label("Atrás das janelas", systemImage: "square.stack.3d.down.right") }
+                        Text("A neve cai só no chão, por trás das janelas.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    PrefBinding(.behindLarge, env.store) { b in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle(isOn: b) { Label("Atrás de janelas grandes", systemImage: "macwindow") }.disabled(behind.wrappedValue)
+                            Text(behind.wrappedValue ? "Já incluído em Atrás das janelas." : "Os flocos passam por trás de janelas grandes.").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Text("Dica: segure ⌥ e arraste a neve para fazer bolas.").font(.caption).foregroundStyle(.secondary)
+            case .bonecos:
+                ForEach(figures, id: \.pref) { toggle($0) }
+            case .desempenho:
+                toggle(economyOpt)
+                Text("20–30 fps, só a tela principal, menos efeitos.").font(.caption).foregroundStyle(.secondary)
+                toggle(ambientOpt)
+                PrefBinding(.music, env.store) { b in
+                    Toggle(isOn: b) { Label(musicOpt.title, systemImage: musicOpt.symbol) }
+                        .disabled(!MusicTap.supported || panel.reduceMotion)
+                }
+                MusicNote(panel: env.panel, reduceMotion: panel.reduceMotion)
+                PrefBinding(.pointerPush, env.store) { b in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(isOn: b) { Label("Cursor empurra os flocos", systemImage: "cursorarrow.motionlines") }
+                        Text("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if panel.reduceMotion { toggle(stillOpt) }
+            case .sistema:
+                PrefBinding(.showInCaptures, env.store) { b in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(isOn: b) { Label("Aparecer em capturas de tela", systemImage: "camera") }
+                        Text("Nem todo app de captura respeita esta opção.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                AccessRow(panel: env.panel, ask: env.askAccessibility)
+                if !env.isDev {
+                    Toggle(isOn: Binding(get: { panel.loginOn }, set: { env.login.wrappedValue = $0 })) { Label("Abrir ao iniciar sessão", systemImage: "power.circle") }
+                    if !panel.loginNote.isEmpty { Text(panel.loginNote).font(.caption).foregroundStyle(.secondary) }
+                }
+                Button("Restaurar padrões", action: env.restoreDefaults)
             }
-            .formStyle(.grouped)
         }
+        .formStyle(.grouped)
         .frame(width: 460)
-        .frame(minHeight: 400)
+        .frame(minHeight: 300)
+    }
+}
+
+/// Quantidade in Ajustes: a segmented picker, so the level is also reachable from the keyboard.
+private struct IntensityPicker: View {
+    @AppStorage(Intensity.key) private var level = 1
+    init(store: UserDefaults) { _level = AppStorage(wrappedValue: 1, Intensity.key, store: store) }
+    var body: some View {
+        Picker(selection: $level) {
+            ForEach(Intensity.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+        } label: { Label("Quantidade", systemImage: "snowflake") }
+            .pickerStyle(.segmented)
     }
 }
