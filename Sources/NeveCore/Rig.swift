@@ -35,10 +35,16 @@ public enum Rig {
     typealias V = SIMD2<Float>
     typealias C = SIMD4<Float>
     static func c4(_ c: SIMD3<Float>, _ a: Float = 1) -> C { C(c.x, c.y, c.z, a) }
-    static let snow = c4(Palette.snow), lift = c4(Palette.lift), crest = C(1, 1, 1, Palette.crestAlpha)
-    static let shadow = c4(Palette.shadow), shadowHC = c4(Palette.shadowHC)
+    // Computed: they follow the light/dark blend. `shadow` carries the figure-shadow scale (callers multiply their own 0.35-0.6 on top).
+    static var snow: C { c4(Palette.snow.now) }
+    static var lift: C { c4(Palette.lift.now) }
+    static var crest: C { c4(Palette.flake.now, Palette.crestAlpha) }
+    static var shadow: C { c4(Palette.shadow.now, Palette.figureShadowK) }
+    static var shadowHC: C { c4(Palette.shadowHC.now) }
+    static var speckle: C { c4(Palette.speckle.now, 0.85) }
+    static var shotSnow: C { c4(Palette.lift.now) }
     static let carrot = C(0.96, 0.52, 0.12, 1), scarfRed = C(0.82, 0.17, 0.20, 1), twig = C(0.38, 0.25, 0.14, 1), coal = C(0.13, 0.14, 0.16, 1)
-    static let stripe = C(0.98, 0.88, 0.86, 0.9), speckle = C(0.60, 0.70, 0.86, 0.85), shotSnow = c4(Palette.lift)
+    static let stripe = C(0.98, 0.88, 0.86, 0.9)
     /// Rolling speckles: (radius fraction, angle, size fraction).
     static let specks: [SIMD3<Float>] = [SIMD3(0.55, 0.5, 0.095), SIMD3(0.72, 2.4, 0.12), SIMD3(0.3, 4.0, 0.08),
                                          SIMD3(0.8, 5.3, 0.10), SIMD3(0.45, 3.0, 0.07), SIMD3(0.62, 1.5, 0.065)]
@@ -71,14 +77,14 @@ public enum Rig {
             rr = r * 0.96
         }
         w.ellipse(center: c, radii: rr, color: a(snow, alpha))
-        w.ellipse(center: c + V(-0.02 * r.x, 0.085 * r.y), radii: r * 0.945, color: a(lift, alpha))
+        w.ellipse(center: c + Palette.light * 0.085 * r, radii: r * 0.945, color: a(lift, alpha))
         if speckles {
             for s in specks {
                 let t = s.y + rotation
                 w.ellipse(center: c + V(r.x * s.x * cos(t), r.y * s.x * sin(t)), radii: r * s.z, color: a(speckle, alpha))
             }
         }
-        w.ellipse(center: c + V(-0.275 * r.x, 0.4 * r.y), radii: V(0.425 * r.x, 0.35 * r.y), color: a(crest, alpha))
+        w.ellipse(center: c + Palette.light * 0.43 * r, radii: V(0.425 * r.x, 0.35 * r.y), color: a(crest, alpha))
     }
 
     static func eyes(_ f: Fr, _ al: Float, _ w: inout PrimWriter) {

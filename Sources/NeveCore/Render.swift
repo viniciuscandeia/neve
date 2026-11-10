@@ -70,7 +70,8 @@ extension SnowField {
             if f.kind != .dormant {
                 // Crystals (> 4pt) turn and sway like a pendulum; small dots stay round. Reduce Motion: fixed angle.
                 let rot: Float = f.size > 4 && f.kind != .near ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
-                p[n] = Instance(pos: f.pos, size: f.size, alpha: f.alpha * f.fade, seed: f.seed + (f.kind == .background ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : 0, vel: calm || f.kind == .near ? .zero : f.vel); n += 1
+                let far = f.kind == .background   // atmospheric perspective: smaller and dimmer, draw side only
+                p[n] = Instance(pos: f.pos, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : 0, vel: calm || f.kind == .near ? .zero : f.vel); n += 1
             }   // seed >= 2: background flake (shader occlusion by large windows)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading

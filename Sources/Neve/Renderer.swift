@@ -1,5 +1,20 @@
+import AppKit
 import NeveCore
 import Metal
+
+/// Follows the system appearance: `Palette.darkTarget` is 1 under Dark Aqua; the overlays ease `Palette.dark` toward it.
+@MainActor enum AppearanceWatcher {
+    private static var started = false
+    static func read() { Palette.darkTarget = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 1 : 0 }
+    static func start() {
+        guard !started else { return }
+        started = true
+        read(); Palette.dark = Palette.darkTarget   // first value without a fade
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { MainActor.assumeIsolated { read() } }   // effectiveAppearance settles just after the notification
+        }
+    }
+}
 
 /// Shared Metal objects, built once: one library (runtime-compiled from the shader strings), the flake and the prim pipelines.
 struct Gpu {
@@ -10,6 +25,7 @@ struct Gpu {
     let piles: MTLRenderPipelineState
 
     init?() {
+        MainActor.assumeIsolated { AppearanceWatcher.start() }
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue(),
               let library = try? device.makeLibrary(source: flakeShaderSource + primShaderSource + pileShaderSource, options: nil),
@@ -44,7 +60,7 @@ let flakeShaderSource = """
 using namespace metal;
 struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; float2 vel; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc
 struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; float2 tail; };
-struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four, s.y = 1 when any rect is set (0: the fragment skips the mask loop)
+struct Occ { float4 r[8]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); s.x = strength of the first four, s.y = 1 when any rect is set (0: the fragment skips the mask loop), s.z = dark blend 0...1
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]], constant float &frameDt [[buffer(2)]]) {
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
@@ -56,11 +72,11 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     float c = cos(i.rot), sn = sin(i.rot);
     float2 p = i.pos + float2(c * l.x - sn * l.y, sn * l.x + c * l.y);
     // Motion streak (flakes, clumps, drops): stretch the quad backwards along the velocity, head at the current position.
-    // smear = distance covered in one frame (frameDt, so 30 / 20 fps do not strobe), capped at k * size; below 0.3pt the quad is untouched (no extra cost for slow flakes).
+    // smear = distance covered in one frame (frameDt, so 30 / 20 fps do not strobe), capped at k * size; below 0.3pt the quad is untouched. Slow snow (< 150 pt/s) never streaks; debris and drops do.
     float2 uv = corner, tail = float2(0.0);
     float alphaK = 1.0;
     float speed = length(i.vel);
-    float smear = (k <= 1u || k == 5u) ? min(speed * frameDt, i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
+    float smear = ((k == 0u && speed >= 150.0) || k == 1u || k == 5u) ? min(speed * frameDt, i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
     if (smear >= 0.3) {
         float2 dir = i.vel / speed, perp = float2(-dir.y, dir.x);
         float h = i.size * 0.5 * (pr > 0u ? 1.15 : 1.0);   // same chunk margin as above
@@ -86,8 +102,7 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.prof = float(pr);
     return o;
 }
-// White core, cool blue-gray rim: reads on white pages, still looks like snow on dark ones.
-// `contrast` (Increase Contrast) = 1 darkens the rim and keeps it opaque.
+// `contrast` (Increase Contrast) = 1 darkens the flake edge.
 // 1 inside the rect (minx, miny, maxx, maxy; screen coordinates) with a soft ~8pt edge; empty rects hide nothing.
 static float occMask(float2 p, float4 r) {
     if (r.z <= r.x) return 0.0;
@@ -96,6 +111,7 @@ static float occMask(float2 p, float4 r) {
 }
 fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[buffer(0)]], constant Occ &occ [[buffer(1)]]) {
     float seed = fract(in.seed);
+    float dark = occ.s.z;
     float hide = 0.0;
     if (occ.s.y > 0.0) for (int k = 0; k < 4; k++) hide = max(hide, max(occMask(in.wpos, occ.r[k]) * occ.s.x, in.seed >= 2.0 ? occMask(in.wpos, occ.r[4 + k]) : 0.0));
     if (hide >= 1.0) discard_fragment();
@@ -107,7 +123,7 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     if (kind == 6) {   // out-of-focus foreground flake: soft gaussian-like disc, no edge, no streak
         float r2 = dot(in.uv, in.uv);
         float a = exp(-3.5 * r2) * (1.0 - smoothstep(0.7, 1.0, r2)) * in.alpha * (1.0 - hide);
-        return float4(\(Palette.msl(Palette.snow)) * a, a);
+        return float4(\(Palette.msl(Palette.flake)) * a, a);
     }
     if (kind == 5) {   // meltwater drop: teardrop (point up), bluish translucent, white specular dot
         float2 u = u0;
@@ -117,26 +133,27 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         float a = (1.0 - smoothstep(w - e, w + e * 0.5, abs(u.x))) * step(-1.0, u.y) * (1.0 - smoothstep(0.96, 1.0, t));
         float spec = 1.0 - smoothstep(0.08, 0.2, length(u - float2(-0.2, -0.15)));
         float rim = 1.0 - smoothstep(0.06, 0.24, w - abs(u.x));   // thin darker-blue outline so it reads on any wallpaper
-        float3 c = mix(float3(0.62, 0.80, 0.97), float3(0.25, 0.40, 0.65), rim);
-        c = mix(c, float3(1.0), spec);
+        float3 c = mix(\(Palette.msl(Palette.dropFill)), \(Palette.msl(Palette.dropEdge)), rim);
+        c = mix(c, \(Palette.msl(Palette.flake)), spec);
         a *= in.alpha * sg * (1.0 - hide);
         return float4(c * a, a);
     }
     if (kind > 0) {
-        float3 body = \(Palette.msl(Palette.snow)), shadow = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
+        float3 body = \(Palette.msl(Palette.snow)), white = \(Palette.msl(Palette.flake)), shadow = mix(body * 0.72 * \(Palette.msl(Palette.deep)), \(Palette.msl(Palette.shadowHC)), contrast);   // shaded snow: the body darkened, not a black wash
         float2 u = u0;
         // Light stays fixed while the shape turns: shading masks use the un-rotated position (world offset / half-size), clamped to the quad.
         float rc = cos(in.rot), rs = sin(in.rot);
         float2 ul = float2(rc * u.x - rs * u.y, rs * u.x + rc * u.y);
         if (kind == 2) ul.y = clamp(rc * u.y + rs * u.x / max(in.aspect, 0.45), -1.0, 1.0);   // long thin blocks: a small tilt must not flip the lighting
         float a = 0.0;
-        float3 c = float3(1.0);
+        float3 c = white;
         if (kind == 1 || (kind == 2 && in.prof <= 0.0)) {   // clump (also a slab without a profile, should one ever arrive): lumpy disc, shadowed below, whiter on top
             float th = atan2(u.y, u.x) + seed * 6.2832;
             float d = length(u) / (1.0 + 0.12 * cos(3.0 * th + seed * 17.0) + 0.06 * cos(5.0 * th));
             a = 1.0 - smoothstep(1.0 - max(0.18, 1.5 * fwidth(d)), 1.0, d);
-            c = mix(body, shadow, 0.35 * (1.0 - smoothstep(-0.3, 0.2, ul.y)));
-            c = mix(c, float3(1.0), 0.3 * smoothstep(0.3, 0.7, ul.y));
+            float lt = dot(ul, \(Palette.mslLight));   // along the one light
+            c = mix(body, shadow, 0.35 * (1.0 - smoothstep(-0.3, 0.2, lt)));
+            c = mix(c, white, 0.3 * smoothstep(0.3, 0.7, lt));
         } else if (kind == 2 && in.prof > 0.0) {   // falling chunk of pile: curved lumpy crest from the profile, soft ragged underside, broken edges
             uint pr = uint(in.prof + 0.5);
             float T = float(pr & 511u) * 0.5, W = in.size;
@@ -154,16 +171,16 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
             a = clamp(0.5 + inside / max(fwidth(inside), 1.0), 0.0, 1.0);
             float depth = (ytop - q.y) / max(ytop - ybot, 1.0);   // 0 at the crest, 1 at the underside
             float mott = 0.5 + 0.5 * sin(q.x * 0.22 + seed * 60.0 + q.y * 0.15);   // slow mottling, no pattern
-            c = mix(float3(1.0), body, smoothstep(0.15, 0.85, depth));
-            c = mix(c, shadow, (0.55 * smoothstep(0.6, 1.0, depth) + 0.08 * mott * depth) * (1.0 - hide));
-            c = mix(c, float3(1.0), 1.0 - smoothstep(0.0, 1.6, ytop - q.y));
+            c = mix(white, body, smoothstep(0.15, 0.85, depth));
+            c = mix(c, shadow, 0.55 * smoothstep(0.6, 1.0, depth) + 0.08 * mott * depth);   // the hide mask fades alpha only (below), never the shading
+            c = mix(c, white, 1.0 - smoothstep(0.0, 1.6, ytop - q.y));
         } else if (kind == 3) {   // puff: soft white, no rim
             a = max(1.0 - dot(u, u), 0.0);
         } else if (kind == 4) {   // glint: 4-point star
             float v = sqrt(abs(u.x)) + sqrt(abs(u.y));
             a = (1.0 - smoothstep(0.5, 1.0, v)) + 0.5 * (1.0 - smoothstep(0.0, 0.5, length(u)));
             a = min(a, 1.0);
-            c = float3(1.0, 0.97, 0.88);
+            c = \(Palette.msl(Palette.glint));
         }   // any other kind: a = 0, nothing drawn
         a *= in.alpha * sg * (1.0 - hide);
         return float4(c * a, a);
@@ -176,11 +193,15 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
         float wob = cos(6.0 * th) * 0.13 + cos(3.0 * th + seed * 17.0) * 0.07 * fract(seed * 7.0);
         d *= 1.0 - big * (wob + 0.04);
     }
-    float core = 1.0 - smoothstep(0.1, 0.45, d);
-    float3 rim = mix(\(Palette.msl(Palette.rim)), float3(0.40, 0.50, 0.70), contrast);
-    rim = mix(mix(float3(0.78, 0.85, 0.95), rim, contrast), rim, smoothstep(2.5, 6.0, in.size));   // small flakes: lighter rim (kept as-is under Increase Contrast)
-    float a = (1.0 - smoothstep(1.0 - max(0.45, 1.5 * fwidth(d)), 1.0, d)) * in.alpha * sg * (1.0 - hide);
-    return float4(mix(rim, float3(1.0), core) * a, a);
+    // Depth of field: the focus plane is a mid-size sky flake; further from it (smaller / background = far, bigger = near) the edge gets softer.
+    float far = in.seed >= 2.0 ? 1.0 : 0.7 * clamp(abs(in.size - 4.5) / 3.0, 0.0, 1.0);
+    float soft = max(max(0.45, 1.5 * fwidth(d)), 0.6 * far);
+    // No gray-blue ring: white body with a very faint neutral edge shadow in light mode (none in dark); Increase Contrast darkens the edge.
+    float edge = smoothstep(0.35, 1.0, d);
+    float3 rimC = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
+    float rk = mix(\(Palette.msl(Palette.rimAlpha)), 0.7, contrast);
+    float a = (1.0 - smoothstep(1.0 - soft, 1.0, d)) * in.alpha * sg * (1.0 - hide);
+    return float4(mix(\(Palette.msl(Palette.flake)), rimC, rk * edge) * a, a);
 }
 """
 

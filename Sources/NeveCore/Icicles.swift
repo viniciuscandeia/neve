@@ -101,14 +101,14 @@ extension SnowField {
     /// Frozen windows get their frost lip first (Frost.swift).
     public func writeIciclePrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
         writeFrostPrims(&w, contrast: contrast, shift: shift)
-        let edge = Rig.a(contrast ? Rig.shadowHC : SIMD4(0.45, 0.62, 0.85, 1), 0.7)
+        let edge = Rig.a(contrast ? Rig.shadowHC : Rig.c4(Palette.iceEdge.now), 0.7)
         for c in icicles {
             if let si = index[c.win], covered(si, SIMD2(c.x, c.y)) || covered(si, SIMD2(c.tilt + c.x, c.y - c.len)) { continue }   // hidden by a window in front
             let p = SIMD2(c.x, c.y) + shift(c.win), a = c.fade, hw = c.width / 2
             let tip = p + SIMD2(c.tilt, -c.len)
             w.triangle(p + SIMD2(-hw - 0.5, 0.5), p + SIMD2(hw + 0.5, 0.5), tip + SIMD2(0, -0.8), color: Rig.a(edge, a))
-            w.triangle(p + SIMD2(-hw, 0), p + SIMD2(hw, 0), tip, color: SIMD4(0.80, 0.90, 1.0, 0.75 * a))
-            w.capsule(from: p + SIMD2(-hw * 0.5, -0.5), to: p + SIMD2(c.tilt * 0.4 - hw * 0.15, -c.len * 0.65), width: 0.6, color: SIMD4(1, 1, 1, 0.7 * a))
+            w.triangle(p + SIMD2(-hw, 0), p + SIMD2(hw, 0), tip, color: Rig.c4(Palette.ice.now, 0.75 * a))
+            w.capsule(from: p + SIMD2(-hw * 0.5, -0.5), to: p + SIMD2(c.tilt * 0.4 - hw * 0.15, -c.len * 0.65), width: 0.6, color: Rig.c4(Palette.iceShine.now, 0.7 * a))
         }
     }
 }
