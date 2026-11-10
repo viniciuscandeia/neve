@@ -81,6 +81,7 @@ public final class SnowField {
     var time: Double = 0
     var windGain: Float = 8
     var wind: Float = 0
+    var windSlow: Float = 0   // wind relaxed over ~6 s: only sustained wind biases landings
     public var music = MusicInput.silent   // injected each frame by the app (Music.swift)
     var musicKick: Float = 0, musicDir: Float = 1, musicEdge = false, musicSway: Float = 1, musicGlint: Float = 1, musicBoost: Float = 1
     public var pilesDirty = false { didSet { if pilesDirty { pileVersion &+= 1 } } }
@@ -308,6 +309,7 @@ public final class SnowField {
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         stepMusic(dt: dt)
         wind = calm ? 0 : windGain * windShape() + musicKick
+        windSlow += (wind - windSlow) * min(1, dt / 6)
         if let timer { let t0 = timer(); stepFlakes(dt: dt); flakeSeconds += timer() - t0; flakeSteps += 1 } else { stepFlakes(dt: dt) }
         stepPeel(dt: dt)
         stepIce(dt: dt)
@@ -317,6 +319,7 @@ public final class SnowField {
         stepBank(dt: dt)
         stepDockSpill(dt: dt)
         stepPuffs(dt: dt)
+        stepWindDust(dt: dt)
         stepGlints(dt: dt)
         stepDrips(dt: dt)
     }

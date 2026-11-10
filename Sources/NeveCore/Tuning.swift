@@ -66,6 +66,18 @@ public enum Tuning {
     static let maxDebris = 1200
     static let busyDebris = 24   // loose chunks alive before the frame rate goes up (steady Nevasca shedding peaks near 16)
     static let maxPuffs = 24
+    // Frame rate (Util.swift FrameRate). Measure CPU, then pick.
+    static let calmFloorFPS: Float = 30             // quiet rate (nothing fast for FrameRate.holdDown = 2.5 s after the last input / motion); 60 = smoothest, costliest
+    static let calmFloorEconomyFPS: Float = 20      // same, Economy mode
+    /// Option, default OFF: at the calm floor step the sim at the floor rate but let the renderer interpolate positions every display refresh
+    /// (FrameRate.interpAlpha). Needs renderer wiring (prev/cur flake buffers); CPU = sim at floor + draw at display rate.
+    public static let interpolateCalm = false
+    // Wind-blown accumulation
+    static let windBiasMax: Float = 0.3     // chance a landing flake slides one bin leeward when that bin is lower (at the sustained-wind cap)
+    static let windBiasRef: Float = 150     // sustained wind speed (pt/s) at which the chance reaches the cap
+    static let dustWind: Float = 60         // |wind| (pt/s) above which crests shed dust (only Nevasca gusts get there)
+    static let dustRate: Float = 6          // lift attempts per second at 2x the threshold
+    static let dustVol: Float = 0.2         // max volume moved per lift (area, pt^2); conserved: it lands in the leeward bin
     static let maxGlints = 6
     static let maxDrops = 16                // meltwater droplets alive at once (Drips.swift)
     static let dripRate: Float = 5          // new droplets per second while melting

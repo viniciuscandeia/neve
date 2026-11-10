@@ -70,15 +70,18 @@ extension SnowField {
 
     func isActive(_ i: Int) -> Bool { i < skyCount ? i < skyLimit : i - skyCount < bgLimit }
 
-    /// Smooth gusts: slow sines with unrelated periods; sign flips over several seconds.
-    func windShape() -> Float {
-        let w = 2 * Double.pi * time   // Double: a Float clock loses the fractions after ~36 h
-        let a: Double = 0.55 * sin(w / 37), b: Double = 0.3 * sin(w / 17 + 1.3), c: Double = 0.25 * sin(w / 9 + 2.1)
-        return Float(a + b + c)
+    /// Global wind: smooth noise in time (Util.windNoise), so it never visibly repeats.
+    func windShape() -> Float { windNoise(time) }
+
+    /// Sway attenuation near 0.2 Hz (Apple HIG: avoid sustained ambient oscillation there): 1 outside 0.15...0.25 Hz, 0.35 at 0.2 Hz.
+    static func bandGain(_ omega: Float) -> Float {
+        let d = abs(omega * 0.159_155 - 0.2) / 0.05
+        return d >= 1 ? 1 : 0.35 + 0.65 * d * d
     }
 
     func stepFlakes(dt: Float) {
-        let gt = Float((time * 0.35).truncatingRemainder(dividingBy: 2 * .pi))   // gust phase, once per call
+        let gt = Float((time * 0.12).truncatingRemainder(dividingBy: 4096))   // gust clock (noise lattice wraps at 4096), once per call
+        let dn = Float((time * 0.05).truncatingRemainder(dividingBy: 4096))   // per-flake drift clock (lattice ~20 s)
         let x0 = liveX0 - 10, w = liveX1 - liveX0 + 20
         nearLimit = calm || economy || lowPower ? 0 : Int((Float(skyLimit) * Tuning.nearFraction).rounded())   // off in the economy modes (still snow never steps)
         var liveSky = 0, liveBg = 0   // one past the last non-dormant slot of each pool
@@ -94,14 +97,18 @@ extension SnowField {
             f.fade = q ? max(0, f.fade - dt * (melting && !calm ? 0.7 : 1.5)) : min(1, f.fade + dt * 2.5)   // ~0.4s fade-in; ~0.7s fade-out in the outro
             if q, f.fade == 0 { f.kind = .dormant; flakes[i] = f; continue }
             let p0 = f.pos
-            f.phase += f.freq * dt
-            // Wind: a gust field varying across the screen and in time; flakes relax toward it (heavier = slower to respond).
-            let gust = 1 + 0.5 * sin(f.pos.x * 0.005 + gt)
+            // Frequency and amplitude drift slowly per flake (seeded noise); amplitude is cut near 0.2 Hz.
+            let sd = f.seed * 913
+            let omega = f.freq * (1 + 0.25 * valueNoise(dn, sd))
+            f.phase += omega * dt
+            let ampNow = f.amp * (1 + 0.3 * valueNoise(dn, sd + 0.5 + 400)) * Self.bandGain(omega)
+            // Wind: a gust field (2D value noise over position and time, no travelling band); flakes relax toward it (heavier = slower to respond).
+            let gust = 1 + 0.6 * valueNoise(f.pos.x * 0.004 + f.pos.y * 0.0025 + 33, gt)
             f.wv += (wind * gust * f.vx / Tuning.wind - f.wv) * min(1, dt / (0.4 + 0.25 * f.size))
             // Sway: two incommensurate sines (flutter) instead of one.
             let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)
-            f.pos.x += (f.vx + f.wv + 0.69 * f.amp * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
-            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(2 * f.phase))   // vertical flutter, a bit more for big flakes
+            f.pos.x += (f.vx + f.wv + 0.69 * ampNow * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
+            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * sin(1.37 * f.phase + f.seed * 6.2832 + 2))   // vertical flutter (own frequency, not locked to the sway), a bit more for big flakes
             if pointerPush, let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
                 if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {
@@ -146,12 +153,40 @@ extension SnowField {
         else {
             let v = vol > 0 ? vol / Tuning.binWidth : volume
             // A landing slab (span = its width) lays its volume along that width, not on three bins: no spike.
-            let n = surfaces[best].pile.heights.count, b = c - surfaces[best].c0, half = Int(span * invBin / 2)
+            let n = surfaces[best].pile.heights.count
+            var b = c - surfaces[best].c0
+            // Sustained wind: a flake landing on a crest slides one bin leeward when that bin is lower (volume only moves, never lost).
+            if vol == 0, !calm, abs(windSlow) > 1 {
+                let nb = windSlow > 0 ? b + 1 : b - 1, p = min(Tuning.windBiasMax, abs(windSlow) / Tuning.windBiasRef * Tuning.windBiasMax)
+                if nb >= 0, nb < n, surfaces[best].pile.visible[nb], surfaces[best].pile.heights[nb] < surfaces[best].pile.heights[b], Float(noise(c &* 7919 &+ Int(time * 997)) + 1) * 0.5 < p { b = nb }   // hash, not rng: keeps the seeded random stream unchanged
+            }
+            let half = Int(span * invBin / 2)
             let lo = max(0, b - half), hi = min(n - 1, b + half), k = span > 2 * Tuning.binWidth && vol > 0 ? hi - lo + 1 : 1
             for i in (k > 1 ? lo...hi : b...b) {
                 if surfaces[best].id == 0 { deposit(dock: best, bin: i, volume: v / Float(k), powder: vol == 0) } else { deposit(surface: best, bin: i, volume: v / Float(k), powder: vol == 0) }
             }
         }
         return true
+    }
+}
+
+extension SnowField {
+    /// Strong gusts lift a little dust from crests: a puff, and a sliver of the crest's volume moves to the lower leeward bin (conserved).
+    func stepWindDust(dt: Float) {
+        let a = abs(wind)
+        guard !calm, !quiet, !economy, a > Tuning.dustWind, !surfaces.isEmpty, Float.random(in: 0..<1, using: &rng) < dt * Tuning.dustRate * (a / Tuning.dustWind - 1) else { return }
+        let si = Int.random(in: 0..<surfaces.count, using: &rng)
+        guard landable(si) else { return }
+        let n = surfaces[si].pile.heights.count
+        guard n > 2 else { return }
+        let b = Int.random(in: 0..<n, using: &rng), nb = wind > 0 ? b + 1 : b - 1
+        guard nb >= 0, nb < n, surfaces[si].pile.visible[b], surfaces[si].pile.visible[nb] else { return }
+        let h = surfaces[si].pile.heights[b], hn = surfaces[si].pile.heights[nb]
+        let v = min(Tuning.dustVol, (h - hn) * 0.25)
+        guard h > Tuning.speckFloor, v > 0.01, hn + v <= surfaces[si].pile.limit(nb) else { return }
+        surfaces[si].pile.heights[b] = h - v
+        surfaces[si].pile.heights[nb] = hn + v
+        pilesDirty = true
+        addPuff(x: Float(surfaces[si].c0 + b) * Tuning.binWidth + Tuning.binWidth / 2, y: surfaces[si].edgeY + h)
     }
 }

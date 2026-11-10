@@ -25,6 +25,33 @@ func noise(_ i: Int) -> CGFloat {
     return CGFloat(Double((z ^ (z >> 31)) >> 11) / Double(1 << 52) - 1)
 }
 
+/// Lattice hash in 0...1 (cheap: one multiply-xorshift, no allocation).
+@inline(__always) private func lattice(_ x: Int32, _ y: Int32) -> Float {
+    var h = UInt32(bitPattern: x) &* 0x27D4_EB2F ^ UInt32(bitPattern: y) &* 0x1656_67B1
+    h = (h ^ (h >> 15)) &* 0x85EB_CA6B
+    h ^= h >> 13
+    return Float(h >> 8) * (1 / 16_777_216)
+}
+
+/// Smooth 2D value noise in -1...1 (C1-continuous: smoothstep between hashed lattice points). Lattice indices wrap at `period` on the y axis
+/// (a power of two) so a long-running clock on y never jumps.
+func valueNoise(_ x: Float, _ y: Float, period: Int32 = 4096) -> Float {
+    let fx = x.rounded(.down), fy = y.rounded(.down)
+    let ix = Int32(truncatingIfNeeded: Int(fx)), iy = Int32(truncatingIfNeeded: Int(fy))
+    var u = x - fx, v = y - fy
+    u = u * u * (3 - 2 * u); v = v * v * (3 - 2 * v)
+    let m = period - 1, j0 = iy & m, j1 = (iy &+ 1) & m
+    let a = lattice(ix, j0), b = lattice(ix &+ 1, j0), c = lattice(ix, j1), d = lattice(ix &+ 1, j1)
+    let top = a + (b - a) * u, bot = c + (d - c) * u
+    return (top + (bot - top) * v) * 2 - 1
+}
+
+/// Time-only wind shape in about -1.3...1.3: two octaves (lattice every 8 s and every 3 s) of value noise; never repeats visibly (period ~9 h).
+func windNoise(_ t: Double) -> Float {
+    let a = valueNoise(Float((t / 8).truncatingRemainder(dividingBy: 4096)), 0.5), b = valueNoise(Float((t / 3).truncatingRemainder(dividingBy: 4096)), 7.5)
+    return 0.9 * a + 0.4 * b
+}
+
 extension SIMD2<Float> {
     /// Debris launch speeds are capped per axis (pt/s).
     func limited(_ m: Float = 800) -> SIMD2<Float> { clamped(lowerBound: SIMD2(repeating: -m), upperBound: SIMD2(repeating: m)) }
@@ -43,6 +70,13 @@ extension Array {
 public enum FrameRate {
     /// Stepping down waits this long after the last fast moment (stepping up is immediate): gentle triggers near a threshold must not flip 60 <-> 30.
     public static let holdDown = 2.5
+    /// Quiet ("calm") floor: fps the display link drops to when nothing fast happened for `holdDown`. Values live in Tuning (30, economy 20 today).
+    public static var calmFloor: Float { Tuning.calmFloorFPS }
+    public static var calmFloorEconomy: Float { Tuning.calmFloorEconomyFPS }
+
+    /// Interpolation option (Tuning.interpolateCalm, default off): at the calm floor the simulation steps at `floor` while the renderer draws every display
+    /// refresh at `lerp(prev, cur, alpha)`, alpha = time since the last sim step / step period, clamped 0...1. Pure helper; the renderer owns the buffers.
+    public static func interpAlpha(sinceStep: Double, stepPeriod: Double) -> Float { stepPeriod > 0 ? Float(min(max(sinceStep / stepPeriod, 0), 1)) : 1 }
 
     /// `target` fps made to divide `maxFPS`: the highest `maxFPS / k` that is at most 25 % above the target (75 Hz busy stays 75, 144 Hz gives 72 / 36 / 24).
     public static func snap(_ target: Float, maxFPS: Int) -> Float {
@@ -55,8 +89,10 @@ public enum FrameRate {
 
     public static func range(lowPower: Bool, economy: Bool, shrunk: Bool, quiet: Bool, maxFPS: Int = 60) -> (min: Float, max: Float, preferred: Float) {
         func r(_ a: Float, _ b: Float, _ c: Float) -> (min: Float, max: Float, preferred: Float) { (snap(a, maxFPS: maxFPS), snap(b, maxFPS: maxFPS), snap(c, maxFPS: maxFPS)) }
-        if economy { return quiet ? r(20, 20, 20) : r(30, 30, 30) }
-        if lowPower || shrunk || quiet { return r(30, 30, 30) }
+        let q = Tuning.calmFloorFPS, qe = Tuning.calmFloorEconomyFPS
+        if economy { return quiet ? r(qe, qe, qe) : r(30, 30, 30) }
+        if lowPower || shrunk { return r(30, 30, 30) }
+        if quiet { return r(q, q, q) }
         return r(30, 60, 60)
     }
 
