@@ -558,7 +558,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func tick(_ drawable: CAMetalDrawable, _ time: CFTimeInterval) {
-        perf?.bump(.ticks)
+        perf?.bump(.ticks); perf?.setTarget(time)
         guard window.isVisible else { perf?.bump(.hidden); return }
         dirty = false
         var t0 = Perf.now()
@@ -594,7 +594,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         lastCursor = cursor
         perf?.add(.input, t0); t0 = Perf.now()
         field.music = prefs.music ? MusicTap.shared.read() : .silent
-        if !still { field.step(dt: Float(dt) * Self.slowmo) }
+        if !still { let sp = Perf.signposter.beginInterval("sim"); field.step(dt: Float(dt) * Self.slowmo); Perf.signposter.endInterval("sim", sp) }
         perf?.add(.step, t0); t0 = Perf.now()
         let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
         // A dragged window follows the mouse 1:1: its pile segments, figures and balls shift by the mouse delta since the last poll (a shader uniform).
@@ -701,6 +701,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             inFlight.signal()
             return
         }
+        let sp = Perf.signposter.beginInterval("encode"); defer { Perf.signposter.endInterval("encode", sp) }
+        if let m = perf { drawable.addPresentedHandler { m.presented($0.presentedTime) } }
         let buffer = buffers[bufferIndex]
         bufferIndex = (bufferIndex + 1) % buffers.count
         var t0 = Perf.now()
