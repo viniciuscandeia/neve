@@ -33,7 +33,7 @@ private let bar: ClosedRange<Float> = 500...900
         let a = standAuto(f, x: 700), s = stand(f, x: 560)   // both start inside the bar's x-range
         for _ in 0..<(150 * 30) {
             f.step(dt: 1 / 30)
-            for id in [a, s] { let q = fig(f, id); if q.phase != .hidden { #expect(!bar.contains(q.foot.x)) } }
+            for id in [a, s] { let q = fig(f, id); if q.phase != .hidden, f.look(of: q).fade >= 1 { #expect(!bar.contains(q.foot.x)) } }
         }
         #expect(fig(f, a).phase != .hidden && !bar.contains(fig(f, a).foot.x))
     }

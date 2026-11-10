@@ -90,10 +90,16 @@ extension SnowField {
     func clearCritters() {
         var i = figures.count - 1
         while i >= 0 {
-            if figures[i].kind != .snowman { removeFigure(i) } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter() }
+            if figures[i].kind != .snowman { figures[i].dying = true } else if !figures[i].carrot { figures[i].carrot = true; figures[i].critter = Critter() }
             i -= 1
         }
+        clearCarrots()
+    }
+
+    /// Dropped noses are gone and no snowman runs to one.
+    func clearCarrots() {
         carrots.removeAll(keepingCapacity: true)
+        for i in figures.indices { figures[i].critter.fetchX = nil }
     }
 
     /// One step of a rabbit visit: hop in, sniff, snatch the carrot, flee; the snowman throws at it meanwhile. False when removed.
@@ -102,8 +108,7 @@ extension SnowField {
         var c = f.critter
         f.phaseT += dt
         c.stageT += dt
-        guard let sid = f.surfaceID, let si = index[sid] else { removeFigure(i); return false }
-        guard let (lo, hi) = standRange(si: si, x: f.foot.x, height: 14 * f.scale) else { removeFigure(i); return false }
+        guard let sid = f.surfaceID, let si = index[sid], let (lo, hi) = standRange(si: si, x: f.foot.x, height: 14 * f.scale) else { figures[i].dying = true; return true }   // fades where it stands
         var t = figureIndex(c.target)
         if let k = t, figures[k].kind != .snowman || figures[k].phase == .collapsing || figures[k].surfaceID != sid { t = nil }
         if c.stage == .hopIn || c.stage == .sniff, t == nil || !figures[t!].carrot || figures[t!].headless {   // nothing left to steal
@@ -216,7 +221,9 @@ extension SnowField {
         guard let x = f.critter.fetchX else { return false }
         var m = f.motion
         m.rest = max(0, m.rest - dt); m.wobble = max(0, m.wobble - dt); m.squash = max(0, m.squash - dt); m.headHit = max(0, m.headHit - dt)
-        let d = x - f.foot.x, moving = abs(d) > Tuning.carrotReach - 1
+        var goal = x
+        if let sid = f.surfaceID, let (lo, hi) = walkRange(surface: sid, x: f.foot.x, half: f.radii.x, height: Snowman.height * f.scale) { goal = min(max(goal, lo), max(lo, hi)) }   // never into a covered / low stretch
+        let d = goal - f.foot.x, moving = abs(d) > Tuning.carrotReach - 1
         if moving {
             f.facing = d > 0 ? 1 : -1
             f.foot.x += f.facing * min(abs(d), m.speed * f.scale * Tuning.fetchSpeed * dt)
@@ -238,7 +245,10 @@ extension SnowField {
         while k >= 0 {
             defer { k -= 1 }
             var c = carrots[k]
-            guard let o = figureIndex(c.owner), let si = index[c.surface], !figures[o].carrot else { carrots.remove(at: k); continue }
+            guard let o = figureIndex(c.owner), let si = index[c.surface], !figures[o].carrot else {
+                if let o = figureIndex(c.owner) { figures[o].critter.fetchX = nil }   // its surface is gone: nothing to run to
+                carrots.remove(at: k); continue
+            }
             let top = standY(si: si, x: c.pos.x) + 1
             figures[o].critter.fetchX = c.pos.x
             if c.grab >= 0 {

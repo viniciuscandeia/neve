@@ -47,6 +47,11 @@ public struct Figure {
     var motion = Motion()
     var preMelt: (radii: SIMD3<Float>, built: Int)?             // size before the melt sagged it; a resumed melt restores it
     var melt: Float = 1                                         // visitors: 1 -> 0 while the snow melts away (multiplied into the look's fade)
+    var dying = false                                           // visitors: removed with a short fade (0.3 s) at their last position instead of vanishing
+    var hide: Float = 1                                         // snowmen: 1 -> 0 while a window / the Dock covers the body (0.2 s ease), multiplied into the look's fade
+    var intro: Float = 1                                        // promoted stacks: 0 -> 1 over 0.25 s, the face / arms / nose / scarf ease in
+    var turn: Float = 1                                         // drawn facing: eases to `facing` through 0 in 0.12 s
+    var headlessT: Float = 0                                    // seconds the auto snowman has stood headless (it collapses after 25 s)
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
     var active: Bool { kind == .snowman && phase != .hidden && phase != .collapsing && phase != .building && !headless && stageAge >= 0.3 }
@@ -85,9 +90,10 @@ extension SnowField {
 
     /// What the rig needs to draw the figure (foot = bottom of the base ball, before hop).
     public func look(of f: Figure) -> SnowmanLook {
-        let t = min(f.stageAge / 0.3, 1)
-        return SnowmanLook(foot: SIMD2(f.foot.x, f.foot.y - (1 - SnowField.sink) * f.radii.x), radii: f.radii, facing: f.facing, pose: f.pose,
-                           built: f.built, newest: t * (2 - t), fade: f.fade, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop, headTilt: f.headTilt, carrot: f.carrot)
+        var t = min(f.stageAge / 0.3, 1), built = f.built
+        if f.intro < 1 { let u = f.intro * 4; built = min(built, 3 + Int(u)); t = u - u.rounded(.down) }   // a promoted stack grows its details one by one
+        return SnowmanLook(foot: SIMD2(f.foot.x, f.foot.y - (1 - SnowField.sink) * f.radii.x), radii: f.radii, facing: f.turn, pose: f.pose,
+                           built: built, newest: t * (2 - t), fade: f.fade * f.hide, collapsing: f.phase == .collapsing, headless: f.headless, droop: f.droop, headTilt: f.headTilt, carrot: f.carrot)
     }
 
     /// One anchor set for every kind of figure, from foot + radii with the stacked-ball formula c(n+1) = c(n) + r(n) + r(n+1) - 1.5.
@@ -126,7 +132,7 @@ extension SnowField {
         nextFigureID += 1
         f.built = built
         f.at = .surface(id: sid, x: x)
-        f.facing = Bool.random(using: &rng) ? 1 : -1
+        f.facing = Bool.random(using: &rng) ? 1 : -1; f.turn = f.facing
         f.motion.speed = Tuning.walkSpeed * Float.random(in: 0.8...1.2, using: &rng)
         f.motion.nextIdle = Float.random(in: 3...10, using: &rng)
         f.motion.phase = Float.random(in: 0..<6, using: &rng)
@@ -145,6 +151,7 @@ extension SnowField {
         let b = balls[bi], radii = SIMD3(b.radius, balls[mi].radius, balls[hi].radius)
         let gone = (b.id, balls[mi].id, balls[hi].id)
         guard let fid = addFigure(fromBalls: true, radii: radii, built: Snowman.stageCount, surface: sid, x: b.pos.x) else { return nil }
+        figures[figures.count - 1].intro = 0
         balls.removeAll { $0.id == gone.0 || $0.id == gone.1 || $0.id == gone.2 }
         return fid
     }
@@ -238,7 +245,7 @@ extension SnowField {
         figures[j].headTilt = tilt - 2 * .pi * (tilt / (2 * .pi)).rounded()   // as it lay: eases to upright in 0.25 s
         figures[j].headless = false
         figures[j].radii.z = radius
-        figures[j].stageAge = 0
+        figures[j].stageAge = 0; figures[j].headlessT = 0
         figures[j].motion.rest = 0
     }
 
@@ -250,14 +257,15 @@ extension SnowField {
         guard !figures.isEmpty || !fights.isEmpty || !shots.isEmpty else { return }
         let animate = walkEnabled && !calm
         if !animate { clearCritters() }
-        if !animate, !fights.isEmpty || !shots.isEmpty { fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true) }
+        if !animate { clearFights() }
         var i = 0
         while i < figures.count {
             if figures[i].kind != .snowman {   // visitors fade out with the snow (outro 0.4 s, melt 1 s) and fade back if it returns
-                if quiet {
-                    figures[i].melt -= dt * fadeK / (outro ? 0.4 : 1)
+                if quiet || figures[i].dying {
+                    figures[i].melt -= dt * fadeK / (quiet ? (outro ? 0.4 : 1) : 0.3)
                     if figures[i].melt <= 0 { removeFigure(i); continue }
                 } else if figures[i].melt < 1 { figures[i].melt = min(1, figures[i].melt + dt / 0.4) }
+                if figures[i].dying { i += 1; continue }   // fading where it was: no more script
             }
             guard stepFigure(i, dt, animate: animate) else { continue }
             i += 1
@@ -294,6 +302,9 @@ extension SnowField {
         }
         let s = surfaces[si], c = column(f.motion.xfer?.from.x ?? f.foot.x) - s.c0
         let visible = s.pile.visible[c]
+        let half = f.radii.x, c0 = max(column(f.foot.x - half) - s.c0, 0), c1 = min(column(f.foot.x + half) - s.c0, s.pile.visible.count - 1)
+        var covered = !visible
+        if !covered, c0 <= c1 { for b in c0...c1 where !s.pile.visible[b] { covered = true; break } }   // any part of the body under a window / the Dock
         if visible {
             let drawn = meanShown(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) ?? avg   // the foot and the collapse test read the same (drawn) snow
             if !f.fromBalls, drawn < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
@@ -302,6 +313,9 @@ extension SnowField {
         f.stageAge += dt
         let dd = (f.headless ? 1 : 0) - f.droop
         f.droop += dd > 0 ? min(dd, dt / 0.6) : max(dd, -dt / 0.3)   // arms fall over 0.6 s, rise over 0.3 s
+        if f.headless, !f.fromBalls { f.headlessT += dt; if f.headlessT >= Tuning.headlessLife, !melting { collapse(); return true } }   // a new one can be built
+        if f.intro < 1 { f.intro = min(1, f.intro + dt / 0.25) }
+        f.turn += min(max(f.facing - f.turn, -dt / 0.06), dt / 0.06)   // a turn through 0 takes 0.12 s
         if f.headTilt != 0 { f.headTilt *= exp(-16 * dt); if abs(f.headTilt) < 0.03 { f.headTilt = 0 } }
         if !f.fromBalls { advanceBuild(&f, si: si, dt: dt) }
         stepCarrot(&f, dt)
@@ -316,7 +330,9 @@ extension SnowField {
         }
         f.at = .surface(id: sid, x: f.foot.x)
         let c2 = column(f.foot.x) - s.c0, fits = landed || f.motion.xfer != nil || !visible || c2 < 0 || c2 >= s.pile.cap.count || s.pile.cap[c2] - s.pile.heights[c2] >= Snowman.height * f.scale   // after walking: still under the Dock bar / a low window
-        let phase: Phase = !visible || !fits ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering
+        let wantHide = covered || !fits
+        f.hide = wantHide ? max(0, f.hide - dt / 0.2) : min(1, f.hide + dt / 0.2)   // eased in / out, drawn while it fades
+        let phase: Phase = wantHide && f.hide <= 0 ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering
             : f.fight != nil ? .fighting : moving ? .walking : .idle
         if phase != f.phase { f.phase = phase; f.phaseT = 0 }
         figures[i] = f
@@ -338,17 +354,27 @@ extension SnowField {
         var i = figures.count - 1
         while i >= 0 {
             defer { i -= 1 }
-            guard i < figures.count, figures[i].phase != .collapsing, let sid = figures[i].surfaceID, sid != Tuning.groundID, sid != 0 else { continue }
-            guard let ni = index[sid], let o = before.first(where: { $0.id == sid }) else { knockOff(i, .zero); continue }
+            guard i < figures.count, figures[i].phase != .collapsing, !figures[i].dying else { continue }
+            let flying = figures[i].kind == .robin && figures[i].robin.stage == .fly   // in the air, bound for its window
+            guard let sid = flying ? figures[i].robin.sid : figures[i].surfaceID, sid != Tuning.groundID, sid != 0 else { continue }
+            guard let ni = index[sid], let o = before.first(where: { $0.id == sid }) else { if !flying { knockOff(i, .zero) }; continue }
             let n = surfaces[ni]
-            if SnowField.shedFraction(v: n.vel, prev: o.vel) > 0.5 { knockOff(i, n.vel * 0.5); continue }
+            if !flying, SnowField.shedFraction(v: n.vel, prev: o.vel) > 0.5 { knockOff(i, n.vel * 0.5); continue }
             let dx = Float(n.frame.minX - o.frame.minX)
-            if dx != 0 { figures[i].foot.x += dx; figures[i].at = .surface(id: sid, x: figures[i].foot.x) }
+            guard dx != 0 else { continue }
+            if flying { figures[i].robin.to.x += dx; continue }
+            figures[i].foot.x += dx; figures[i].at = .surface(id: sid, x: figures[i].foot.x)
+            figures[i].critter.hopFrom += dx; figures[i].critter.hopTo += dx   // hops are absolute: they travel with the window
+            figures[i].robin.hopFrom += dx; figures[i].robin.hopTo += dx
+        }
+        for k in carrots.indices {   // a dropped nose lies on the window
+            guard carrots[k].surface != Tuning.groundID, carrots[k].surface != 0, let ni = index[carrots[k].surface], let o = before.first(where: { $0.id == carrots[k].surface }) else { continue }
+            carrots[k].pos.x += Float(surfaces[ni].frame.minX - o.frame.minX)
         }
     }
 
     private func knockOff(_ i: Int, _ v: SIMD2<Float>) {
-        if figures[i].kind != .snowman { removeFigure(i) } else if figures[i].fromBalls { demote(figures[i].id, falling: v) } else { shatter(figures[i].id, velocity: v) }
+        if figures[i].kind != .snowman { figures[i].dying = true } else if figures[i].fromBalls { demote(figures[i].id, falling: v) } else { shatter(figures[i].id, velocity: v) }
     }
 
     /// The snowman switch went off: the auto snowman vanishes (no debris).
@@ -360,12 +386,26 @@ extension SnowField {
         }
     }
 
-    /// Figures on the windows `ids` go with them (Space switch).
-    func dropWindowFigures(on ids: Set<Int>) {
+    /// Ends every fight and flying snowball; the fighters rest like after a normal end (no figure keeps a dangling `fight`).
+    func clearFights() {
+        guard !fights.isEmpty || !shots.isEmpty || figures.contains(where: { $0.fight != nil }) else { return }
+        fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true)
+        for i in figures.indices where figures[i].fight != nil { figures[i].fight = nil; figures[i].motion.rest = Tuning.fightRest }
+    }
+
+    /// Figures on the windows `ids` go with them (Space switch): user snowmen are returned (the caller stashes them), visitors fade out,
+    /// the auto snowman vanishes.
+    func dropWindowFigures(on ids: Set<Int>) -> [Figure] {
+        var kept: [Figure] = []
         var i = figures.count - 1
         while i >= 0 {
-            if let sid = figures[i].surfaceID, ids.contains(sid) { removeFigure(i) }
-            i -= 1
+            defer { i -= 1 }
+            guard let sid = figures[i].surfaceID, ids.contains(sid) else { continue }
+            if figures[i].kind != .snowman { figures[i].dying = true; continue }
+            var f = figures[i]
+            removeFigure(i)   // ends its fight (the foe rests)
+            if f.fromBalls { f.fight = nil; f.motion = Motion(speed: f.motion.speed, nextIdle: f.motion.nextIdle); f.pose = Pose(); kept.append(f) }
         }
+        return kept
     }
 }

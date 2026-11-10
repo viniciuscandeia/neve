@@ -151,7 +151,7 @@ extension SnowField {
         f.pose.hop = 0
         defer { if i < figures.count, figures[i].id == f.id { f.penguin = p; figures[i] = f } }
         if p.stage == .air { return flyPenguin(i, &f, &p, dt) }
-        guard let sid = f.surfaceID, let si = index[sid], let run = penguinRun(si: si, x: f.foot.x) else { removeFigure(i); return false }
+        guard let sid = f.surfaceID, let si = index[sid], let run = penguinRun(si: si, x: f.foot.x) else { f.dying = true; return true }
         let prevX = f.foot.x, d = p.dir
         f.facing = d
         switch p.stage {

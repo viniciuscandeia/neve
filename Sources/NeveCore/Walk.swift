@@ -8,6 +8,7 @@ extension Tuning {
     static let walkSpeed: Float = 14               // pt/s (x snowman scale, +-20% per walker)
     static let maxThrows = 24                      // a fight nobody wins ends after this many throws in total
     static let fightRest: Float = 12               // s a snowman stays out of fights after one ends
+    static let headlessLife: Float = 25            // s the auto snowman stands headless before it collapses (so a new one can be built)
     static let cheerTime: Float = 2                // winner's celebration
     static let headHitsToLose = 3
     static let windPush: Float = 26                // pt/s the wind adds to / takes from a walker at a full gust
