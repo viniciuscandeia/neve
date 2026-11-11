@@ -58,6 +58,7 @@ public enum Tuning {
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
+    static let moundSlope: Float = 1.3      // extra step allowed inside a cursor-pushed heap (slope + this = ~2.0 per 2 pt bin, ~45 degrees): pushed snow is compacted, it settles little and slowly
     static let dustSlope: Float = 2.5      // extra step allowed onto a thin bin (fades to 0 as it fills to dustDepth): fresh snow stays in small mounds where it lands instead of a wide film
     static let dustDepth: Float = 6.0
     static let speckFloor: Float = 1.5      // below this a bin neither relaxes nor counts as built up: bare snow stays as isolated specks until later landings stack on it

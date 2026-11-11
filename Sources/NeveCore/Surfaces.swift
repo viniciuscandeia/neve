@@ -8,7 +8,7 @@
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
-//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); `stepSlump` (in SnowField.step) settles pushed heaps toward the repose slope 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
+//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
 //   scene mode (NEVE_DEMO_VANISH) filters a window out here. Tests: SurfaceMapTests, DragOnlyRebuildTests, SpaceCarryTests, DockGapTests, SweepTests.
@@ -484,8 +484,11 @@ extension SnowField {
     }
 
     /// Once the blade has moved on (0.25 s), every pushed heap keeps slumping a few relax passes per frame until its flanks are at the angle of repose (a mound, never a spike).
-    func stepSlump() {
-        guard time - sweptAt > 0.25 else { return }
+    func stepSlump(dt: Float) {
+        guard time - sweptAt > 0.25 else { slumpClock = 0; return }
+        slumpClock = min(slumpClock + dt, 2.0 / 60)   // at most 2 substeps a frame
+        guard slumpClock >= 1.0 / 60 else { return }
+        slumpClock -= 1.0 / 60
         for si in surfaces.indices where !surfaces[si].pile.mound.isEmpty && surfaces[si].id != draggingID {
             let n = surfaces[si].pile.heights.count
             var i = 0

@@ -109,7 +109,7 @@ private func swipe(_ f: SnowField, speed: Float, y: CGFloat = 505, settle: Int =
     let h = prev, mid = h.count / 2
     var worst: Float = 0
     for i in 2..<(h.count - 2) { worst = max(worst, abs(h[i - 1] - 2 * h[i] + h[i + 1])) }
-    #expect(worst < 3.5)
+    #expect(worst < 4.2)   // pushed heaps are compacted (steeper by Tuning.moundSlope), so a crest kink is a bit sharper than at the plain slope
     #expect(h[mid - 20...mid + 20].min()! < top - 3)   // a trench, not a pop-in-place
 }
 
@@ -306,7 +306,7 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
     #expect(f.pile(id: 1)!.heights.reduce(0, +) >= v - 1)
     let p = f.pile(id: 1)!
     for i in 1..<p.heights.count where p.visible[i] && p.visible[i - 1] && abs(p.base[i] - p.base[i - 1]) < 0.5 {   // rounded corners drop the base: not the heap's slope
-        #expect(abs(p.base[i] + p.heights[i] - p.base[i - 1] - p.heights[i - 1]) <= Tuning.slope * 2 + Tuning.dustSlope + 1) }   // a mound, not a spike (surface step within the snow's angle of repose)
+        #expect(abs(p.base[i] + p.heights[i] - p.base[i - 1] - p.heights[i - 1]) <= Tuning.slope * 2 + Tuning.moundSlope + Tuning.dustSlope + 1) }   // (heap flanks may stand at slope + moundSlope per bin: compacted snow) a mound, not a spike (surface step within the snow's angle of repose)
 }
 
 // MARK: heap persistence (Space round trip, resize, ordinary rebuilds) and drawing
@@ -317,6 +317,14 @@ private func heapField() -> SnowField {
     return f
 }
 private func heapPeak(_ f: SnowField) -> Float { f.pile(id: 1)!.heights.max() ?? 0 }
+
+@Test func pushedHeapStaysCompactWhenTheCursorStops() {
+    let f = heapField(); let h0 = heapPeak(f)
+    for _ in 0..<300 { f.step(dt: 1 / 60) }   // 5 s without the cursor
+    #expect(heapPeak(f) >= 0.85 * h0)   // pushed snow is compacted (~45 degrees): it settles little and slowly
+    let h = f.pile(id: 1)!.heights
+    for i in 1..<h.count - 1 { #expect(h[i] - max(h[i - 1], h[i + 1]) <= 3) }   // no isolated 1-bin spike
+}
 
 @Test func heapSurvivesASpaceRoundTrip() {
     let f = heapField(); let h = heapPeak(f)

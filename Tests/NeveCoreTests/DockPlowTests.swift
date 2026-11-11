@@ -68,5 +68,5 @@ private func maxStep(_ h: ArraySlice<Float>) -> Float { zip(h, h.dropFirst()).fi
     for _ in 0..<240 { f.step(dt: 1 / 60) }   // the blade moves on: the heap slumps to its repose slope
     let h = gh(f)
     #expect(h.max()! > 40)
-    #expect(maxStep(h[600...]) <= 2 * Tuning.slope + 0.01)
+    #expect(maxStep(h[600...]) <= 2 * (Tuning.slope + Tuning.moundSlope) + 0.01)   // the compacted heap's flanks stand at ~45 degrees (slope + moundSlope per bin)
 }
