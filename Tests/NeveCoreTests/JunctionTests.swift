@@ -74,3 +74,42 @@ private func continuous(_ s: [PileSeg], _ a: Float, _ b: Float) -> String? {
         }
     }
 }
+
+// The blend window adapts to the crest difference: the crest slope stays <= 1pt per 2pt across the whole region where the two crests differ
+// (front 4pt above ... 6pt below the back top), never ending in a step.
+/// Shading reference (where the deep-snow tint starts) of the highest drawn slice over x.
+private func tintAt(_ s: [PileSeg], _ x: Float) -> Float? {
+    s.filter { $0.x0 <= x && x <= $0.x1 }.map { g -> (Float, Float) in
+        let u = (x - g.x0) / max(g.x1 - g.x0, 1e-3)
+        return (g.top0 + (g.top1 - g.top0) * u, g.dragged & 4 != 0 ? g.tint0 + (g.tint1 - g.tint0) * u : g.base0 + (g.base1 - g.base0) * u)
+    }.max { $0.0 < $1.0 }?.1
+}
+
+// On-screen report: a vertical shading boundary at the front window's edge (each pile tinted from its own base). The merged slices share the back
+// pile's base as shading reference, blended over the junction window: the reference never jumps (<= 0.5pt per pt).
+@Test func tintReferenceIsContinuousAcrossTheJunction() {
+    for (top, rounds, mirrored) in [(CGFloat(404), 40, false), (402, 8, false), (399, 40, false), (399, 8, false), (397, 40, false), (394, 8, false), (399, 8, true), (394, 40, true)] {
+        let s = pileSegs(scene(frontTop: top, frontRounds: rounds, mirrored: mirrored))
+        let xj: Float = mirrored ? 400 : 300
+        var prev: Float?
+        for x in stride(from: xj - 60, through: xj + 60, by: 1) {
+            guard let t = tintAt(s, x) else { continue }
+            if let p = prev { #expect(abs(t - p) <= 0.5, "top \(top) rounds \(rounds) mirrored \(mirrored): tint reference jumps \(t - p) at \(x - xj)") }
+            prev = t
+        }
+    }
+}
+
+@Test func crestSlopeBoundedWhereCrestsDiffer() {
+    for (top, rounds, mirrored) in [(CGFloat(404), 40, false), (404, 10, false), (399, 40, false), (399, 8, false), (397, 40, false), (397, 8, false), (394, 40, false), (394, 8, false), (404, 40, true), (399, 8, true), (397, 40, true), (394, 8, true)] {
+        let s = pileSegs(scene(frontTop: top, frontRounds: rounds, mirrored: mirrored))
+        let xj: Float = mirrored ? 400 : 300
+        var prev: Float?
+        let reach = max(16, 6 * abs(Float(400 - top))) + 8   // blend half-width + margin
+        for x in stride(from: xj - reach, through: xj + reach, by: 2) {
+            guard let t = topAt(s, x) else { Issue.record("top \(top) rounds \(rounds) mirrored \(mirrored): gap at \(x)"); break }
+            if let p = prev { #expect(abs(t - p) <= 1, "top \(top) rounds \(rounds) mirrored \(mirrored): crest step \(t - p) at \(x - xj)") }
+            prev = t
+        }
+    }
+}
