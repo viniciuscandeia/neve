@@ -72,6 +72,20 @@ private func rw(_ n: Int, pid: Int = 10, layer: Int = 0, owner: String? = nil, _
     #expect(!g.active); #expect(!r(true, 34))
 }
 
+@Test func strongPositiveReadSuspendsAtOnceAndIDWatchDetectsChanges() {
+    var g = MissionControlGate()
+    func r(_ p: Bool, _ t: Double, _ strong: Bool = false) -> Bool { g.read(p, now: t, strong: strong) }
+    #expect(r(true, 0, true))
+    #expect(!r(false, 0.3))
+    g = MissionControlGate()
+    _ = r(true, 0, true); g.release()                // Esc while MC is still on screen
+    #expect(g.holdsPiles); #expect(!r(true, 1)); #expect(g.holdsPiles)
+    #expect(!r(false, 2)); #expect(!g.holdsPiles)
+    var w = WindowIDWatch()
+    let c = [w.changed([1, 2]), w.changed([1, 2]), w.changed([1, 2, 3]), w.changed([3, 1, 2])]
+    #expect(c == [true, false, true, true])
+}
+
 @Test func fullScreenOverlayOfAnotherAppIsIgnored() {
     let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
     let dimmer = rw(1, pid: 50, layer: 8, screen), nearly = rw(2, pid: 50, layer: 8, CGRect(x: 0, y: 0, width: 1440, height: 850)), panel = rw(3, pid: 51, layer: 8)
