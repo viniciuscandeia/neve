@@ -6,7 +6,7 @@ let clt = "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
 
 let package = Package(
     name: "Neve",
-    defaultLocalization: "pt-BR",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "NeveCore", resources: [.process("Resources")]),

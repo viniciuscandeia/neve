@@ -32,7 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key><string>$BID</string>
-	<key>CFBundleDevelopmentRegion</key><string>pt-BR</string>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
 	<key>CFBundleLocalizations</key><array><string>pt-BR</string><string>en</string></array>
 	<key>CFBundleName</key><string>Neve</string>
 	<key>CFBundleDisplayName</key><string>Neve</string>

@@ -57,7 +57,7 @@ extension SnowField {
         pile.heights = remapHeights(oldGround, to: numCols)
         surfaces = [Surface(id: Tuning.groundID, frame: CGRect(x: -1e5, y: -1, width: 2e5 + CGFloat(newSize.x), height: 1), edgeY: 0, c0: 0, anchor: 0, pile: pile)]
         index = [Tuning.groundID: 0]
-        dockCarry = oldDock.contains { $0 > 0 } ? remapHeights(oldDock, to: numCols) : []
+        dockCarryUntil = time + 2; dockCarry = oldDock.contains { $0 > 0 } ? remapHeights(oldDock, to: numCols) : []
         seams = []
         lastWindows = []; boundsDirty = true
         buildColumns()

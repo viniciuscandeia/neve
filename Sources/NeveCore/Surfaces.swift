@@ -375,7 +375,7 @@ extension SnowField {
             }
             }
         }
-        else if id == 0, !dockCarry.isEmpty {   // the Dock pile carried across a screen resize
+        else if id == 0, !dockCarry.isEmpty, time <= dockCarryUntil {   // the Dock pile carried across a screen resize
             for b in pile.heights.indices where c0 + b >= 0 && c0 + b < dockCarry.count { pile.heights[b] = pile.visible[b] ? min(dockCarry[c0 + b], pile.limit(b)) : dockCarry[c0 + b] }
             pile.shown = pile.heights
         }
