@@ -102,7 +102,7 @@ extension SnowField {
         let x = dir > 0 ? lo : hi
         guard abs(gap) <= Tuning.stepGap, !auto || snowUnder(to, x), let m = meanHeight(si: ti, col: column(x), span: 3) else { return nil }
         let t = surfaces[ti], c = column(x) - t.c0
-        guard t.pile.visible[c] else { return nil }
+        guard t.pile.alive(c) else { return nil }
         let y = t.edgeY + t.pile.base[c] + m
         guard abs(y - f.foot.y) <= Tuning.stepMax else { return nil }
         for o in figures where o.id != f.id && o.surfaceID == to && abs(o.foot.x - x) < half + o.radii.x + 6 { return nil }

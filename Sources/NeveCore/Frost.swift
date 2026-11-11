@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Frost.swift  (freeze progress per window + frost lip drawing)
 // Role: `WinIce` (per-window freeze progress: acc, fill, frost 0...1, frozen, w0/h0 at start) tracked in `SnowField.iceWin`; `scanFrost()` (called once a second from Icicles.swift: refresh each window's `fillRatio` = mean height/limit
-//   over visible bins of its top pile, and start tracking windows with fill >= frozenFill 0.7, Nevasca thawFill 0.25) and `stepFrost` (progress `acc` grows while fill >= that threshold; frozen at frozenAfter 180 s, Nevasca 120 s, then
+//   over the alive bins of its top pile (visible or hidden only by stacking order) against the base ceiling (no cap, drift boost or seam support), and start tracking windows with fill >= frozenFill 0.7, Nevasca thawFill 0.25) and `stepFrost` (progress `acc` grows while fill >= that threshold; frozen at frozenAfter 180 s, Nevasca 120 s, then
 //   `spawnStalactites`; progress and frozen are reset when the window is resized, moves faster than icicleBreakSpeed, fill < thawFill, or while `quiet`; NEVE_DEMO_ICE speeds the clock via config.iceSpeed, capped at 18x), `frost` eases to 1
 //   over 15 s (1.5 s calm) when frozen and back to 0 over 3 s, `spawnStalactites` (2..Tuning.maxStalactitesPerWindow seeded spots along the bottom edge, thicker near corners; appends `Icicle`s, see Icicles.swift), `writeFrostPrims`
 //   (pale blue-white lip 0.8 pt under the bottom edge and rounded corners + a faint haze at each lower corner, clipped by windows in front via `clipSegment`, Liang-Barsky, recursive, no array allocation beyond the 4-tuple loop), `covered`.
@@ -27,12 +27,12 @@ struct WinIce {
 }
 
 extension SnowField {
-    /// Mean of height / limit over the visible bins of the window's top pile (0...1).
+    /// Mean of height / base ceiling over the alive bins (visible, or hidden only by stacking order) of the window's top pile (0...1).
     func fillRatio(si: Int) -> Float {
         var sum: Float = 0, n: Float = 0
         let pile = surfaces[si].pile
-        for b in pile.heights.indices where pile.visible[b] {
-            let l = pile.limit(b)
+        for b in pile.heights.indices where pile.alive(b) {
+            let l = (pile.maxes.isEmpty ? pile.maxHeight : pile.maxes[b]) * (pile.wobble.isEmpty ? 1 : pile.wobble[b])   // no cap / drift boost / seam support: stacking order must not move the fill
             guard l > 2 else { continue }
             sum += min(pile.heights[b] / l, 1); n += 1
         }

@@ -5,6 +5,7 @@
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
 //   gifts; cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
+// Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
 //   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm); `stepSlump` (in SnowField.step) settles pushed heaps toward the repose slope 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
@@ -45,6 +46,8 @@ extension SnowField {
         // Each window's dt is its own time since its last sample (`stamps`, monotonic `now`; without it a clock advanced by `dt`).
         if let now { clock = now } else { clock += Double(dt) }
         pollDt = dt
+        var expired = 0
+        for (id, e) in pendingGone where clock - e.since >= goneGrace { pendingGone[id] = nil; pilesDirty = true; expired += knockOff(e.s) }   // still missing: really gone
         defer { stamps.removeAll(keepingCapacity: true); for w in windows { stamps[w.number] = clock } }
         guard windows != lastWindows || boundsDirty else {
             if windowsStale, time >= staleUntil { windowsStale = false }   // an unchanged list right after a switch may be the pre-switch one: only a changed one settles it, or time
@@ -52,13 +55,25 @@ extension SnowField {
                 let v = surfaces[i].vel * exp(-windowDt(surfaces[i].id) / Tuning.velSmoothing)
                 surfaces[i].vel = v.x * v.x + v.y * v.y < 0.25 ? .zero : v
             }
-            return 0
+            return expired
         }
         boundsDirty = false
         let prev = lastWindows
         lastWindows = windows
         defer { windowsStale = false }
-        return updateSurfaces(windows: effective(windows), only: dragOnlyRebuild ? movedOnly(windows, prev: prev) : nil, settle: true)
+        orderOnly = !windowsStale && Self.sameWindowsReordered(windows, prev)
+        defer { orderOnly = false }
+        return expired + updateSurfaces(windows: effective(windows), only: dragOnlyRebuild ? movedOnly(windows, prev: prev) : nil, settle: true)
+    }
+
+    /// Same windows (ids, frames +-0.5 pt, radius, kind) in a different stacking order (Cmd-Tab): only the drawing may change, never the snow.
+    static func sameWindowsReordered(_ a: [WindowInfo], _ b: [WindowInfo]) -> Bool {
+        guard a.count == b.count, a.map(\.number) != b.map(\.number) else { return false }
+        let a = a.sorted { $0.number < $1.number }, b = b.sorted { $0.number < $1.number }
+        return zip(a, b).allSatisfy { x, y in
+            x.number == y.number && x.radius == y.radius && x.occluderOnly == y.occluderOnly
+                && abs(x.frame.minX - y.frame.minX) < 0.5 && abs(x.frame.minY - y.frame.minY) < 0.5 && abs(x.frame.width - y.frame.width) < 0.5 && abs(x.frame.height - y.frame.height) < 0.5
+        }
     }
 
     /// When the only change between two snapshots is one window's frame (a drag sample): the surfaces that can depend on it, the window and every
@@ -140,9 +155,12 @@ extension SnowField {
             spaceSwitchIDs.subtract(gone.map(\.id))
             old.removeAll { ids.contains($0.id) }
         }
-        for s in old { spawned += knockOff(s) }   // gone surfaces
+        for s in old {   // gone surfaces: a window absent for one poll (Mission Control, Stage Manager, minimise animation) keeps its snow stashed for Tuning.goneGrace before it is knocked off
+            if s.id > 0, !silent, goneGrace > 0, pendingGone[s.id] == nil { pendingGone[s.id] = (s, clock); stashAway([s]) } else { spawned += knockOff(s) }
+        }
+        pendingGone = pendingGone.filter { k, _ in !built.contains { $0.id == k } }   // back: buildSurface restored it from the stash
         overhang = overhang.filter { k, _ in built.contains { $0.id == k } }
-        for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns() }
+        for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns(); built[i].aliveRuns = built[i].pile.held.isEmpty ? built[i].runs : built[i].pile.visibleRuns(alive: true) }
         surfaces = built
         index.removeAll(keepingCapacity: true)
         for (i, s) in surfaces.enumerated() { index[s.id] = i }
@@ -341,7 +359,7 @@ extension SnowField {
                 for (col, h) in oh { park(col, h) }
                 overhang[id] = out.isEmpty ? nil : out
             }
-            if id == 0 {   // Dock bar resizes when apps come and go: keep snow by global column
+            if id == 0, !orderOnly {   // Dock bar resizes when apps come and go: keep snow by global column
                 carry(shift: 0)
             } else if sameSize, shift == 0, abs(d.y) < 0.5, prev.pile.heights.count == pile.heights.count {
                 var kept = prev.pile
@@ -349,7 +367,15 @@ extension SnowField {
                 kept.cap = pile.cap
                 kept.base = pile.base; kept.boost = pile.boost; kept.walls = pile.walls; kept.wallInfo = pile.wallInfo
                 kept.supportL = pile.supportL; kept.supportR = pile.supportR
-                for b in kept.heights.indices where pile.visible[b] {   // hidden bins stay frozen; uncovered ones shed what no longer fits
+                kept.hold = []; kept.held = []
+                if orderOnly {   // stacking order only: no trim, no peel, no shed. Snow that no longer fits the new limit is pinned by `hold` (existing snow only: growth still follows the new limit); a real change drops it
+                    var hold = [Float](repeating: 0, count: kept.heights.count), any = false
+                    for b in hold.indices where kept.heights[b] > kept.limit(b) + 0.001 { hold[b] = kept.heights[b]; any = true }
+                    if any { kept.hold = hold }
+                    let held = kept.visible.indices.map { !kept.visible[$0] && prev.pile.alive($0) }
+                    if held.contains(true) { kept.held = held }
+                }
+                for b in kept.heights.indices where pile.visible[b] && !orderOnly {   // hidden bins stay frozen; uncovered ones shed what no longer fits
                     let h = kept.heights[b], keep = min(h, kept.cap[b])
                     kept.heights[b] = keep
                     if !prev.pile.visible[b] { spawned += shedBin(col: c0 + b, edgeY: edgeY + kept.base[b], from: keep, amount: h - keep, velocity: .zero) }
