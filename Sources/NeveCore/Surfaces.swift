@@ -115,10 +115,7 @@ extension SnowField {
         rects.reserveCapacity(windows.count)
         for w in windows { rects.append(w.frame.offsetBy(dx: -ox, dy: -oy)) }
 
-        seams = computeSeams(rects: rects, windows: windows)
-        occluders = Occluder.list(rects: rects, ids: windows.map(\.number), radii: windows.map(\.radius), limit: Self.maxOccluders)
-        zOf = Dictionary(windows.indices.map { (windows[$0].number, UInt32($0)) }, uniquingKeysWith: { a, _ in a })
-        groundZ = UInt32(windows.count)
+        sset.beginRebuild(rects: rects, windows: windows, maxOccluders: Self.maxOccluders)
         let before = surfaces
         dockPrev = before.first { $0.id == 0 }?.frame
         var old = before
@@ -161,10 +158,7 @@ extension SnowField {
         pendingGone = pendingGone.filter { k, _ in !built.contains { $0.id == k } }   // back: buildSurface restored it from the stash
         overhang = overhang.filter { k, _ in built.contains { $0.id == k } }
         for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns(); built[i].aliveRuns = built[i].pile.held.isEmpty ? built[i].runs : built[i].pile.visibleRuns(alive: true) }
-        surfaces = built
-        index.removeAll(keepingCapacity: true)
-        for (i, s) in surfaces.enumerated() { index[s.id] = i }
-        buildColumns()
+        sset.install(built)
         transportBalls(before: before)
         transportGifts(before: before)
         transportFigures(before: before)

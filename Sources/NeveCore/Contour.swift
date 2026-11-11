@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Contour.swift  (the drawn snow of window supports: ONE contour per connected group)
-// Role: `windowGroups()` = connected sets of window surfaces (seams + walls, from frames only: side by side within 6 pt, or a higher window's end over a lower window's top edge, any step), `writeGroups` = the PileSeg slices of every group.
+// Role: `windowGroups` (SurfaceSet, computed once per rebuild) = connected sets of window surfaces (seams + walls, from frames only: side by side within 6 pt, or a higher window's end over a lower window's top edge, any step), `writeGroups` = the PileSeg slices of every group.
 //   Each group is drawn as ONE column function over its x range: every global column is owned by the OPEN bin (visible, not under a higher window: Pile.open) with the highest top (ties: lower window id), so a lower window's covered span belongs
 //   to the higher window's pile. A column's top is the old per-pile crest (1-2-1 blur of `shown`, stable jitter, cap blend, held full height at supported / covered ends); its base follows the owner's edge AND the rounded-corner arc of
 //   its frame (also at supported ends: the snow fills the corner cut-out, arc - 1 pt); columns without an owner between two owners (<= 4, the 0...6 pt gap of side-by-side windows) are interpolated. A slope limit over the group
@@ -13,34 +13,10 @@ import CoreGraphics
 import Foundation
 
 extension SnowField {
-    /// Window surfaces (indices) that touch: linked by a seam, or one is a HIGHER window whose end lies over the other's top edge (frames only). Ordered by first member.
-    func windowGroups() -> [[Int]] {
-        var parent = Array(surfaces.indices)
-        func find(_ i: Int) -> Int { var r = i; while parent[r] != r { r = parent[r] }; var k = i; while parent[k] != r { let n = parent[k]; parent[k] = r; k = n }; return r }
-        func union(_ a: Int, _ b: Int) { let x = find(a), y = find(b); if x != y { parent[max(x, y)] = min(x, y) } }
-        for l in seams { if let a = index[l.left], let b = index[l.right] { union(a, b) } }
-        let ws = surfaces.indices.filter { surfaces[$0].id > 0 }
-        for (k, i) in ws.enumerated() {
-            let a = surfaces[i].frame
-            for j in ws[(k + 1)...] {
-                let b = surfaces[j].frame
-                guard a.minX < b.maxX - 2, b.minX < a.maxX - 2 else { continue }
-                let hi = a.maxY >= b.maxY ? a : b, lo = a.maxY >= b.maxY ? b : a
-                if hi.maxY - lo.maxY > 1, hi.minY <= lo.maxY + 1 { union(i, j) }
-            }
-        }
-        var out: [[Int]] = [], at: [Int: Int] = [:]
-        for i in ws {
-            let r = find(i)
-            if let g = at[r] { out[g].append(i) } else { at[r] = out.count; out.append([i]) }
-        }
-        return out
-    }
-
     /// Appends the slices of every window group to `p` (see the header). `n` counts what is written, `dropped` the slices that did not fit.
     func writeGroups(_ p: UnsafeMutablePointer<PileSeg>, capacity: Int, n: inout Int, dropped: UnsafeMutablePointer<Int>?) {
         let bw = Tuning.binWidth, slope: Float = 0.95, maxStep: Float = 2.0
-        for group in windowGroups() {
+        for group in sset.windowGroups {
             var lo = Int.max, hi = Int.min
             for si in group { lo = min(lo, surfaces[si].c0); hi = max(hi, surfaces[si].c0 + surfaces[si].pile.heights.count) }
             let m = hi - lo
