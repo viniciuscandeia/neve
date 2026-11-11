@@ -72,6 +72,7 @@ public final class SnowField {
     var offsets: [Int32]       // CSR: per column range into entries
     var entries: [Entry] = []
     var lastWindows: [WindowInfo] = []
+    var orderOnly = false   // the current rebuild only reorders the same windows (Cmd-Tab): buildSurface keeps all snow
     var dockCarryUntil = 0.0   // the carried Dock pile only applies to a rebuild within ~2 s of the resize (an auto-hidden Dock showing up later starts fresh)
     var dockMoundCarry: [Float] = []   // ... and its pushed-heap allowance
     var dockCarry: [Float] = []   // Resize.swift: Dock pile heights by (new) global column, waiting for the Dock surface to be rebuilt
