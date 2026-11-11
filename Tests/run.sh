@@ -44,6 +44,6 @@ if [ -n "$SAN" ]; then
   [ -n "$LIB" ] || { echo "run.sh: libclang_rt.${RT}_osx_dynamic.dylib not found next to $CLANG" >&2; exit 2; }
   export DYLD_INSERT_LIBRARIES=$LIB
 fi
-$B/runner/run "$BUNDLE" "$@"
+$B/runner/run "$BUNDLE" "$@" || exit $?   # failing tests fail the run before the shader check
 # Shader check: the app binary compiles every MSL library/pipeline (NEVE_SHADER_CHECK=1, no UI); a broken shader fails the run.
 NEVE_SHADER_CHECK=1 $B/$CFG/Neve || { echo "run.sh: NEVE_SHADER_CHECK failed (Metal shader/pipeline error above)" >&2; exit 1; }
