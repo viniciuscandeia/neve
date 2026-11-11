@@ -79,19 +79,22 @@ extension SnowField {
 struct SeamLink {
     let left: Int, right: Int
     var leftSupported = false, rightSupported = false
+    var front = 0   // overlap junction: id of the front window (the other one is behind it); 0 = side by side
 }
 
 extension SnowField {
     /// Overlap: a front window hiding the back one with its top 1...maxDrift above joins at its side edge(s) (the back snow drifts up
-    /// to the front top). Side by side: gap <= 6 and tops within 4 join both ends. Rects are front to back.
+    /// to the front top). Overlap with the tops within 1pt: a junction without support (the front end's shoulder is hidden in the drawing instead,
+    /// see `junctions`). Side by side: gap <= 6 and tops within 4 join both ends. Rects are front to back.
     func computeSeams(rects: [CGRect], windows: [WindowInfo]) -> [SeamLink] {
         var out: [SeamLink] = []
         for i in rects.indices where windows[i].number != 0 && !windows[i].occluderOnly {
             for k in (i + 1)..<max(rects.count, i + 1) where windows[k].number != 0 && !windows[k].occluderOnly {
                 let f = rects[i], b = rects[k], step = f.maxY - b.maxY
-                if step > 1, step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
-                    if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: windows[k].number, right: windows[i].number, rightSupported: true)) }
-                    if f.maxX < b.maxX - 2, f.maxX > b.minX + 2 { out.append(SeamLink(left: windows[i].number, right: windows[k].number, leftSupported: true)) }
+                if step > 1 || (step >= -1 && f.minX < b.maxX - 2 && f.maxX > b.minX + 2), step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
+                    let sup = step > 1, fid = windows[i].number
+                    if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: windows[k].number, right: fid, rightSupported: sup, front: fid)) }
+                    if f.maxX < b.maxX - 2, f.maxX > b.minX + 2 { out.append(SeamLink(left: fid, right: windows[k].number, leftSupported: sup, front: fid)) }
                 } else if abs(step) <= 4 {
                     let l = f.minX < b.minX ? f : b, r = f.minX < b.minX ? b : f
                     if r.minX - l.maxX >= 0, r.minX - l.maxX <= 6 {

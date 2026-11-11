@@ -64,15 +64,16 @@ private func world(dock: WindowInfo? = dockWin(300, 700)) -> SnowField {
 }
 
 @Test func writePilesMatchesReferenceWithBridgesSeamsCoveredRunsAndShortBuffers() {
-    // Ground<->Dock bridges, a ground bank lower than the Dock snow (held slice kept), hidden columns, drifts, windows side by side.
+    // Ground<->Dock bridges, a ground bank lower than the Dock snow (held slice kept), hidden columns, drifts, windows side by side, overlap junctions (8 over 1 a little higher, 9 over 1 at its height).
     func scene(_ g: Int, _ d: Int) -> SnowField {
         let f = makeField()
-        f.update(windows: [dockWin(300, 700), win(1, 100, 300, 250, 120), win(2, 350, 330, 200, 120), win(5, 553, 330, 150, 120), win(6, 520, 250, 60, 100), win(7, 800, 120, 100, 300)])
+        f.update(windows: [dockWin(300, 700), win(8, 150, 330, 100, 94), win(9, 280, 300, 40, 120), win(1, 100, 300, 250, 120), win(2, 350, 330, 200, 120), win(5, 553, 330, 150, 120), win(6, 520, 250, 60, 100), win(7, 800, 120, 100, 300)])
         pileUp(f, id: Tuning.groundID, rounds: g)
-        for id in [0, 1, 2, 5, 6, 7] { pileUp(f, id: id, rounds: d) }
+        for id in [0, 1, 2, 5, 6, 7, 8, 9] { pileUp(f, id: id, rounds: d) }
         return f
     }
     var sawBank = false, sawDropped = false
+    #expect(Set(scene(12, 12).seams.map(\.front)) == [0, 8, 9])   // both junctions are built
     for (g, d) in [(12, 12), (12, 2), (0, 12), (5, 12), (12, 0)] {
         var buf = blank()
         let n = buf.withUnsafeMutableBufferPointer { scene(g, d).writePilesRef(to: $0.baseAddress!, capacity: 1 << 14, dt: 10, force: true) }!

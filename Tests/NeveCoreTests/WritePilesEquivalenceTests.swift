@@ -22,6 +22,7 @@ extension SnowField {
             }
         }
         pileEasing = active
+        let junc = junctions()   // overlap junctions: back columns left to the front pile, which carries both there
         pileEnds.removeAll(keepingCapacity: true)
         let bw = Tuning.binWidth
         var n = 0
@@ -40,7 +41,11 @@ extension SnowField {
         // The ground slice between the bank column and the Dock end is replaced by the bridge body below (one fill, no doubled halo / crest); held back until we know a bridge exists.
         var held: [(side: Int, seg: PileSeg)] = [], bridged = [false, false]
         for s in surfaces {
-            let h = s.pile.shown, vis = s.pile.visible, base = s.pile.base
+            let h = s.pile.shown, base = s.pile.base
+            var vis = s.pile.visible
+            for r in junc.skip[s.id] ?? [] { for k in r { vis[k] = false } }
+            let jd = junc.front[s.id]
+            func merged(_ i: Int) -> Bool { jd?.merged[i] ?? false }
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
@@ -82,6 +87,9 @@ extension SnowField {
                 let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
                 return plain + (ceiling(i) - plain) * k
             }
+            func point(_ i: Int, _ b: Int, _ e: Int) -> (x: Float, t: Float, b: Float) {
+                merged(i) ? (x(i), max(top(i, b, e), jd!.top[i]), jd!.base[i]) : (x(i), top(i, b, e), edge + base[i] - drop)
+            }
             var b = 0
             while b < cnt {
                 guard vis[b] else { b += 1; continue }
@@ -91,17 +99,17 @@ extension SnowField {
                 var k = b
                 while k < e {
                     var lo = k
-                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
+                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil && !merged(lo) { lo += 1 }
                     var hi = lo, j = lo + 1, gap = 0
-                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
+                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil && !merged(j) { gap += 1 } else { gap = 0; hi = j }; j += 1 }
                     k = max(hi + 1, j)
                     if lo < e {
                         lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
-                        var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
+                        var prev = point(lo, b, e)
                         let first = prev, seg0 = n
                         if lo < hi {
                             for i in (lo + 1)...hi {
-                                let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
+                                let cur = point(i, b, e)
                                 let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                                 if side >= 0 {
                                     held.append((side, PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), inset: drop)))
