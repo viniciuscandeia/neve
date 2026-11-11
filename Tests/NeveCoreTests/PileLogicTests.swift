@@ -205,9 +205,9 @@ private func maxSway(calm: Bool) -> Float {
     #expect(f.isBusy)                                // one intact slab (avalanche)
 }
 
-// Smoothed end slopes: stride matches the Metal struct (11 x 4 bytes, inset last); neighbours share n; run ends keep their own slope.
+// Smoothed end slopes: stride matches the Metal struct (13 x 4 bytes, inset then the tint reference); neighbours share n; run ends keep their own slope.
 @Test func pileSegNormalsAreContinuous() {
-    #expect(MemoryLayout<PileSeg>.stride == 44)
+    #expect(MemoryLayout<PileSeg>.stride == 52)
     let f = makeField()
     f.update(windows: [win(1, 300, 300, 400, 200)])
     let i = f.surfaces.firstIndex { $0.id == 1 }!

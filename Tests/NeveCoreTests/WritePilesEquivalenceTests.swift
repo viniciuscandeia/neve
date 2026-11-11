@@ -147,6 +147,7 @@ extension SnowField {
             if outerR, fillR > 0, fillR >= d.last.t - 4 { put(d.last.x, d.last.t, 0, (Float(column(d.last.x + bw)) + 0.5) * bw, fillR, 0, d.drag, bank: true); bridged[1] = true }
         }
         for h in held where !bridged[h.side] { guard n < capacity else { dropped?.pointee += 1; continue }; p[n] = h.seg; n += 1 }   // no bridge came: keep the plain ground slice
+        tintRefs(p, junc)
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {
             for a in pileEnds where a.id == l.left {

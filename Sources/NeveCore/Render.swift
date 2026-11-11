@@ -243,6 +243,7 @@ extension SnowField {
             p[n] = seg; n += 1
         }
         keep(heldL, bridgedL); keep(heldR, bridgedR)
+        tintRefs(p, junc)
         // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
         for l in seams {
             for a in pileEnds where a.id == l.left {
@@ -345,7 +346,7 @@ extension SnowField {
                 let v: Float = a >= 0 && c >= 0 ? hb[a] + (hb[c] - hb[a]) * Float(k - a) / Float(c - a) : a >= 0 ? hb[a] : c >= 0 ? hb[c] : 0
                 return max(hb[k], min(v, max(B.pile.limit(k), 0)))
             }
-            var j = front[l.front] ?? JunctionDraw(top: [Float](repeating: 0, count: nf), base: [Float](repeating: 0, count: nf), merged: [Bool](repeating: false, count: nf))
+            var j = front[l.front] ?? JunctionDraw(top: [Float](repeating: 0, count: nf), base: [Float](repeating: 0, count: nf), merged: [Bool](repeating: false, count: nf), ref: [Float](repeating: 0, count: nf))
             for k in ka..<kb {
                 let i = B.c0 + k - F.c0, h = hv(k)
                 guard h > 0.15, F.pile.visible[i] else { continue }
@@ -357,7 +358,7 @@ extension SnowField {
                 // Only where the back snow shows and the two bodies touch (a lower front pile that does not reach the back snow stays its own body;
                 // on the front's rounded corner the shoulder always sinks into the back snow).
                 guard t > floor + 0.15, fh <= 0.15 || fb + fh >= floor - 1 || F.pile.base[i] < -0.01 else { continue }
-                j.merged[i] = true; j.top[i] = t
+                j.merged[i] = true; j.top[i] = t; j.ref[i] = B.edgeY + B.pile.base[k] - (B.id == Tuning.groundID ? 0 : 1)
                 j.base[i] = fh > 0.15 ? min(fb - 1, floor - 1) : floor - 1
                 if let r = skip[bid]?.last, r.upperBound == k { skip[bid]![skip[bid]!.count - 1] = r.lowerBound..<(k + 1) } else { skip[bid, default: []].append(k..<(k + 1)) }
             }
@@ -367,27 +368,53 @@ extension SnowField {
     }
 
     /// Overlap junction at x `xj`: the crests of both stretches (and the bridge) within `w` of it are replaced by a smoothstep blend between the
-    /// crest heights at xj - w and xj + w (a saddle, no step or spike where the two piles meet). Draw-only; never below a slice's base.
-    func blendCrest(_ p: UnsafeMutablePointer<PileSeg>, _ rs: [Range<Int>], at xj: Float, w: Float = 16) {
-        func at(_ x: Float) -> Float? {   // crest height over x (highest covering slice), else the nearest end on that side
-            var best: Float?, near: (d: Float, t: Float)?
+    /// crest heights at xj - w and xj + w (a saddle, no step or spike where the two piles meet). The half-width grows with the crest difference
+    /// (`max(16, 6 * |dh|)`, so the slope stays gentle however far apart the crests are). The shading reference (`tint0/tint1`) is blended over the same
+    /// window, so the deep-snow tint is continuous across the junction. Draw-only; never below a slice's base.
+    func blendCrest(_ p: UnsafeMutablePointer<PileSeg>, _ rs: [Range<Int>], at xj: Float) {
+        func ref(_ s: PileSeg, _ u: Float) -> Float { s.dragged & 4 != 0 ? s.tint0 + (s.tint1 - s.tint0) * u : s.base0 + (s.base1 - s.base0) * u }
+        func at(_ x: Float) -> (t: Float, r: Float)? {   // crest height (and shading reference) over x (highest covering slice), else the nearest end on that side
+            var best: (t: Float, r: Float)?, near: (d: Float, t: Float, r: Float)?
             for r in rs { for i in r {
                 let s = p[i]
-                if s.x0 <= x && x <= s.x1 { let t = s.top0 + (s.top1 - s.top0) * (x - s.x0) / max(s.x1 - s.x0, 1e-3); best = max(best ?? t, t) }
-                for (ex, et) in [(s.x0, s.top0), (s.x1, s.top1)] where (ex - xj) * (x - xj) > 0 { let d = abs(ex - x); if d < near?.d ?? .infinity { near = (d, et) } }
+                if s.x0 <= x && x <= s.x1 {
+                    let u = (x - s.x0) / max(s.x1 - s.x0, 1e-3), t = s.top0 + (s.top1 - s.top0) * u
+                    if t > best?.t ?? -.infinity { best = (t, ref(s, u)) }
+                }
+                for (ex, et, eu) in [(s.x0, s.top0, Float(0)), (s.x1, s.top1, 1)] where (ex - xj) * (x - xj) > 0 { let d = abs(ex - x); if d < near?.d ?? .infinity { near = (d, et, ref(s, eu)) } }
             } }
-            return best ?? near?.t
+            return best ?? near.map { ($0.t, $0.r) }
         }
-        guard let tl = at(xj - w), let tr = at(xj + w) else { return }
-        func f(_ x: Float, _ t: Float, _ b: Float) -> Float {
+        guard let l0 = at(xj - 16), let r0 = at(xj + 16) else { return }
+        let w = max(16, 6 * abs(r0.t - l0.t))
+        guard let l = at(xj - w), let r = at(xj + w) else { return }
+        func blend(_ x: Float, _ a: Float, _ c: Float, _ own: Float) -> Float {
             let u = (x - (xj - w)) / (2 * w)
-            guard u > 0, u < 1 else { return t }
-            return max(tl + (tr - tl) * u * u * (3 - 2 * u), b)
+            guard u > 0, u < 1 else { return own }
+            return a + (c - a) * u * u * (3 - 2 * u)
         }
-        for r in rs { for i in r {
-            p[i].top0 = f(p[i].x0, p[i].top0, p[i].base0); p[i].top1 = f(p[i].x1, p[i].top1, p[i].base1)
+        for r_ in rs { for i in r_ {
+            let s = p[i]
+            func inside(_ x: Float) -> Bool { x > xj - w && x < xj + w }
+            if inside(s.x0) { p[i].top0 = max(blend(s.x0, l.t, r.t, 0), s.base0) }
+            if inside(s.x1) { p[i].top1 = max(blend(s.x1, l.t, r.t, 0), s.base1) }
+            p[i].tint0 = blend(s.x0, l.r, r.r, ref(s, 0)); p[i].tint1 = blend(s.x1, l.r, r.r, ref(s, 1)); p[i].dragged |= 4
             p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3); p[i].n0 = p[i].slope; p[i].n1 = p[i].slope
         } }
+    }
+
+    /// Shading reference of the front pile's merged slices: the back pile's base (see `JunctionDraw.ref`), so the deep-snow tint does not jump where
+    /// the back pile hands over to the front pile. Sets `tint0/tint1` (flag 4 in `dragged`) on slices with a merged end.
+    func tintRefs(_ p: UnsafeMutablePointer<PileSeg>, _ junc: (front: [Int: JunctionDraw], skip: [Int: [Range<Int>]])) {
+        for e in pileEnds {
+            guard let jd = junc.front[e.id], let si = index[e.id] else { continue }
+            let c0 = surfaces[si].c0
+            func ref(_ x: Float, _ own: Float) -> Float { let i = column(x) - c0; return i >= 0 && i < jd.merged.count && jd.merged[i] ? jd.ref[i] : own }
+            for k in e.segs {
+                let a = ref(p[k].x0, p[k].base0), c = ref(p[k].x1, p[k].base1)
+                if a != p[k].base0 || c != p[k].base1 { p[k].tint0 = a; p[k].tint1 = c; p[k].dragged |= 4 }
+            }
+        }
     }
 
     /// The lower side of a seam rises toward the other's top (no cliff), but only by what the physics backs: at most 6pt (a drift's usual
@@ -425,17 +452,18 @@ extension SnowField {
     }
 }
 
-/// One bin-pair slice of a pile contour for the Metal pile pass, 44 bytes; layout mirrors the Metal struct.
+/// One bin-pair slice of a pile contour for the Metal pile pass, 52 bytes; layout mirrors the Metal struct.
 public struct PileSeg {
     public var x0: Float, x1: Float, top0: Float, top1: Float, base0: Float, base1: Float, slope: Float
     public var dragged: UInt32   // 1 = on the window being dragged (the app shifts it with the mouse)
     public var n0: Float = 0, n1: Float = 0   // smoothed slope at each end (average with the neighbour across the junction): continuous lighting normal, no facets
     public var inset: Float = 0   // how far base0 / base1 sit under the real window edge (the overlap hides the seam): the shader measures snow depth as top - base - inset
+    public var tint0: Float = 0, tint1: Float = 0   // shading reference (where the deep-snow tint starts) at each end, used when `dragged` has bit 4 (else the base): junction slices share the back pile's base so the tint is continuous
 }
 
 /// Front pile slices over a back pile (see `junctions`): per front bin, the shared top / base where the back snow shows.
 struct JunctionDraw {
-    var top: [Float], base: [Float], merged: [Bool]
+    var top: [Float], base: [Float], merged: [Bool], ref: [Float]   // ref: the back pile's base (shading reference)
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.
