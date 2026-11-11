@@ -28,9 +28,22 @@ public struct Flake {
 }
 
 extension SnowField {
+    /// Reduce Motion, HIG (avoid motion at the periphery): 1 in the middle, easing (smoothstep) down to 0.3 at the left/right screen edge over the outer 12% of the width.
+    /// Scales fall and sway of the flakes there and the share of new flakes spawned there.
+    static func edgeCalm(x: Float, width: Float) -> Float {
+        guard width > 0 else { return 1 }
+        let t = min(max(min(x, width - x) / (0.12 * width), 0), 1)
+        return 0.3 + 0.7 * t * t * (3 - 2 * t)
+    }
+
     func spawn(_ kind: FlakeKind, anywhere: Bool) -> Flake {
         // Compact mode: new snow appears just above the live strip (behind the window); `anywhere` spans the whole screen.
-        let x = anywhere ? Float.random(in: 0...size.x, using: &rng) : Float.random(in: liveX0...max(liveX0, liveX1), using: &rng)
+        var x = anywhere ? Float.random(in: 0...size.x, using: &rng) : Float.random(in: liveX0...max(liveX0, liveX1), using: &rng)
+        if calm {   // fewer flakes at the edges: rejection sampling against edgeCalm (3 redraws; the rare 4th is kept)
+            for _ in 0..<3 where Float.random(in: 0..<1, using: &rng) >= Self.edgeCalm(x: x, width: size.x) {
+                x = anywhere ? Float.random(in: 0...size.x, using: &rng) : Float.random(in: liveX0...max(liveX0, liveX1), using: &rng)
+            }
+        }
         let y = anywhere ? Float.random(in: 0...size.y, using: &rng) : liveTop + Float.random(in: 0...40, using: &rng)
         let phase = Float.random(in: 0...(2 * .pi), using: &rng)
         switch kind {
@@ -119,8 +132,9 @@ extension SnowField {
             f.wv += (wind * gust * f.vx / Tuning.wind - f.wv) * min(1, dt / (0.4 + 0.25 * f.size))
             // Sway: two incommensurate sines (flutter) instead of one.
             let sway = fastCos(f.phase) + 0.45 * fastCos(1.618 * f.phase + f.seed * 6.2832)
-            f.pos.x += (f.vx + f.wv + 0.69 * ampNow * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
-            f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * fastSin(1.37 * f.phase + f.seed * 6.2832 + 2))   // vertical flutter (own frequency, not locked to the sway), a bit more for big flakes
+            let ek = calm ? Self.edgeCalm(x: f.pos.x, width: size.x) : 1   // Reduce Motion: slower toward the screen edges
+            f.pos.x += (f.vx + f.wv + 0.69 * ampNow * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt * ek
+            f.pos.y -= f.fall * dt * ek * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * fastSin(1.37 * f.phase + f.seed * 6.2832 + 2))   // vertical flutter (own frequency, not locked to the sway), a bit more for big flakes
             if pointerPush, let p = pointer {
                 let d = f.pos - p, d2 = d.x * d.x + d.y * d.y
                 if d2 < Tuning.pointerRadius * Tuning.pointerRadius, d2 > 1e-4 {
