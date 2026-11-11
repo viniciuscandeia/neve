@@ -71,7 +71,7 @@ public enum Tuning {
     static let calmFloorEconomyFPS: Float = 20      // same, Economy mode
     /// Option, default OFF: at the calm floor step the sim at the floor rate but let the renderer interpolate positions every display refresh
     /// (FrameRate.interpAlpha). Needs renderer wiring (prev/cur flake buffers); CPU = sim at floor + draw at display rate.
-    public static let interpolateCalm = false
+    public static let interpolateCalm = ProcessInfo.processInfo.environment["NEVE_INTERP"] == "1"   // off by default; NEVE_INTERP=1 to measure
     // Wind-blown accumulation
     static let windBiasMax: Float = 0.3     // chance a landing flake slides one bin leeward when that bin is lower (at the sustained-wind cap)
     static let windBiasRef: Float = 150     // sustained wind speed (pt/s) at which the chance reaches the cap
