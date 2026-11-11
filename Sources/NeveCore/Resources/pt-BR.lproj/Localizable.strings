@@ -28,7 +28,7 @@
 "Dica: segure ⌥ e arraste a neve para fazer bolas." = "Dica: segure ⌥ e arraste a neve para fazer bolas.";
 "20–30 fps, só a tela principal, menos efeitos." = "20–30 fps, só a tela principal, menos efeitos.";
 "Cursor empurra os flocos" = "Cursor empurra os flocos";
-"Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada." = "Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.";
+"Desligado, o cursor não mexe nos flocos no ar nem empurra a neve acumulada." = "Desligado, o cursor não mexe nos flocos no ar nem empurra a neve acumulada.";
 "Aparecer em capturas de tela" = "Aparecer em capturas de tela";
 "Nem todo app de captura respeita esta opção." = "Nem todo app de captura respeita esta opção.";
 "Abrir ao iniciar sessão" = "Abrir ao iniciar sessão";

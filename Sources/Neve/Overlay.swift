@@ -635,8 +635,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         perf?.busyNow(field.busyReasons)
         perf?.frame(field, "paused=\(link?.isPaused ?? true) occluded=\(occluded) slow=\(slow)")
         // Adaptive rate (60 fps while anything fast happens, 30 otherwise) and the still-mode sleep.
-        // A fast cursor needs 60 fps when something reacts to it: snow / a ball / a figure in the sweep's path (whatever the toggle says: the sweep cuts piles
-        // regardless), or, with "Cursor empurra" on, the falling flakes it pushes. The cheap screen test comes first.
+        // A fast cursor needs 60 fps when something reacts to it: snow / a ball / a figure in the sweep's path (piles only with "Cursor empurra" on, which also
+        // pushes the falling flakes). The cheap screen test comes first.
         let fastCursor = moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: prevCursor, to: cursor)
             && (prefs.pointerPush || (sweeping && field.snowNear(from: from, to: here)))
         if fastCursor || held != nil || field.isBusy { fastUntil = now + FrameRate.holdDown }
