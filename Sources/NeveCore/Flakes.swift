@@ -118,7 +118,7 @@ extension SnowField {
             let gk = Int(gq), gust = gustLUT[gk] + (gustLUT[gk + 1] - gustLUT[gk]) * (gq - Float(gk))
             f.wv += (wind * gust * f.vx / Tuning.wind - f.wv) * min(1, dt / (0.4 + 0.25 * f.size))
             // Sway: two incommensurate sines (flutter) instead of one.
-            let sway = cos(f.phase) + 0.45 * cos(1.618 * f.phase + f.seed * 6.2832)
+            let sway = fastCos(f.phase) + 0.45 * fastCos(1.618 * f.phase + f.seed * 6.2832)
             f.pos.x += (f.vx + f.wv + 0.69 * ampNow * (calm ? Tuning.calmSway : 1) * musicSway * sway) * dt
             f.pos.y -= f.fall * dt * (calm ? 0.5 : 1 + (0.06 + 0.012 * f.size) * fastSin(1.37 * f.phase + f.seed * 6.2832 + 2))   // vertical flutter (own frequency, not locked to the sway), a bit more for big flakes
             if pointerPush, let p = pointer {

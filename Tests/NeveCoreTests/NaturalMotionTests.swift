@@ -64,5 +64,5 @@ private func snow(_ seed: UInt64 = 5) -> SnowField {
 @Test func fastSinStaysCloseToSin() {
     var worst: Float = 0
     for k in 0..<2000 { let x = Float(k) * 0.05 - 50; worst = max(worst, abs(fastSin(x) - sin(x)), abs(fastCos(x) - cos(x))) }
-    #expect(worst < 0.07)
+    #expect(worst < 0.002)
 }

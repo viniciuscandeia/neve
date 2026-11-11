@@ -118,10 +118,11 @@ public extension FrameRate {
     }
 }
 
-/// Cheap sine (parabolic, max error ~0.06) for slow, small ambient wobbles where a libm call per flake per frame is the cost.
+/// Cheap sine for per-flake sway and wobble (a libm call per flake per frame is the cost): parabola plus one refinement, max error ~0.001, smooth.
 @inline(__always) func fastSin(_ x: Float) -> Float {
     var t = x * 0.159_154_94   // x / 2π
     t -= t.rounded()           // -0.5...0.5
-    return 8 * t * (1 - 2 * abs(t))
+    let y = 8 * t * (1 - 2 * abs(t))
+    return 0.225 * (y * abs(y) - y) + y
 }
 @inline(__always) func fastCos(_ x: Float) -> Float { fastSin(x + 1.570_796_3) }
