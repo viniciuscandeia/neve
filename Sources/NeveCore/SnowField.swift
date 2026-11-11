@@ -109,6 +109,12 @@ public final class SnowField {
     public internal(set) var pileVersion = 0
     var pileWritten = -1, pileEasing = false
     var pileEnds: [PileEnd] = []
+    /// Every window (and the Dock bar), front to back, local pt: a pile slice with `z` is hidden inside each entry whose index is < z (the overlay window sits above all windows, so the GPU clips what physics cannot).
+    /// Rebuilt with the surfaces; capped at `maxOccluders` (the frontmost ones). `zOf`: surface id -> z; `groundZ` = behind all.
+    public internal(set) var occluders: [Occluder] = []
+    var zOf: [Int: UInt32] = [:]
+    var groundZ: UInt32 = 0
+    public static let maxOccluders = 32
     /// Everyone standing on a surface (at most `Tuning.maxFigures`): the auto snowman, snowmen made of user balls; see Figures.swift.
     public internal(set) var figures: [Figure] = []
     var nextFigureID = 1

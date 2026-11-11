@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
-// Role: turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
+// Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
 //   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT, drift walls, wobble, corner rounding) and `buildGround` (full-width ground pile,
 //   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Figures.
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
@@ -101,6 +101,9 @@ extension SnowField {
         for w in windows { rects.append(w.frame.offsetBy(dx: -ox, dy: -oy)) }
 
         seams = computeSeams(rects: rects, windows: windows)
+        occluders = Occluder.list(rects: rects, ids: windows.map(\.number), radii: windows.map(\.radius), limit: Self.maxOccluders)
+        zOf = Dictionary(windows.indices.map { (windows[$0].number, UInt32($0)) }, uniquingKeysWith: { a, _ in a })
+        groundZ = UInt32(windows.count)
         let before = surfaces
         dockPrev = before.first { $0.id == 0 }?.frame
         var old = before

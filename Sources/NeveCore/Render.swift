@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Render.swift  (CPU side of the GPU buffers: Instance, Prim, PrimWriter, PileSeg, writeInstances, writePiles)
 // Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
 //   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
-//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (52 B, one per bin pair of a snowy run), `JunctionDraw`, `PileEnd`.
+//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (56 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `JunctionDraw`, `PileEnd`.
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
@@ -141,9 +141,10 @@ extension SnowField {
         let bw = Tuning.binWidth
         var n = 0
         dropped?.pointee = 0
+        var curZ: UInt32 = 0   // z of the surface being written (bridges set it before they are put)
         func put(_ x0: Float, _ t0: Float, _ b0: Float, _ x1: Float, _ t1: Float, _ b1: Float, _ drag: Bool, bank: Bool = false, inset: Float = 0) {   // bank: shades like the ground bank (AO measured from the ground, not from this piece's own base); inset: how far b0/b1 sit under the real edge
             guard n < capacity else { dropped?.pointee += 1; return }
-            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0), n0: (t1 - t0) / max(x1 - x0, 1e-3), n1: (t1 - t0) / max(x1 - x0, 1e-3), inset: inset)
+            p[n] = PileSeg(x0: x0, x1: x1, top0: t0, top1: t1, base0: b0, base1: b1, slope: (t1 - t0) / max(x1 - x0, 1e-3), dragged: (drag ? 1 : 0) | (bank ? 2 : 0), n0: (t1 - t0) / max(x1 - x0, 1e-3), n1: (t1 - t0) / max(x1 - x0, 1e-3), inset: inset, z: curZ)
             n += 1
         }
         // Ground bank height beside each end of the Dock bar: the Dock pile's rounded corners are filled up to it, so bank and Dock top are one contour.
@@ -156,6 +157,7 @@ extension SnowField {
         var heldL: PileSeg?, heldR: PileSeg?, bridgedL = false, bridgedR = false   // at most one ground slice per side
         for s in surfaces {
             let h = s.pile.shown, base = s.pile.base
+            curZ = zOf[s.id] ?? groundZ
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
@@ -216,7 +218,7 @@ extension SnowField {
                                 let cur = point(i, b, e)
                                 let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                                 if side >= 0 {
-                                    let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), inset: drop)
+                                    let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), inset: drop, z: curZ)
                                     if side == 0 { heldL = seg } else { heldR = seg }
                                 } else {
                                     put(prev.x, prev.t, prev.b, cur.x, cur.t, cur.b, drag, bank: s.id == 0 && (fill(i - 1) != nil || fill(i) != nil), inset: drop)
@@ -230,6 +232,7 @@ extension SnowField {
             }
         }
         let bridgeStart = n
+        curZ = zOf[0] ?? groundZ   // ground<->Dock bridges and the Dock's filled corners belong to the Dock (the Dock bar never hides them)
         // A ground bank that meets the Dock pile (ends within ~2.5pt in y (the top has up to 1.5pt of noise), close in x) reads as one snowbank.
         for g in pileEnds where g.id == Tuning.groundID {
             for d in pileEnds where d.id == 0 {
@@ -265,6 +268,7 @@ extension SnowField {
                     var a = a, c = c
                     if l.front == 0 { liftSeam(p, &a, &c) }   // a junction is blended below instead
                     let n0 = n
+                    curZ = min(zOf[l.left] ?? groundZ, zOf[l.right] ?? groundZ)   // the bridge belongs to the front window of the two
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)   // moves with the drag only when both sides do (else it would detach from the side that stays)
                     if l.front != 0, a.drag == c.drag { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2, heap: { moundAt($0, l.left, l.right) }) }   // overlap junction: one smooth crest (not while only one side is dragged: it would detach)
                 }
@@ -475,12 +479,13 @@ extension SnowField {
     }
 }
 
-/// One bin-pair slice of a pile contour for the Metal pile pass, 52 bytes; layout mirrors the Metal struct.
+/// One bin-pair slice of a pile contour for the Metal pile pass, 56 bytes; layout mirrors the Metal struct.
 public struct PileSeg {
     public var x0: Float, x1: Float, top0: Float, top1: Float, base0: Float, base1: Float, slope: Float
     public var dragged: UInt32   // 1 = on the window being dragged (the app shifts it with the mouse)
     public var n0: Float = 0, n1: Float = 0   // smoothed slope at each end (average with the neighbour across the junction): continuous lighting normal, no facets
     public var inset: Float = 0   // how far base0 / base1 sit under the real window edge (the overlap hides the seam): the shader measures snow depth as top - base - inset
+    public var z: UInt32 = 0   // z of the window this slice belongs to (index in the front-to-back list = SnowField.occluders): the shader hides it inside every occluder with a smaller index
     public var tint0: Float = 0, tint1: Float = 0   // shading reference (where the deep-snow tint starts) at each end, used when `dragged` has bit 4 (else the base): junction slices share the back pile's base so the tint is continuous
 }
 
@@ -496,4 +501,24 @@ struct PileEnd {
     var first: P, last: P
     let drag: Bool
     var segs: Range<Int> = 0..<0   // this run's slices in the PileSeg buffer
+}
+
+/// A window's silhouette for the pile pass: rounded rect (local y-up pt) + the window id (the app shifts the dragged one with the mouse).
+public struct Occluder: Equatable {
+    public var id: Int
+    public var rect: SIMD4<Float>   // minX, minY, maxX, maxY
+    public var radius: Float
+    /// One entry per window, in list order (z = index), at most `limit` (the frontmost). Degenerate rects are kept (they hide nothing) so indices stay z.
+    static func list(rects: [CGRect], ids: [Int], radii: [CGFloat], limit: Int) -> [Occluder] {
+        rects.indices.prefix(limit).map { i in
+            let r = rects[i]
+            return Occluder(id: ids[i], rect: [Float(r.minX), Float(r.minY), Float(r.maxX), Float(r.maxY)], radius: Float(min(radii[i], r.width / 2, r.height / 2)))
+        }
+    }
+    /// Does this occluder hide the point `(x, y)` (inside its rounded outline)? Mirror of the shader's test (without the AA ramp).
+    public func hides(x: Float, y: Float) -> Bool {
+        let c = SIMD2<Float>((rect.x + rect.z) / 2, (rect.y + rect.w) / 2), h = SIMD2<Float>((rect.z - rect.x) / 2, (rect.w - rect.y) / 2)
+        let q = SIMD2<Float>(abs(x - c.x), abs(y - c.y)) - (h - SIMD2<Float>(repeating: radius))
+        return (max(q.x, 0) * max(q.x, 0) + max(q.y, 0) * max(q.y, 0)).squareRoot() + min(max(q.x, q.y), 0) - radius < 0
+    }
 }
