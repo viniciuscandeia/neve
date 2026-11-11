@@ -3,7 +3,7 @@
 //   `ab` / `bb` the bins facing each other: the pile end for side by side and for the HIGHER window of an overlap, the bin next to the wall for the lower one), from frames only (never the stacking order). `stepSeams()` (SnowField.step, after stepSlump)
 //   relaxes every joint with the same slope rule as Pile.relax (excess over Tuning.slope on absolute tops moves half to the lower side, bounded by the receiver's limit / cap, volume conserved) and settles both sides around it; it is O(joints) per frame
 //   (nothing happens while the joint is within the slope), skips the window being dragged and `open` rules apply (covered / hidden bins are walls). `neighbor(si:dir:)` = the surface touching si's END in direction dir and the bin where snow enters it
-//   (cursor berm continuation in Surfaces.berm, wind-leeward hop in Flakes.tryLand, avalanche continuation in Avalanche); `touching(id:dir:)` = ids of windows whose wall / seam meets id's walkable stretch (Walk.transfer).
+//   (cursor berm continuation in Surfaces.berm: at a pile end, or against a higher window's side mid-pile (bank up its side to its top, the rest on its pile), wind-leeward hop in Flakes.tryLand, avalanche continuation in Avalanche); `touching(id:dir:)` = ids of windows whose wall / seam meets id's walkable stretch (Walk.transfer).
 // Tests: SeamExchangeTests.
 
 import CoreGraphics
@@ -26,11 +26,12 @@ extension SnowField {
     }
 
     /// The surface touching `si`'s end in direction `dir` (+1 right, -1 left) and the bin of it that receives snow there.
-    func neighbor(si: Int, dir: Int) -> (si: Int, bin: Int)? {
+    /// `bin` = the bin of `si` facing the joint: nil = its end (the pile end), else a wall mid-pile (the bin next to a higher window's side).
+    func neighbor(si: Int, dir: Int, bin: Int? = nil) -> (si: Int, bin: Int)? {
         guard !seams.isEmpty else { return nil }
         for j in joints() {
-            if dir > 0, j.a == si, j.ab == surfaces[si].pile.heights.count - 1 { return (j.b, j.bb) }
-            if dir < 0, j.b == si, j.bb == 0 { return (j.a, j.ab) }
+            if dir > 0, j.a == si, j.ab == bin ?? surfaces[si].pile.heights.count - 1 { return (j.b, j.bb) }
+            if dir < 0, j.b == si, j.bb == bin ?? 0 { return (j.a, j.ab) }
         }
         return nil
     }

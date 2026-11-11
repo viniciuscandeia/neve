@@ -111,3 +111,37 @@ private func volume(_ f: SnowField) -> Float { f.surfaces.filter { $0.id > 0 }.r
         }
     }
 }
+
+@Test func aHeapPushedAgainstAHigherWindowsSideBanksUpToItsTopAndClimbsOntoIt() {
+    for order in [[2, 1], [1, 2]] {
+        for (x, dir) in [(Float(296), 1), (Float(504), -1)] {
+            let f = makeField()
+            let wins = [2: win(2, 300, 263, 200, 150), 1: win(1, 100, 200, 600, 200)]   // higher window 2 (top 413) inside the wide window 1 (top 400)
+            f.update(windows: order.map { wins[$0]! })
+            let a = f.index[1]!, b = f.index[2]!
+            var lo = Int.max, hi = Int.min, end: Float = 0, endY: Float = 0
+            let debris0 = f.debris.count
+            let banked = f.berm(a, atX: x, dir: dir, area: 900, lo: &lo, hi: &hi, end: &end, endY: &endY)
+            #expect(banked > 899, "order \(order) dir \(dir): banked \(banked)")
+            let hide = f.surfaces[a].pile.hideTop, wall = dir > 0 ? hide.firstIndex { $0 > 0 }! - 1 : hide.lastIndex { $0 > 0 }! + 1
+            #expect(f.surfaces[a].pile.heights[wall] >= 11, "order \(order) dir \(dir): bank at the wall only \(f.surfaces[a].pile.heights[wall])")
+            let p = f.surfaces[b].pile.heights
+            #expect((dir > 0 ? p.prefix(30) : p.suffix(30)).contains { $0 > 1 }, "order \(order) dir \(dir): nothing climbed onto the higher window")
+            #expect(f.debris.count == debris0)
+        }
+    }
+}
+
+@Test func aBankAtAHigherWindowsTopRelaxesOntoItAcrossTheWall() {
+    for order in [[2, 1], [1, 2]] {
+        let f = makeField()
+        let wins = [2: win(2, 300, 263, 200, 150), 1: win(1, 100, 200, 600, 200)]
+        f.update(windows: order.map { wins[$0]! })
+        let a = f.index[1]!, b = f.index[2]!, wall = f.surfaces[a].pile.hideTop.firstIndex { $0 > 0 }! - 1
+        for k in (wall - 6)...wall { f.surfaces[a].pile.heights[k] = 19 }   // bank 19 pt: 6 pt over the higher window's top
+        let v0 = volume(f)
+        for _ in 0..<600 { f.stepSeams() }
+        #expect(abs(volume(f) - v0) < 0.05)
+        #expect(f.surfaces[b].pile.heights[0] > 1, "order \(order): nothing crossed the wall")
+    }
+}
