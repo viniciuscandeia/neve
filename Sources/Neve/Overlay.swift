@@ -487,8 +487,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if let link, link.preferredFrameRateRange != frameRange { link.preferredFrameRateRange = frameRange }
         accessibilityChanged()   // `still` follows the pref
     }
+    private var simAccum = 0.0, lastStepDt: Float = 0
+    /// Calm interpolation active: option on, quiet floor, and not in a mode that is capped at 30 anyway.
+    private var interpolating: Bool { Tuning.interpolateCalm && slow && !prefs.economy && !lowPower && shrunk == nil }
     private var frameRange: CAFrameRateRange {
-        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, quiet: slow, maxFPS: fps)
+        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, quiet: slow && !interpolating, maxFPS: fps)
         return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
@@ -604,7 +607,20 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         lastCursor = cursor
         perf?.add(.input, t0); t0 = Perf.now()
         field.music = prefs.music ? MusicTap.shared.read() : .silent
-        if !still { let sp = Perf.signposter.beginInterval("sim"); field.step(dt: Float(dt) * Self.slowmo); Perf.signposter.endInterval("sim", sp) }
+        if !still {
+            // Tuning.interpolateCalm (off by default): at the calm floor the link runs at the display rate, the sim still steps at the floor rate
+            // (accumulated dt) and render() draws flakes back-extrapolated to the present (alpha). Off: one step per frame, as always.
+            var stepDt = dt
+            if interpolating {
+                simAccum += dt
+                let period = 1 / Double(FrameRate.calmFloor)
+                if simAccum + dt * 0.5 >= period { stepDt = min(simAccum, 0.06); simAccum = 0 } else { stepDt = 0 }
+            } else { simAccum = 0 }
+            if stepDt > 0 {
+                let sp = Perf.signposter.beginInterval("sim"); field.step(dt: Float(stepDt) * Self.slowmo); Perf.signposter.endInterval("sim", sp)
+                lastStepDt = Float(stepDt) * Self.slowmo
+            }
+        }
         perf?.add(.step, t0); t0 = Perf.now()
         let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
         // A dragged window follows the mouse 1:1: its pile segments, figures and balls shift by the mouse delta since the last poll (a shader uniform).
@@ -716,7 +732,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let buffer = buffers[bufferIndex]
         bufferIndex = (bufferIndex + 1) % buffers.count
         var t0 = Perf.now()
-        let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
+        let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self), lag: interpolating ? (1 - FrameRate.interpAlpha(sinceStep: simAccum, stepPeriod: 1 / Double(FrameRate.calmFloor))) * lastStepDt : 0)
 
         perf?.add(.write, t0); t0 = Perf.now()
         perf?.setInstances(count)

@@ -63,7 +63,9 @@ public struct PrimWriter {
 
 extension SnowField {
     /// Fills GPU instances; returns the count.
-    public func writeInstances(to p: UnsafeMutablePointer<Instance>) -> Int {
+    /// `lag` (s, default 0 = exactly the simulated position): sky/background flakes are drawn at pos - vel * lag, i.e. lerp(prev, pos, alpha)
+    /// with lag = (1 - alpha) * lastStepDt (FrameRate.interpAlpha); used only with Tuning.interpolateCalm.
+    public func writeInstances(to p: UnsafeMutablePointer<Instance>, lag: Float = 0) -> Int {
         var n = 0
         for i in 0..<(skyEnd + bgEnd) {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
@@ -71,7 +73,7 @@ extension SnowField {
                 // Crystals (> 4pt) turn and sway like a pendulum; small dots stay round. Reduce Motion: fixed angle.
                 let rot: Float = f.size > 4 && f.kind != .near ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
                 let far = f.kind == .background   // atmospheric perspective: smaller and dimmer, draw side only
-                p[n] = Instance(pos: f.pos, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : 0, vel: calm || f.kind == .near ? .zero : f.vel); n += 1
+                p[n] = Instance(pos: lag == 0 ? f.pos : f.pos - f.vel * lag, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : 0, vel: calm || f.kind == .near ? .zero : f.vel); n += 1
             }   // seed >= 2: background flake (shader occlusion by large windows)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading
