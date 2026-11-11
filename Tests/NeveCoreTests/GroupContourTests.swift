@@ -1,8 +1,8 @@
 // AGENT HEADER - Tests/NeveCoreTests/GroupContourTests.swift  (one continuous contour per group of touching window supports: Contour.swift)
 // Geometries: a narrow window over / under a wide one at steps -20...+20, a partial overlap, two wide overlapping windows, side by side (gap 4 pt, tops within 4), in BOTH stackings and with young (3 rounds) and grown (60 rounds) snow.
-//   Checks on the writePiles output (`pileSegs`): every slice with real snow at both ends rises / falls <= 2 pt per 2 pt (no vertical step anywhere in the group); adjacent slices overlap vertically (no gap between a back crest and the front
+//   Checks on the writePiles output (`pileSegs`): every slice with real snow at both ends rises / falls <= 2 pt per 2 pt plus the slice's own base drop (a crest following a bare end's corner arc; no vertical step anywhere in the group); adjacent slices overlap vertically (no gap between a back crest and the front
 //   snow's base, also at the rounded corner bins); the drawn picture is identical for both stackings except z; no slice floats without snow of some window of its group beside it; the z of every slice is the window it rests on (a slice over
-//   a window's span never carries another window's z unless it rests on the lower one); groups are connected components (a window floating above another is its own group). Related: StackIndependenceTests, SliceZTests, WallBankTests, JunctionTests.
+//   a window's span never carries another window's z unless it rests on the lower one); groups are connected components (a window floating above another is its own group); the bare outer ends on the rounded corner have no near-vertical slice (unsupportedEndsAreNotVertical). Related: StackIndependenceTests, SliceZTests, WallBankTests, JunctionTests.
 
 import CoreGraphics
 import Testing
@@ -37,7 +37,7 @@ private func grown(_ s: [WindowInfo], rounds: Int) -> SnowField {
                 let s = pileSegs(grown(order, rounds: rounds))
                 for q in s {
                     let d0 = q.top0 - q.base0 - q.inset, d1 = q.top1 - q.base1 - q.inset
-                    if d0 > 1, d1 > 1 { checked += 1; #expect(abs(q.top1 - q.top0) <= 2.05, "\(g.name) rounds \(rounds): step \(q.top1 - q.top0) at \(q.x0)") }
+                    if d0 > 1, d1 > 1 { checked += 1; #expect(abs(q.top1 - q.top0) <= abs(q.base1 - q.base0) + 4, "\(g.name) rounds \(rounds): step \(q.top1 - q.top0) at \(q.x0)") }
                 }
                 for a in s { for b in s where b.x0 == a.x1 {   // neighbours across a shared column
                     #expect(b.base0 <= a.top1 + 0.5 && a.base1 <= b.top0 + 0.5, "\(g.name) rounds \(rounds): gap at x \(a.x1): \(a.base1)...\(a.top1) vs \(b.base0)...\(b.top0)")
@@ -112,4 +112,18 @@ private func sameButZ(_ a: PileSeg, _ b: PileSeg) -> Bool {
     let q = pileSegs(f).filter { $0.z == f.zOf[2]! && $0.x0 > 300 && $0.x1 < 310 }
     #expect(!q.isEmpty)
     for s in q { #expect(s.base0 < 413 - 1 - 2, "base \(s.base0) at \(s.x0) does not follow the arc"); _ = o }
+}
+
+@Test func unsupportedEndsAreNotVertical() {
+    // The outer ends of a group (no window over / beside them) sit on the rounded corner: no slice there rises / falls more than the arc itself (its base) + 4 pt per bin (slope 2:1, still a surface to the shader's `steep`; the bug was 14-17), thin ones included (the lift must not raise the crest above the arc).
+    for g in geometries() {
+        for rounds in [3, 60] {
+            let f = grown(g.wins, rounds: rounds)
+            let xs = f.surfaces.filter { $0.id > 0 }.flatMap { [$0.pile.x0, $0.pile.x1] }
+            let lo = xs.min()!, hi = xs.max()!
+            for q in pileSegs(f) where q.x0 < lo + 24 || q.x1 > hi - 24 {
+                #expect(abs(q.top1 - q.top0) <= abs(q.base1 - q.base0) + 4,"\(g.name) rounds \(rounds): steep end slice \(q.top0)->\(q.top1) at \(q.x0)")
+            }
+        }
+    }
 }
