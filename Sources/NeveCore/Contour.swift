@@ -3,7 +3,7 @@
 //   Each group is drawn as ONE column function over its x range: every global column is owned by the OPEN bin (visible, not under a higher window: Pile.open) with the highest top (ties: lower window id), so a lower window's covered span belongs
 //   to the higher window's pile. A column's top is the old per-pile crest (1-2-1 blur of `shown`, stable jitter, cap blend, held full height at supported / covered ends); its base follows the owner's edge AND the rounded-corner arc of
 //   its frame (also at supported ends: the snow fills the corner cut-out, arc - 1 pt); columns without an owner between two owners (<= 4, the 0...6 pt gap of side-by-side windows) are interpolated. A slope limit over the group
-//   (`slope`, 0.95 pt per bin (a gentle ramp: <= 1 pt per 2 pt step)) LIFTS the lower side toward the other crest (forward + backward pass, only into snowy columns, at most `Tuning.maxDrift`, never above the lower pile's own ceiling): the bank climbs the wall, the crest has no
+//   (`slope`, 0.95 pt per bin (a gentle ramp: <= 1 pt per 2 pt step)) LIFTS the lower side toward the other crest (forward + backward pass, only into snowy columns, at most `Tuning.maxDrift`, never above the lower pile's own ceiling, and not at all on the corner arc of a bare (unsupported) end: there the crest follows the arc down instead of floating above the closing column): the bank climbs the wall, the crest has no
 //   step, it replaces the old per-pile runs stitched with junction merges, blendCrest, liftSeam, seam bridges, tintRefs, drawHeights and the fillet. A pair of owners further apart than `maxStep` after the lift is not joined (the stretch just ends). Draw only: never changes `heights`.
 //   z per slice = the window the snow rests on (owner; across owners the one with the lower floor, i.e. the back one: the higher window's occluder clips what lies inside its body); drag = both ends dragged. Stretch rule as before: 3+ bare
 //   columns split, one bare column of the same owner closes each end. Order independent: nothing here reads the stacking order except the z numbers.
@@ -68,8 +68,9 @@ extension SnowField {
                     if own[c] >= 0 && (t < top[c] || (t == top[c] && s.id > surfaces[Int(own[c])].id)) { continue }
                     var b = base[i]   // the base follows the frame's corner arc too (a supported end has no arc in `base`: the snow fills the cut-out)
                     let d = min(x - s.pile.x0, s.pile.x1 - x)
-                    if rad > 0, d < rad { let k = rad - max(d, 0); b = min(b, -(rad - (rad * rad - k * k).squareRoot())) }
-                    own[c] = Int32(si); top[c] = t; flo[c] = edge + b - 1; hs[c] = h[i]; lim[c] = ceiling; zc[c] = z; drg[c] = drag
+                    var bareArc = false   // on the corner arc of an unsupported end: the lift must not raise the crest above the arc (the closing column stays low: a vertical cut)
+                    if rad > 0, d < rad { let k = rad - max(d, 0); b = min(b, -(rad - (rad * rad - k * k).squareRoot())); bareArc = x - s.pile.x0 < s.pile.x1 - x ? !pile.supportL : !pile.supportR }
+                    own[c] = Int32(si); top[c] = t; flo[c] = edge + b - 1; hs[c] = h[i]; lim[c] = bareArc ? t : ceiling; zc[c] = z; drg[c] = drag
                 }
             }
             // Gaps between two owners (side by side, up to 4 columns): straight bridge.
