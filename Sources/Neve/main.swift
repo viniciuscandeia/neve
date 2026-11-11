@@ -7,6 +7,7 @@
 // Run state: `run` (RunState, NeveCore/RunState.swift: outroing/screensAsleep/sessionInactive/screensaver): running = (enabled||outroing) && !asleep && !inactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !idle.userIdle.
 //   userIdle = no input for NEVE_IDLE_SECS (default 300 s) unless Modo ambiente: first the melt (IdleMonitor.swift: snow melts, meltGen guards stale completions) then rendering pauses; input -> IdleMonitor.wake.
 //   refreshRunState() is the single re-evaluation point (status icon, overlay setRun, timers, Dock + poll kick). Prefs: syncPrefs diffs Pref snapshot (NeveCore/Prefs.swift) -> prefChanged(pref) is the only reaction path.
+// Split (behavior-neutral): RunState (NeveCore/RunState.swift) = pause flags; IdleMonitor.swift = idle melt / wake; WindowPoller.swift = scheduler, mouse monitor, pollWindows, Mission Control gate, scene mode (everything described under "Window polling" below except the safety timer / AX watcher / Dock refresh, which stay here).
 // Window polling: every read goes through `sched` (PollScheduler, NeveCore/WindowInfo.swift: coalesced, <=30/s, bursts bounded). Sources: WindowWatcher AX events (transitionPoll / settlePoll),
 //   safety timer (2 s -> 5 s after 10 s quiet with AX; 0.5 s without Accessibility; 1 Hz while every screen is under a fullscreen app), 30 s Dock refresh, 0.3 s Mission Control probe (WindowList.swift onScreenWindowIDs),
 //   global mouse monitors (installed only while polling; drag sampling ~25 Hz), screen geometry (screensChanged, 0.5 s safety re-check). pollWindows() reads CGWindowList (CG top-left coords ->
@@ -32,19 +33,19 @@ let neveInstance: String? = Bundle.main.object(forInfoDictionaryKey: "NeveInstan
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
-    private var overlays: [Overlay] = []
+    var overlays: [Overlay] = []
     private var timer: Timer?
-    private var idleWatch = false   // the timer is the 1 Hz fullscreen watch
+    var idleWatch = false   // the timer is the 1 Hz fullscreen watch
     private var run = RunState()   // pause flags: run.outroing, run.screensAsleep, run.sessionInactive, run.screensaver (the screen saver covers the displays: nothing to draw under it)
-    private var missionControl = false, mcTimer: Timer?, mcGate = MissionControlGate(), mcMonitor: Any?, mcProbe: Timer?, mcIDs = WindowIDWatch(), mcStrong = false
+    var timerGap = PollScheduler.safetyGap   // current safety-timer period (read by WindowPoller / IdleMonitor.check)
+    private var mcProbe: Timer?   // the 0.3 s Mission Control probe timer (ticks into poller.mcProbeTick)
     private var ssTimer: Timer?   // screen saver on: polling is off, so this slow timer notices it ended without a didstop
     private let panel = PanelState()
     private var loggedMetal = false
-    private var mouseDown = false
-    private let idle = IdleMonitor()   // idle melt / wake (IdleMonitor.swift); idle.userIdle = rendering paused, polling kept to notice input
-    private var mouseMonitor: Any?
-    private let dock = DockWatcher()
-    private let watcher = WindowWatcher()
+    let idle = IdleMonitor()   // idle melt / wake (IdleMonitor.swift); idle.userIdle = rendering paused, polling kept to notice input
+    let dock = DockWatcher()
+    private(set) lazy var poller = WindowPoller(host: self)
+    let watcher = WindowWatcher()
     private var slowTimer: Timer?
     private var lastScreensCheck = -Double.infinity   // monotonic (CACurrentMediaTime): a wall-clock jump must not stall the checks
     /// The one defaults store: a per-instance suite for dev builds, so concurrent instances never share prefs.
@@ -60,10 +61,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var loginOn: Bool { SMAppService.mainApp.status == .enabled }
 
     private func flag(_ p: Pref) -> Bool { ud.object(forKey: p.rawValue) as? Bool ?? p.defaultValue }
-    private var enabled: Bool { flag(.enabled) }
+    var enabled: Bool { flag(.enabled) }
     private var economy: Bool { flag(.economy) }
     private var ambient: Bool { flag(.ambient) }
-    private var behind: Bool { flag(.behindWindows) }
+    var behind: Bool { flag(.behindWindows) }
     /// Everything the overlays render from the options; the single place UserDefaults is read for them.
     private var overlayPrefs: OverlayPrefs {
         // Scene mode: fixed options (Mostrar em capturas ON, everything alive), whatever the user saved; nothing is written back.
@@ -113,8 +114,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ws.addObserver(self, selector: #selector(transitionPollNotification), name: n, object: nil)
         }
         ws.addObserver(self, selector: #selector(settlePollNotification), name: NSWorkspace.didHideApplicationNotification, object: nil)
-        watcher.onChange = { [weak self] in self?.transitionPoll() }   // an AX event is a transition: the window may still be animating
-        watcher.onSettle = { [weak self] in self?.settlePoll() }       // minimize / hide animations outlast the burst: one more read afterwards
+        watcher.onChange = { [weak self] in self?.poller.transitionPoll() }   // an AX event is a transition: the window may still be animating
+        watcher.onSettle = { [weak self] in self?.poller.settlePoll() }       // minimize / hide animations outlast the burst: one more read afterwards
         syncOverlays()
         // First launch only: open the menu once so the icon is found (no dialog).
         if neveInstance == nil, sceneKind == nil, !ud.bool(forKey: "firstLaunchMenuShown") { firstRunMenu(triesLeft: 20) }
@@ -139,28 +140,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
-    /// Global mouse monitors need no Accessibility permission. Installed only while snow is polling (the poll scheduler samples at ~25 Hz during a window drag).
-    private func syncMouseMonitor() {
-        if polling, mouseMonitor == nil {
-            mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] e in
-                MainActor.assumeIsolated { self?.mouseEvent(e.type) }
-            }
-        } else if !polling, let m = mouseMonitor {
-            NSEvent.removeMonitor(m)
-            mouseMonitor = nil
-            mouseDown = false
-        }
-    }
-
-    private func displayID(_ s: NSScreen) -> Int { (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0 }
+    func displayID(_ s: NSScreen) -> Int { (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0 }
 
     /// Leaving / entering fullscreen reshuffles the menu bar and Dock mid-Space-animation: per screen, ignore visibleFrame ~1s after.
-    private var settleUntil: [Int: Double] = [:]   // CACurrentMediaTime
+    var settleUntil: [Int: Double] = [:]   // CACurrentMediaTime
     private func settling(_ o: Overlay) -> Bool { o.isFullscreen || CACurrentMediaTime() < settleUntil[displayID(o.screen), default: -.infinity] }
 
     /// Real configuration changes (screens added / removed, frame or scale) apply at once, per screen;
     /// only visibleFrame-only changes (Dock, menu bar) wait for a transitioning screen to settle.
-    @objc private func screensChanged() {
+    @objc func screensChanged() {
         invalidateScreenCache()   // the cache's own observer registers lazily and may run after this
         lastScreensCheck = CACurrentMediaTime()
         syncPanelInfo()
@@ -177,7 +165,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if recheck > 0 {   // skipped while settling: look again once the settle window ends
             settleTimer?.invalidate()
             settleTimer = Timer.scheduledTimer(withTimeInterval: recheck + 0.05, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated { self?.requestPoll([.geometry]) }
+                MainActor.assumeIsolated { self?.poller.requestPoll([.geometry]) }
             }
         }
     }
@@ -221,7 +209,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
         }
         overlays += made
-        if missionControl { made.forEach { $0.setSuspended(true) } }   // created during Mission Control: stay hidden
+        if poller.missionControl { made.forEach { $0.setSuspended(true) } }   // created during Mission Control: stay hidden
         panel.metalMissing = overlays.isEmpty && !NSScreen.screens.isEmpty
         refreshRunState()
     }
@@ -266,11 +254,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .ambient: if on && (idle.userIdle || idle.melting) { idle.wake() } else { updateStatus() }
         case .behindWindows:
             applyPrefs()
-            requestPoll()   // empties / refills the surface list
+            poller.requestPoll()   // empties / refills the surface list
             updateStatus()
         case .behindLarge:
             applyPrefs()
-            requestPoll()   // the occluders / coverage follow the option now, not at the next window change
+            poller.requestPoll()   // the occluders / coverage follow the option now, not at the next window change
         case .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps, .pointerPush: applyPrefs()
         }
     }
@@ -440,7 +428,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Coalesced through the window watcher's rate limit; the async hop lets a closing window leave the on-screen list first.
     @objc private func settingsWindowChanged() {
-        DispatchQueue.main.async { [weak self] in self?.requestPoll() }
+        DispatchQueue.main.async { [weak self] in self?.poller.requestPoll() }
     }
 
     private var outroGen = 0       // bumped to cancel the previous outro's completion
@@ -465,8 +453,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The one source of truth for thermal throttling.
     private var hot: Bool { ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue }
     /// Polling timers only run while snow is actually shown (not disabled / asleep / locked / hot).
-    private var polling: Bool { run.polling(enabled: enabled, hot: hot) }
-    private var fullscreenIdle: Bool { !overlays.isEmpty && overlays.allSatisfy(\.isFullscreen) }
+    var polling: Bool { run.polling(enabled: enabled, hot: hot) }
+    var fullscreenIdle: Bool { !overlays.isEmpty && overlays.allSatisfy(\.isFullscreen) }
 
     private static func symbol(_ name: String, _ description: String? = nil) -> NSImage? {
         let i = NSImage(systemSymbolName: name, accessibilityDescription: description)
@@ -490,7 +478,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return s
     }
 
-    private func updateStatus() {
+    func updateStatus() {
         panel.status = statusText
         statusItem?.button?.setAccessibilityLabel("Neve")
         statusItem?.button?.setAccessibilityValue(panel.status)
@@ -510,14 +498,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleTimers()
         if polling {
             refreshDock()
-            requestPoll()
+            poller.requestPoll()
         }
     }
 
     /// With Accessibility trust, window events drive updates and the timer is a 2s safety poll; without it, a 0.5s poll (drags are sampled by the scheduler).
     /// Plus a 30s Dock refresh; just a 1Hz watch while every screen is under a fullscreen app. `.common` so menus don't stall them.
-    private func scheduleTimers() {
-        syncMouseMonitor()
+    func scheduleTimers() {
+        poller.syncMouseMonitor()
         slowTimer?.invalidate()
         slowTimer = nil
         mcProbe?.invalidate()
@@ -526,7 +514,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Rebuilds the poll timer; `slow` also rebuilds the 30 s Dock timer (leave it alone when only the safety period changes).
-    private func scheduleSafety(slow: Bool) {
+    func scheduleSafety(slow: Bool) {
         timer?.invalidate()
         timer = nil
         watcher.setActive(polling && AXIsProcessTrusted())   // events replace polling; the timer stays as a slow safety net
@@ -545,7 +533,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             slowTimer = st
             // Nothing notifies us when Mission Control opens: a 0.3 s probe of the on-screen window IDs (~65 us, ~0.02% CPU) requests a read when the list changes.
             let pr = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.mcProbeTick() }
+                MainActor.assumeIsolated { self?.poller.mcProbeTick() }
             }
             pr.tolerance = 0.05
             RunLoop.main.add(pr, forMode: .common)
@@ -554,123 +542,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Safety period; never stretched while idle/melting, so a single input always lands in the wake window of `pollTick`.
-    private func safetyGap() -> Double { sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active && !idle.userIdle && !idle.melting) }
+    private func safetyGap() -> Double { poller.sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active && !idle.userIdle && !idle.melting) }
 
     @objc private func pollTick() {
         idle.check(ambient: ambient, scene: sceneKind != nil, timerGap: timerGap)
-        if CACurrentMediaTime() - lastScreensCheck >= 0.5 { requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
-        requestPoll()   // the safety poll
+        if CACurrentMediaTime() - lastScreensCheck >= 0.5 { poller.requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
+        poller.requestPoll()   // the safety poll
         if watcher.active, !idleWatch, safetyGap() != timerGap { scheduleSafety(slow: false) }   // quiet for 10 s: 2 s -> 5 s
     }
 
-    private let scenarioHeavy = ProcessInfo.processInfo.environment["NEVE_SCENARIO"] == "heavy"
-    private var lastStage = -Double.infinity
-
-    @objc private func pollWindows() {
-        let t0 = Perf.now()
-        defer { Perf.addPoll(t0) }
-        guard let primary = NSScreen.screens.first else { return }
-        if let k = sceneKind { pollScene(k, primary: primary); return }
-        let mouse = NSEvent.mouseLocation   // read with the bounds: the drag offset is the mouse's move over the SAME interval as the window's
-        guard let read = readWindowsAndMC(primaryHeight: primary.frame.height, exclude: Set(overlays.map(\.windowNumber) )) else {
-            sched.didRead(ok: false, changed: false, frameMoved: false)   // CGWindowList failed: keep the last snapshot, retry shortly
-            return
-        }
-        let raw = read.windows
-        let strong = mcStrong; mcStrong = false
-        let mcNow = mcGate.read(read.missionControl, now: CACurrentMediaTime(), strong: strong)   // 2 consecutive reads to suspend, 1 to release, 15 s watchdog
-        setMissionControl(mcNow)
-        mcTimer?.invalidate(); mcTimer = nil
-        if missionControl || mcGate.pending || mcGate.holdsPiles {   // the window list is the Exposé layout: leave the piles alone and look again in 0.25 s (the only poll while it lasts)
-            sched.didRead(ok: true, changed: false, frameMoved: false)
-            mcTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.requestPoll() } }
-            return
-        }
-        // Drag bookkeeping: the target is the one window whose move matches the mouse's over this same interval.
-        let changed = raw != lastRead
-        let moved = mouseDown && raw.contains { w in lastRead.first { $0.number == w.number }.map { $0.frame != w.frame } ?? false }
-        let screenFrames = NSScreen.screens.map(\.frame)
-        drag.read(down: mouseDown, moved: moved, prev: lastRead, cur: raw, mouseDelta: CGVector(dx: mouse.x - lastReadMouse.x, dy: mouse.y - lastReadMouse.y), screens: screenFrames)
-        sched.didRead(ok: true, changed: changed, frameMoved: moved)
-        lastRead = raw; lastReadMouse = mouse
-        var windows = raw
-        // Show-desktop leaves a sliver on-screen: treat as gone. A window the user dragged mostly off-screen keeps its snow.
-        windows.removeAll { $0.number != drag.exempt && mostlyOffscreen($0.frame, screens: screenFrames) }
-        let covering = windows.map(\.frame)
-        let coverList = windows   // real windows: coverage / compaction also work in behind mode
-        if behind { windows = [] }   // snow falls behind app windows: no surfaces, no Dock pile
-        else if let d = dock.frame { windows.insert(WindowInfo(number: 0, frame: d, radius: d.height * 0.3), at: 0) }   // Dock draws above windows
-        for o in overlays {
-            let fs = covering.contains { o.covers($0) }
-            if fs != o.isFullscreen { settleUntil[displayID(o.screen)] = CACurrentMediaTime() + 1 }
-            o.setFullscreen(fs)
-            if !o.isFullscreen { o.update(windows: windows, covering: coverList, dragTarget: drag.target, mouse: lastReadMouse) }   // under fullscreen the list is just that app: keep piles untouched
-        }
-        if scenarioHeavy, CACurrentMediaTime() - lastStage >= 20 { lastStage = CACurrentMediaTime(); overlays.forEach { $0.stage(.heavy) } }   // perf A/B load
-        if fullscreenIdle != idleWatch {
-            updateStatus()
-            scheduleTimers()
-            if !fullscreenIdle { refreshDock() }
-        }
-    }
-
-    private func mcProbeTick() {
-        guard polling, !idle.userIdle, sceneKind == nil, let ids = onScreenWindowIDs(), mcIDs.changed(ids) else { return }
-        mcStrong = true
-        requestPoll()
-    }
-
-    private func setMissionControl(_ on: Bool) {
-        guard on != missionControl else { return }
-        missionControl = on
-        for o in overlays { o.setSuspended(on) }
-        if on, mcMonitor == nil {   // Esc closes Mission Control: release at once (needs Accessibility for global key events; without it the next negative read releases). A click may or may not close it ("+", Spaces bar): just look again now.
-            mcMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
-                MainActor.assumeIsolated {
-                    if e.type == .leftMouseDown { self?.requestPoll(); return }
-                    guard e.keyCode == 53 else { return }
-                    self?.mcGate.release(); self?.setMissionControl(false); self?.requestPoll()
-                }
-            }
-        } else if !on, let m = mcMonitor { NSEvent.removeMonitor(m); mcMonitor = nil }
-    }
-
-    // MARK: scene mode (NEVE_SCENE)
-    private let launched = CACurrentMediaTime()   // NEVE_SCENE_WAIT=<secs>: the script starts that long after launch (time to start a recording)
-    private var stage: SceneStage?, sceneTimer: Timer?, sceneBegun = false, scenePoll = 0
-
-    /// Scene mode: only the scene windows count, no Dock; a 60 Hz timer moves the windows by scene time and polls them every other tick.
-    private func pollScene(_ k: SceneKind, primary: NSScreen) {
-        if k == .demo, stage == nil {
-            stage = SceneStage(screen: primary)
-            let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let o = self.overlays.first else { return }
-                    self.stage?.place(t: o.sceneTime ?? 0)
-                    self.scenePoll += 1
-                    if self.scenePoll % 2 == 0 { self.pollWindows() }
-                }
-            }
-            RunLoop.main.add(t, forMode: .common)
-            sceneTimer = t
-        }
-        let windows = k == .demo ? (readWindows(primaryHeight: primary.frame.height, scene: stage?.numbers ?? []) ?? []) : []
-        for o in overlays {
-            o.update(windows: windows)
-            if !sceneBegun, CACurrentMediaTime() - launched >= (Double(ProcessInfo.processInfo.environment["NEVE_SCENE_WAIT"] ?? "") ?? 0), k == .fight || windows.count == 3 {
-                sceneBegun = true; o.beginScene(k)
-                // NEVE_SCENE_MARK=file: unix time of scene second 0, to line a screen recording up with the script
-                if let m = ProcessInfo.processInfo.environment["NEVE_SCENE_MARK"] { try? "\(Date().timeIntervalSince1970)".write(toFile: m, atomically: true, encoding: .utf8) }
-            }
-        }
-    }
-
     /// Dock bar frame via Accessibility; cheap no-op when untrusted. Called on Dock AX events, app launch/quit, screen changes, every 30s.
-    @objc private func refreshDock() {
+    @objc func refreshDock() {
         panel.axMissing = !AXIsProcessTrusted()
         if watcher.active != (polling && AXIsProcessTrusted()) { scheduleTimers() }   // trust granted / revoked
         guard polling else { return }
-        dock.refresh { [weak self] in self?.requestPoll([.geometry, .windows]) }   // the Dock moving can change visibleFrame (Dock.refresh is itself single-flight)
+        dock.refresh { [weak self] in self?.poller.requestPoll([.geometry, .windows]) }   // the Dock moving can change visibleFrame (Dock.refresh is itself single-flight)
     }
 
     @objc private func askAccessibility() {
@@ -708,77 +594,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Switching Spaces hides every window at once: drop piles silently instead of an avalanche.
     @objc private func spaceChanged() {
         for o in overlays { o.dropPiles(); o.markStale(); o.dip() }   // keep the ground pile; window surfaces take no snow until the next snapshot
-        transitionPoll()
+        poller.transitionPoll()
     }
 
-    @objc private func transitionPollNotification() { transitionPoll() }
-    @objc private func settlePollNotification() { settlePoll() }
+    /// An AX event ends the quiet stretch of the safety timer (5 s back to 2 s).
+    func endQuietStretch() { if watcher.active, !idleWatch, timerGap != PollScheduler.safetyGap { scheduleSafety(slow: false) } }
 
-    // MARK: poll scheduling. Every window read goes through `sched`: coalesced, 30/s at most, bursts bounded (see PollScheduler).
-    private var sched = PollScheduler(), schedTimer: Timer?, timerGap = PollScheduler.safetyGap
-    private var lastRead: [WindowInfo] = [], lastReadMouse = NSEvent.mouseLocation
-    private var drag = DragTracker(), downOnDesktop = false, lastDragReq = 0.0
-
-    private func requestPoll(_ r: PollReasons = .windows) {
-        guard polling, !idle.userIdle else { return }
-        sched.request(r)
-        arm()
-    }
-    private func transitionPoll() {
-        guard polling, !idle.userIdle else { return }
-        sched.transition(now: CACurrentMediaTime())
-        if watcher.active, !idleWatch, timerGap != PollScheduler.safetyGap { scheduleSafety(slow: false) }   // an event ends the quiet stretch
-        arm()
-    }
-
-    /// A minimize / hide animates for a while: besides the burst, one more read ~0.6 s later catches the final state.
-    private func settlePoll() {
-        guard polling, !idle.userIdle else { return }
-        sched.settleRead(now: CACurrentMediaTime())
-        arm()
-    }
-
-    private func mouseEvent(_ type: NSEvent.EventType) {
-        let now = CACurrentMediaTime()
-        switch type {
-        case .leftMouseDown:
-            mouseDown = true
-            let p = NSEvent.mouseLocation
-            downOnDesktop = !lastRead.contains { $0.frame.contains(p) }   // click on the wallpaper = show-desktop: no AX event
-            drag.pressed(at: p, windows: lastRead)   // a press outside the exempt (dragged-offscreen) window ends its exemption
-            if polling, !idle.userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead, command: NSEvent.modifierFlags.contains(.command))) }
-        case .leftMouseUp:
-            mouseDown = false
-            if polling, !idle.userIdle { sched.mouseUp(now: now, onDesktop: downOnDesktop) }
-        default:   // dragged: throttled; a moving window flips the scheduler into drag sampling
-            guard now - lastDragReq >= 0.015, polling, !idle.userIdle else { return }
-            lastDragReq = now
-            sched.mouseDragged()
-        }
-        arm()
-    }
-
-    private func arm() {
-        let now = CACurrentMediaTime()
-        guard let due = sched.nextDue(now: now) else { return }
-        let fire = Date(timeIntervalSinceNow: max(0, due - now))
-        if let t = schedTimer, t.isValid, t.fireDate <= fire { return }
-        schedTimer?.invalidate()
-        let t = Timer(fire: fire, interval: 0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.runScheduled() } }
-        t.tolerance = 0.004
-        RunLoop.main.add(t, forMode: .common)
-        schedTimer = t
-    }
-
-    private func runScheduled() {
-        schedTimer = nil
-        guard polling, !idle.userIdle else { return }
-        guard let r = sched.take(now: CACurrentMediaTime()) else { arm(); return }
-        if r.contains(.geometry) { screensChanged() }
-        if r.contains(.dock) { refreshDock() }
-        if r.contains(.windows) { pollWindows() }
-        arm()
-    }
+    @objc private func transitionPollNotification() { poller.transitionPoll() }
+    @objc private func settlePollNotification() { poller.settlePoll() }
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
     @objc private func screensaverStarted() {
