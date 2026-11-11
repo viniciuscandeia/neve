@@ -4,7 +4,7 @@
 //   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (56 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
-//   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
+//   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = `Self.crest`, shared with Contour.swift: neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
 //   pile, joins n0/n1 normals of neighbouring slices. Ground and Dock are drawn here (runs, the bank <-> Dock bridges and filled corners); every WINDOW support is drawn by Contour.swift `writeGroups` (one contour per group of touching windows: walls / seams from frame geometry only,
 //   slice z = the window the snow rests on, base follows the corner arc; no junction merges, crest blends, seam bridges or fillets any more). Draw-only: never changes `heights`.
 // Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
@@ -162,8 +162,6 @@ extension SnowField {
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
             func ceiling(_ i: Int) -> Float { edge + base[i] + s.pile.cap[i] }   // infinite where no window is in front
-            // Stable irregularity keyed on the window-relative column (travels with the pile), interpolated between every 3rd column.
-            func jitter(_ i: Int, _ sm: Float) -> Float { Self.jitter(s, i, sm) }
             // Dock pile, on its rounded corner: the bank's height beside the bar end eases (smoothstep) into the Dock snow level over the corner's width,
             // a rounded shoulder instead of a flat block; wherever the arc is higher than that curve the plain pile on the arc shows.
             var cornL = 0, cornR = 0
@@ -182,15 +180,9 @@ extension SnowField {
                 // A ground column beside a Dock bar end ignores the (much lower) under-bar neighbour: the bank keeps its full height up to the bar.
                 func nb(_ j: Int) -> Float { s.id == Tuning.groundID && s.pile.cap[j] < h[i] ? h[i] : h[j] }
                 let l = i > b ? nb(i - 1) : (b > 0 || s.pile.supportL ? h[i] : 0), r = i < e - 1 ? nb(i + 1) : (e < cnt || s.pile.supportR ? h[i] : 0)
-                let sm = (l + 2 * h[i] + r) / 4
                 // The bank column beside a Dock bar end sits exactly at the filled corner's height (no smoothing / noise): bank and Dock pile share one contour point.
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
-                // Packed up to a window's underside: drawn exactly at it (no smoothing / noise pulling it down), so the snow hugs the window's rounded corner.
-                // Blended over the last 1.5pt (no pop when a column fills up to the window).
-                let plain = min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
-                guard s.pile.cap[i].isFinite else { return plain }
-                let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
-                return plain + (ceiling(i) - plain) * k
+                return Self.crest(s, i, h: h[i], l: l, r: r, floor: fill(i) ?? -.infinity)
             }
             for run in s.runs {
                 let b = run.lowerBound, e = run.upperBound
@@ -290,6 +282,16 @@ extension SnowField {
         let r2 = ((rel % 2) + 2) % 2, g2 = rel - r2, w2: Float = r2 == 0 ? 0 : 0.5   // finer octave, interpolated between knots: rounded, never a per-column sawtooth
         let fine = 0.3 * (Float(noise(g2 &* 7 &+ 1013)) * (1 - w2) + Float(noise((g2 + 2) &* 7 &+ 1013)) * w2) * min(sm / 4, 1)
         return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5) + fine   // the Dock bank is bigger: a little more texture
+    }
+
+    /// THE drawn crest of bin `i` of `s` (ground / Dock runs in writePiles and window groups in Contour.swift): the 1-2-1 blur of the shown heights (`l`, `h`, `r`: the neighbours already resolved for walls / ends) plus the stable jitter,
+    /// at least `floor` (the Dock's filled corner), at most the ceiling of the window in front, and blended onto that ceiling over the last 1.5 pt of room (packed up to a window's underside: drawn exactly at it, no pop when a column fills up).
+    static func crest(_ s: Surface, _ i: Int, h: Float, l: Float, r: Float, floor: Float = -.infinity) -> Float {
+        let sm = (l + 2 * h + r) / 4, cap = s.pile.cap[i], ceiling = s.edgeY + s.pile.base[i] + cap   // infinite where no window is in front
+        let plain = min(max(s.edgeY + s.pile.base[i] + sm + jitter(s, i, sm), floor), ceiling)
+        guard cap.isFinite else { return plain }
+        let u = min(max((h - (cap - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
+        return plain + (ceiling - plain) * k
     }
 }
 

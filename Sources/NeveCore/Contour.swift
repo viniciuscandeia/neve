@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Contour.swift  (the drawn snow of window supports: ONE contour per connected group)
 // Role: `windowGroups` (SurfaceSet, computed once per rebuild) = connected sets of window surfaces (seams + walls, from frames only: side by side within 6 pt, or a higher window's end over a lower window's top edge, any step), `writeGroups` = the PileSeg slices of every group.
 //   Each group is drawn as ONE column function over its x range: every global column is owned by the OPEN bin (visible, not under a higher window: Pile.open) with the highest top (ties: lower window id), so a lower window's covered span belongs
-//   to the higher window's pile. A column's top is the old per-pile crest (1-2-1 blur of `shown`, stable jitter, cap blend, held full height at supported / covered ends); its base follows the owner's edge AND the rounded-corner arc of
+//   to the higher window's pile. A column's top is `SnowField.crest` (Render.swift, the same function the ground / Dock use: 1-2-1 blur of `shown`, stable jitter, cap blend, held full height at supported / covered ends); its base follows the owner's edge AND the rounded-corner arc of
 //   its frame (also at supported ends: the snow fills the corner cut-out, arc - 1 pt); columns without an owner between two owners (<= 4, the 0...6 pt gap of side-by-side windows) are interpolated. A slope limit over the group
 //   (`slope`, 0.95 pt per bin (a gentle ramp: <= 1 pt per 2 pt step)) LIFTS the lower side toward the other crest (forward + backward pass, only into snowy columns, at most `Tuning.maxDrift`, never above the lower pile's own ceiling, and not at all on the corner arc of a bare (unsupported) end: there the crest follows the arc down instead of floating above the closing column): the bank climbs the wall, the crest has no
 //   step, it replaces the old per-pile runs stitched with junction merges, blendCrest, liftSeam, seam bridges, tintRefs, drawHeights and the fillet. A pair of owners further apart than `maxStep` after the lift is not joined (the stretch just ends). Draw only: never changes `heights`.
@@ -33,14 +33,8 @@ extension SnowField {
                     // Crest: blur of the shown heights; supported / covered neighbours hold the full height (no taper there), the bare window ends taper to 0.
                     let l = i > 0 ? (pile.open(i - 1) ? h[i - 1] : h[i]) : (pile.supportL ? h[i] : 0)
                     let r = i < cnt - 1 ? (pile.open(i + 1) ? h[i + 1] : h[i]) : (pile.supportR ? h[i] : 0)
-                    let sm = (l + 2 * h[i] + r) / 4
                     let ceiling = edge + base[i] + pile.cap[i]   // infinite where no window is in front
-                    let plain = min(edge + base[i] + sm + Self.jitter(s, i, sm), ceiling)
-                    var t = plain
-                    if pile.cap[i].isFinite {   // packed up to a window's underside: drawn exactly at it, blended over the last 1.5 pt
-                        let u = min(max((h[i] - (pile.cap[i] - 1.5)) / 1.45, 0), 1)
-                        t = plain + (ceiling - plain) * (u * u * (3 - 2 * u))
-                    }
+                    let t = Self.crest(s, i, h: h[i], l: l, r: r)
                     if own[c] >= 0 && (t < top[c] || (t == top[c] && s.id > surfaces[Int(own[c])].id)) { continue }
                     var b = base[i]   // the base follows the frame's corner arc too (a supported end has no arc in `base`: the snow fills the cut-out)
                     let d = min(x - s.pile.x0, s.pile.x1 - x)
