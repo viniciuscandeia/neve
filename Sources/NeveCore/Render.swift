@@ -5,7 +5,7 @@
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
-//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`). Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall, `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall: `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. `Pile.fillet` lifts the crest beside a wall: no vertical cut.
+//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`). Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall, `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall: `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. `Pile.fillet` lifts the crest beside a wall: no vertical cut. Slice z: every piece carries the z of the window whose top edge its snow rests on: back snow merged into a higher window's slices (`JunctionDraw.z`) and overlap seam bridges (the farther window's z) keep the BACK z, so the higher window's occluder clips what lies inside its body (SliceZTests).
 //   `blendCrest` smoothsteps the crest over half-width min(80, max(16, 6 * |crest difference|)) pt (the cap keeps a tall heap from being flattened), never draws a bin that holds a pushed heap (`moundAt`) lower than itself, and is skipped while only one side of the junction is being dragged.
 // Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
 // Gotchas: WritePilesEquivalenceTests (and WritePilesCompareTests) mirror / compare writePiles - when you change its output, update them in the SAME change. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
@@ -220,6 +220,7 @@ extension SnowField {
                         if lo < hi {
                             for i in (lo + 1)...hi {
                                 let cur = point(i, b, e)
+                                curZ = merged(i) ? jd!.z[i] : merged(i - 1) ? jd!.z[i - 1] : (zOf[s.id] ?? groundZ)   // back snow merged into a higher window's slices keeps the BACK window's z: the higher window's occluder clips what lies inside its body   // back snow merged into a higher window's slices keeps the BACK window's z: the higher window's occluder clips what lies inside its body
                                 let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                                 if side >= 0 {
                                     let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), inset: drop, z: curZ)
@@ -272,7 +273,8 @@ extension SnowField {
                     var a = a, c = c
                     if l.front == 0 { liftSeam(p, &a, &c) }   // a junction is blended below instead
                     let n0 = n
-                    curZ = min(zOf[l.left] ?? groundZ, zOf[l.right] ?? groundZ)   // the bridge belongs to the front window of the two
+                    let zl = zOf[l.left] ?? groundZ, zr = zOf[l.right] ?? groundZ
+                    curZ = l.front == 0 ? min(zl, zr) : max(zl, zr)   // overlap: the bridge rests on the lower window's top edge, so the farther window's z (the higher window's occluder clips what is inside its body); side by side: neither covers the other
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)   // moves with the drag only when both sides do (else it would detach from the side that stays)
                     if l.front != 0, a.drag == c.drag { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2, heap: { moundAt($0, l.left, l.right) }) }   // overlap junction: one smooth crest (not while only one side is dragged: it would detach)
                 }
@@ -394,7 +396,7 @@ extension SnowField {
                 let v: Float = a >= 0 && c >= 0 ? hb[a] + (hb[c] - hb[a]) * Float(k - a) / Float(c - a) : a >= 0 ? hb[a] : c >= 0 ? hb[c] : 0
                 return max(hb[k], min(v, max(B.pile.limit(k), 0)))
             }
-            var j = front[l.front] ?? JunctionDraw(top: [Float](repeating: 0, count: nf), base: [Float](repeating: 0, count: nf), merged: [Bool](repeating: false, count: nf), ref: [Float](repeating: 0, count: nf))
+            var j = front[l.front] ?? JunctionDraw(top: [Float](repeating: 0, count: nf), base: [Float](repeating: 0, count: nf), merged: [Bool](repeating: false, count: nf), ref: [Float](repeating: 0, count: nf), z: [UInt32](repeating: 0, count: nf))
             for k in ka..<kb {
                 let i = B.c0 + k - F.c0, h = hv(k)
                 guard h > 0.15, F.pile.visible[i] else { continue }
@@ -406,7 +408,7 @@ extension SnowField {
                 // Only where the back snow shows and the two bodies touch (a lower front pile that does not reach the back snow stays its own body;
                 // on the front's rounded corner the shoulder always sinks into the back snow).
                 guard t > floor + 0.15, fh <= 0.15 || fb + fh >= floor - 1 || F.pile.base[i] < -0.01 else { continue }
-                j.merged[i] = true; j.top[i] = t; j.ref[i] = B.edgeY + B.pile.base[k] - (B.id == Tuning.groundID ? 0 : 1)
+                j.merged[i] = true; j.z[i] = zOf[bid] ?? groundZ; j.top[i] = t; j.ref[i] = B.edgeY + B.pile.base[k] - (B.id == Tuning.groundID ? 0 : 1)
                 j.base[i] = min(foot - 1, fh > 0.15 ? fb - 1 : .infinity)   // from the lower window's own top edge: visible when it is in front, clipped by the shader when it is not
                 if let r = skip[bid]?.last, r.upperBound == k { skip[bid]![skip[bid]!.count - 1] = r.lowerBound..<(k + 1) } else { skip[bid, default: []].append(k..<(k + 1)) }
             }
@@ -523,6 +525,7 @@ public struct PileSeg {
 /// Front pile slices over a back pile (see `junctions`): per front bin, the shared top / base where the back snow shows.
 struct JunctionDraw {
     var top: [Float], base: [Float], merged: [Bool], ref: [Float]   // ref: the back pile's base (shading reference)
+    var z: [UInt32]   // per merged bin: z of the BACK window whose top edge that snow rests on (the higher window's occluder then clips what lies inside its body)
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.

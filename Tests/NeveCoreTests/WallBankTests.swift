@@ -14,7 +14,7 @@ private func scene(step: CGFloat, rounds: Int = 60) -> SnowField {
     pileUp(f, id: 2, rounds: rounds)
     return f
 }
-/// Highest drawn top of the BACK window's slices (z 1; the front window is z 0) over x.
+/// Highest drawn top of the BACK window's slices (z 1; the front window is z 0; junction-merged back snow carries the back z too, see SliceZTests) over x.
 private func backTop(_ s: [PileSeg], _ x: Float) -> Float? {
     s.filter { $0.z == 1 && $0.x0 <= x && x <= $0.x1 }.map { $0.top0 + ($0.top1 - $0.top0) * (x - $0.x0) / max($0.x1 - $0.x0, 1e-3) }.max()
 }
@@ -37,11 +37,13 @@ private let walls: [(wall: Float, dir: Float)] = [(300, -1), (500, 1)]   // x of
     for step in [6, 13, 20, 40, 100] as [CGFloat] {
         for rounds in [60, 3] {   // grown and young snow
             let f = scene(step: step, rounds: rounds)
-            let rad = f.occluders[0].radius, s = pileSegs(f)
+            let o = f.occluders[0], rad = o.radius, s = pileSegs(f)
             for (wall, dir) in walls {
                 var prev: Float?
                 for d in stride(from: Float(40), through: -(rad - 2), by: -2) {   // from 40 pt out to the wall, then into the corner cut-out
                     guard let t = backTop(s, wall + dir * d) else { if d > 0 { Issue.record("step \(step) rounds \(rounds): gap at \(wall + dir * d)") }; break }
+                    let x = wall + dir * d
+                    if o.hides(x: x, y: t - 0.3) || s.contains(where: { $0.z == 0 && $0.x0 <= x && x <= $0.x1 && min($0.base0, $0.base1) <= t + 6 && max($0.top0, $0.top1) >= t - 0.5 }) { break }   // the crest went behind the front window (its rounded corner) or into the front pile (which carries merged back snow from there): not the back crest any more
                     if let q = prev { #expect(abs(t - q) <= 2.2, "step \(step) rounds \(rounds) wall \(wall): crest step \(t - q) at d=\(d)") }
                     prev = t
                 }

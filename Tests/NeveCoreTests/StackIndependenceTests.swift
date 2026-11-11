@@ -72,7 +72,8 @@ private func crest(_ s: [PileSeg], _ x: Float) -> Float? {
                 if rounds == 2 { f.update(windows: order.map { $0.number == 1 ? win(1, 100, 200, 600, 200) : $0 }) ; for si in f.surfaces.indices { for b in f.surfaces[si].pile.heights.indices where b % 7 != 0 { f.surfaces[si].pile.heights[b] = 0; f.surfaces[si].pile.shown[b] = 0 } } }
                 for s in pileSegs(f) {
                     let id = f.occluders[Int(s.z)].id, p = f.pile(id: id)!, c0 = p.c0, reach: Float = 40
-                    let lo = max(0, Int((s.x0 - reach) / Tuning.binWidth) - c0), hi = min(p.heights.count - 1, Int((s.x1 + reach) / Tuning.binWidth) - c0)
+                    var lo = max(0, Int((s.x0 - reach) / Tuning.binWidth) - c0), hi = min(p.heights.count - 1, Int((s.x1 + reach) / Tuning.binWidth) - c0)
+                    while lo > 0, !p.hideTop.isEmpty, p.hideTop[lo] > 0 { lo -= 1 }; while hi < p.heights.count - 1, !p.hideTop.isEmpty, p.hideTop[hi] > 0 { hi += 1 }   // back snow merged over a window's span continues the snow beside it
                     if s.top1 - s.base1 < 0.3 && s.top0 - s.base0 < 0.3 { continue }
                     #expect(lo <= hi && p.heights[lo...hi].contains { $0 > 0.15 }, "\(g.name) rounds \(rounds): floating slice \(s)")
                 }
