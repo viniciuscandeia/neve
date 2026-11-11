@@ -4,8 +4,8 @@
 //   pause/run state, timers, window polling, idle melt, Mission Control / screen saver / lock / sleep handling, login item (SMAppService), Accessibility prompt.
 // Globals: `neveInstance` = Info.plist `NeveInstance` or env NEVE_INSTANCE (dev bundle; no single-instance lock, no login item, prefs in suite io.github.viniciuscandeia.neve.dev.<name>); `ud` = the only UserDefaults store.
 // Threading: everything is @MainActor; notifications that may arrive off-main are delivered with queue:.main + MainActor.assumeIsolated. Timers are added to RunLoop .common so menus do not stall them.
-// Run state: `run` (RunState, NeveCore/RunState.swift: outroing/screensAsleep/sessionInactive/screensaver): running = (enabled||outroing) && !asleep && !inactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !userIdle.
-//   userIdle = no input for NEVE_IDLE_SECS (default 300 s) unless Modo ambiente: first startIdleMelt (snow melts, meltGen guards stale completions) then rendering pauses; input -> wakeFromIdle.
+// Run state: `run` (RunState, NeveCore/RunState.swift: outroing/screensAsleep/sessionInactive/screensaver): running = (enabled||outroing) && !asleep && !inactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !idle.userIdle.
+//   userIdle = no input for NEVE_IDLE_SECS (default 300 s) unless Modo ambiente: first the melt (IdleMonitor.swift: snow melts, meltGen guards stale completions) then rendering pauses; input -> IdleMonitor.wake.
 //   refreshRunState() is the single re-evaluation point (status icon, overlay setRun, timers, Dock + poll kick). Prefs: syncPrefs diffs Pref snapshot (NeveCore/Prefs.swift) -> prefChanged(pref) is the only reaction path.
 // Window polling: every read goes through `sched` (PollScheduler, NeveCore/WindowInfo.swift: coalesced, <=30/s, bursts bounded). Sources: WindowWatcher AX events (transitionPoll / settlePoll),
 //   safety timer (2 s -> 5 s after 10 s quiet with AX; 0.5 s without Accessibility; 1 Hz while every screen is under a fullscreen app), 30 s Dock refresh, 0.3 s Mission Control probe (WindowList.swift onScreenWindowIDs),
@@ -41,11 +41,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let panel = PanelState()
     private var loggedMetal = false
     private var mouseDown = false
-    private var userIdle = false   // no input for 5 min (after the melt): rendering paused, polling kept to notice input
-    private var idleMelting = false   // the 5 min fired: snow is melting away, then userIdle
-    private var meltGen = 0
-    /// Idle timeout in seconds; NEVE_IDLE_SECS shortens it for dev / recordings.
-    private let idleSecs = Double(ProcessInfo.processInfo.environment["NEVE_IDLE_SECS"] ?? "") ?? 300
+    private let idle = IdleMonitor()   // idle melt / wake (IdleMonitor.swift); idle.userIdle = rendering paused, polling kept to notice input
     private var mouseMonitor: Any?
     private let dock = DockWatcher()
     private let watcher = WindowWatcher()
@@ -85,6 +81,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
         updateStatus()
         installMainMenu()
+        idle.overlays = { [weak self] in self?.overlays ?? [] }
+        idle.changed = { [weak self] in self?.refreshRunState() }
 
         let nc = NotificationCenter.default, ws = NSWorkspace.shared.notificationCenter
         prefSnapshot = prefValues()
@@ -260,12 +258,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let on = flag(pref)
         switch pref {
         case .enabled:
-            outroGen += 1; meltGen += 1; idleMelting = false
+            outroGen += 1; idle.cancel()
             if on { run.outroing = false; overlays.forEach { $0.intro() }; refreshRunState() }
             else { updateStatus(); runOutro { [weak self] in self?.refreshRunState() } }
         case .economy: syncOverlays(); syncMusic()
         case .music: applyPrefs(); syncMusic()
-        case .ambient: if on && (userIdle || idleMelting) { wakeFromIdle() } else { updateStatus() }
+        case .ambient: if on && (idle.userIdle || idle.melting) { idle.wake() } else { updateStatus() }
         case .behindWindows:
             applyPrefs()
             requestPoll()   // empties / refills the surface list
@@ -480,7 +478,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusText: String {
         let level = Intensity.saved(ud)
         if !enabled { return tr("Desligado") }
-        if run.screensAsleep || run.sessionInactive || userIdle { return tr("Pausado: sem atividade") }
+        if run.screensAsleep || run.sessionInactive || idle.userIdle { return tr("Pausado: sem atividade") }
         if hot { return tr("Pausado: Mac esquentou") }
         if fullscreenIdle { return tr("Pausado: app em tela cheia") }
         if NSScreen.screens.isEmpty { return tr("Pausado: sem tela") }
@@ -496,7 +494,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.status = statusText
         statusItem?.button?.setAccessibilityLabel("Neve")
         statusItem?.button?.setAccessibilityValue(panel.status)
-        let paused = !enabled || !polling || userIdle || fullscreenIdle
+        let paused = !enabled || !polling || idle.userIdle || fullscreenIdle
         // Off: slashed flake; paused: the flake in a circle (a distinct template symbol instead of dimming); else the plain flake.
         let img = !enabled ? (Self.symbol("snowflake.slash", tr("Neve — desligada")) ?? Self.symbol("snowflake", tr("Neve — desligada")))
             : paused ? (Self.symbol("snowflake.circle", tr("Neve — pausada")) ?? Self.symbol("snowflake", tr("Neve — pausada")))
@@ -507,7 +505,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshRunState() {
         updateStatus()
-        let go = run.rendering(enabled: enabled, hot: hot, userIdle: userIdle)
+        let go = run.rendering(enabled: enabled, hot: hot, userIdle: idle.userIdle)
         for o in overlays { o.setRun(go) }
         scheduleTimers()
         if polling {
@@ -556,42 +554,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Safety period; never stretched while idle/melting, so a single input always lands in the wake window of `pollTick`.
-    private func safetyGap() -> Double { sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active && !userIdle && !idleMelting) }
+    private func safetyGap() -> Double { sched.safetyInterval(now: CACurrentMediaTime(), ax: watcher.active && !idle.userIdle && !idle.melting) }
 
-    /// No input for 5 min pauses rendering; input resumes it (checked here, so no Accessibility needed for keys).
     @objc private func pollTick() {
-        let since = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)   // kCGAnyInputEventType
-        if !userIdle && !idleMelting && !ambient && sceneKind == nil && since >= idleSecs { startIdleMelt() }
-        else if (userIdle || idleMelting) && since < max(2, timerGap + 0.5) { wakeFromIdle() }
+        idle.check(ambient: ambient, scene: sceneKind != nil, timerGap: timerGap)
         if CACurrentMediaTime() - lastScreensCheck >= 0.5 { requestPoll([.geometry]) }   // safety net: Dock / menu bar auto-hide changes visibleFrame without a notification
         requestPoll()   // the safety poll
         if watcher.active, !idleWatch, safetyGap() != timerGap { scheduleSafety(slow: false) }   // quiet for 10 s: 2 s -> 5 s
-    }
-
-    /// The idle timeout: the snow melts away on every overlay, then rendering pauses (userIdle).
-    private func startIdleMelt() {
-        idleMelting = true
-        meltGen += 1
-        let gen = meltGen
-        var left = Countdown(overlays.count)
-        guard !left.isDone else { idleMelting = false; userIdle = true; return refreshRunState() }
-        for o in overlays {
-            o.melt { [weak self] in
-                guard left.hit(), let self, self.meltGen == gen, self.idleMelting else { return }
-                self.idleMelting = false
-                self.userIdle = true
-                self.refreshRunState()
-            }
-        }
-    }
-
-    /// Input is back (or Modo ambiente turned on): cancels a running melt and restarts the snow from the top edge, like the intro.
-    private func wakeFromIdle() {
-        meltGen += 1
-        idleMelting = false
-        userIdle = false
-        overlays.forEach { $0.resume() }
-        refreshRunState()
     }
 
     private let scenarioHeavy = ProcessInfo.processInfo.environment["NEVE_SCENARIO"] == "heavy"
@@ -646,7 +615,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func mcProbeTick() {
-        guard polling, !userIdle, sceneKind == nil, let ids = onScreenWindowIDs(), mcIDs.changed(ids) else { return }
+        guard polling, !idle.userIdle, sceneKind == nil, let ids = onScreenWindowIDs(), mcIDs.changed(ids) else { return }
         mcStrong = true
         requestPoll()
     }
@@ -751,12 +720,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var drag = DragTracker(), downOnDesktop = false, lastDragReq = 0.0
 
     private func requestPoll(_ r: PollReasons = .windows) {
-        guard polling, !userIdle else { return }
+        guard polling, !idle.userIdle else { return }
         sched.request(r)
         arm()
     }
     private func transitionPoll() {
-        guard polling, !userIdle else { return }
+        guard polling, !idle.userIdle else { return }
         sched.transition(now: CACurrentMediaTime())
         if watcher.active, !idleWatch, timerGap != PollScheduler.safetyGap { scheduleSafety(slow: false) }   // an event ends the quiet stretch
         arm()
@@ -764,7 +733,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// A minimize / hide animates for a while: besides the burst, one more read ~0.6 s later catches the final state.
     private func settlePoll() {
-        guard polling, !userIdle else { return }
+        guard polling, !idle.userIdle else { return }
         sched.settleRead(now: CACurrentMediaTime())
         arm()
     }
@@ -777,12 +746,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let p = NSEvent.mouseLocation
             downOnDesktop = !lastRead.contains { $0.frame.contains(p) }   // click on the wallpaper = show-desktop: no AX event
             drag.pressed(at: p, windows: lastRead)   // a press outside the exempt (dragged-offscreen) window ends its exemption
-            if polling, !userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead, command: NSEvent.modifierFlags.contains(.command))) }
+            if polling, !idle.userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead, command: NSEvent.modifierFlags.contains(.command))) }
         case .leftMouseUp:
             mouseDown = false
-            if polling, !userIdle { sched.mouseUp(now: now, onDesktop: downOnDesktop) }
+            if polling, !idle.userIdle { sched.mouseUp(now: now, onDesktop: downOnDesktop) }
         default:   // dragged: throttled; a moving window flips the scheduler into drag sampling
-            guard now - lastDragReq >= 0.015, polling, !userIdle else { return }
+            guard now - lastDragReq >= 0.015, polling, !idle.userIdle else { return }
             lastDragReq = now
             sched.mouseDragged()
         }
@@ -803,7 +772,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func runScheduled() {
         schedTimer = nil
-        guard polling, !userIdle else { return }
+        guard polling, !idle.userIdle else { return }
         guard let r = sched.take(now: CACurrentMediaTime()) else { arm(); return }
         if r.contains(.geometry) { screensChanged() }
         if r.contains(.dock) { refreshDock() }
