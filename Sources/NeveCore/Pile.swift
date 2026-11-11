@@ -5,9 +5,9 @@
 //   corners), cap (ceiling imposed by windows in front, inf = none), maxes (per-column max, ground bank beside the Dock), wobble (two long waves ~500 / ~150 pt, +-9 % / +-6 %, phases from the window id), boost (extra limit banked against a front window:
 //   drift), mound (extra allowance for cursor-pushed heaps; only `cap` bounds it), peel (seconds until a bin's excess over `limit` lets go as debris, -1 = none), walls (global x of each wall = visible bin next to a hidden one).
 //   `limit(b) = min(rawLimit(b) + mound, cap)`; `rawLimit` = (maxes or maxHeight) * wobble + boost, tapered to 0 over `inset` from x0 / x1 unless supportL / supportR (end faces a drift / seam: no taper, dip or spill).
-// Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes, slope <= Tuning.slope); relax moves half the
+// Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax moves half the
 //   excess to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
-//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps; round(radius:) follows corner arcs; addWalls builds drifts;
+//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts;
 //   visibleRuns() = visible bin ranges.
 // Pile is a struct: avoid copying whole arrays in hot code (mutate surfaces[si].pile in place, see Surfaces.sweep). Callers: Surfaces.swift (build / deposit / shed), SurfaceMap.swift, Render.swift (writePiles reads it), and read or mutated directly by
 //   Avalanche, Frost, Melt, Walk, Snowball, Figures*. Tests: PileLogicTests, SurfaceMapTests, PhysicsTests and others. Changing slope / limit math changes visuals everywhere and many tuned tests.
@@ -156,7 +156,7 @@ public struct Pile {
         }
         let lo = max(0, bin - 8), hi = min(heights.count - 1, bin + 8)
         for _ in 0..<6 {
-            for i in lo...hi where visible[i] {   // hidden bins are frozen: no flow out of them (nor into them, see relax)
+            for i in lo...hi where visible[i] && (mound.isEmpty || mound[i] <= 0.5) {   // hidden bins are frozen: no flow out of them (nor into them, see relax); a pushed heap is left to `settle` (a local relax of its steep flank would cut a cliff at the edge of the window)
                 if relax(i, i - 1) { changed = true }
                 if relax(i, i + 1) { changed = true }
             }
@@ -237,6 +237,7 @@ public struct Pile {
             for i in a...b where visible[i] { if relax(i, i - 1) { moved = true }; if relax(i, i + 1) { moved = true } }
             if !moved { break }
         }
+        if !mound.isEmpty { for i in a...b { trackMound(i) } }   // the heap's allowance follows the slumped snow, or the next snowfall would trim the moved snow back to the old allowance
     }
 
     /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.
