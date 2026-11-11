@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/Neve/MusicTap.swift  (system-audio tap for "Neve dança com a música")
 // Role: `MusicTap.shared` (@unchecked Sendable singleton) creates a global Core Audio process tap (macOS 14.2+, `CATapDescription(stereoGlobalTapButExcludeProcesses:)`, excluding Neve's own process) + a private aggregate
 //   device clocked by the default output device, with an IOProc that feeds `BeatDetector` (NeveCore/Music.swift; no allocation on the audio thread) and publishes level/bass/beat (3 x 16-bit, quantised to 0...65535)
-//   into ONE aligned UInt64 (`word`): single writer = audio thread, single reader = Overlay.tick via read() -> MusicInput. No locks/atomics by design (see the ponytail comment).
+//   into ONE UInt64 (`word`, an OSAllocatedUnfairLock<UInt64>): writer = audio thread (+ start/stop reset on main), reader = Overlay.tick via read() -> MusicInput.
 // API: start() -> Bool (false on old macOS / permission refused / no output device / any Core Audio failure; it then tears everything down via fail()); stop() destroys IOProc, aggregate and tap (zero cost off); running; supported.
 // Permission: NSAudioCaptureUsageDescription (Info.plist written by scripts/make-app.sh). Callers: AppController.syncMusic (main.swift) decides when it may run (option on, not Reduce Motion / economy / Low Power / scene).
 // Gotcha: never retain anything the IOProc block allocates per call; the output format is assumed Float32 interleaved/first buffer only. If the default output device changes the tap is NOT rebuilt until stop()/start().
@@ -10,6 +10,7 @@ import CoreAudio
 import AudioToolbox
 import Foundation
 import NeveCore
+import os
 
 /// "Neve dança com a música": a global Core Audio process tap (macOS 14.2+) on everything the Mac plays, minus Neve itself.
 /// The IOProc runs `BeatDetector` (no allocation) and publishes level / bass / beat packed in one aligned 64-bit word.
@@ -18,26 +19,26 @@ final class MusicTap: @unchecked Sendable {
     static let shared = MusicTap()
     static var supported: Bool { if #available(macOS 14.2, *) { return true } else { return false } }
 
-    // ponytail: one aligned UInt64 written by the audio thread, read by the render tick (no Atomics module before macOS 15).
-    // Single writer, single reader; a torn read is impossible for an aligned 64-bit access on arm64 / x86-64.
-    private let word = UnsafeMutablePointer<UInt64>.allocate(capacity: 1)
+    // The packed word is written by the audio thread and read by the render tick / reset by start()/stop() on main: guarded by an unfair lock (allocation-free, held for one 64-bit store/load).
+    private let word = OSAllocatedUnfairLock<UInt64>(initialState: 0)
     private var detector = BeatDetector()
     private var tapID = AudioObjectID(kAudioObjectUnknown), aggID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var sampleRate: Float = 48000
     var running: Bool { procID != nil }
 
-    private init() { word.initialize(to: 0) }
+    private init() {}
 
     func read() -> MusicInput {
-        let w = word.pointee
+        let w = word.withLock { $0 }
         return MusicInput(level: Float(w & 0xFFFF) / 65535, bass: Float((w >> 16) & 0xFFFF) / 65535, beat: Float((w >> 32) & 0xFFFF) / 65535)
     }
 
     private func publish() {
         let o = detector.out
         func q(_ v: Float) -> UInt64 { UInt64(min(max(v, 0), 1) * 65535) }
-        word.pointee = q(o.level) | q(o.bass) << 16 | q(o.beat) << 32
+        let packed = q(o.level) | q(o.bass) << 16 | q(o.beat) << 32
+        word.withLock { $0 = packed }
     }
 
     /// False when the tap cannot be created (old macOS, permission refused, no output device).
@@ -82,7 +83,7 @@ final class MusicTap: @unchecked Sendable {
         if AudioObjectGetPropertyData(tapID, &addr, 0, nil, &size, &fmt) == noErr, fmt.mSampleRate > 0 { sampleRate = Float(fmt.mSampleRate) }
 
         detector = BeatDetector()
-        word.pointee = 0
+        word.withLock { $0 = 0 }
         let block: AudioDeviceIOBlock = { [self] _, input, _, _, _ in
             let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
             guard let b = list.first, let p = b.mData?.assumingMemoryBound(to: Float.self), b.mNumberChannels > 0 else { return }
@@ -101,6 +102,6 @@ final class MusicTap: @unchecked Sendable {
         if aggID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggID); aggID = AudioObjectID(kAudioObjectUnknown) }
         if tapID != kAudioObjectUnknown, #available(macOS 14.2, *) { AudioHardwareDestroyProcessTap(tapID) }
         tapID = AudioObjectID(kAudioObjectUnknown)
-        word.pointee = 0
+        word.withLock { $0 = 0 }
     }
 }
