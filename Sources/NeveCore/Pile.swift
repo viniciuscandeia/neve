@@ -3,7 +3,7 @@
 //   (unclipped) window ends in x, used for taper and spill-off. y up.
 // Arrays (count = heights.count unless empty = "none"): heights (real), shown (drawn, eased toward heights by Render.writePiles; empty until first drawn), visible (false = hidden under a window in front: frozen, not lost), base (<= 0, follows rounded
 //   corners), cap (ceiling imposed by windows in front, inf = none), maxes (per-column max, ground bank beside the Dock), wobble (two long waves ~500 / ~150 pt, +-9 % / +-6 %, phases from the window id), boost (extra limit banked against a front window:
-//   drift), mound (extra allowance for cursor-pushed heaps; only `cap` bounds it), peel (seconds until a bin's excess over `limit` lets go as debris, -1 = none), walls (global x of each wall = visible bin next to a hidden one), hold (order-only change: existing snow pinned over the new limit).
+//   drift), mound (extra allowance for cursor-pushed heaps; only `cap` bounds it), peel (seconds until a bin's excess over `limit` lets go as debris, -1 = none), walls (global x of each wall = visible bin next to a hidden one), hold (order-only change: existing snow pinned over the new limit), held (hidden only by a stacking-order change: `alive`).
 //   `limit(b) = max(min(rawLimit(b) + mound, cap), hold)`; `rawLimit` = (maxes or maxHeight) * wobble + boost, tapered to 0 over `inset` from x0 / x1 unless supportL / supportR (end faces a drift / seam: no taper, dip or spill).
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax moves half the
 //   excess to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
@@ -37,6 +37,7 @@ public struct Pile {
     var supportR = false
     var mound: [Float] = []      // per bin: extra height allowed by snow the cursor pushed into a heap (only `cap` bounds it); empty = none
     var hold: [Float] = []       // per bin: snow kept over the new limit after a stacking-order-only change (limit never drops below it); cleared by the next real rebuild; empty = none
+    var held: [Bool] = []        // per bin: hidden only by a stacking-order change (draw-only): physics still treats it as alive (`alive`); cleared by the next real rebuild; empty = none
     var peel: [Float] = []       // per bin: seconds until its excess over `limit` lets go as debris (-1 = none); empty = nothing pending
     var peeling: Bool { !peel.isEmpty }
 
@@ -49,13 +50,16 @@ public struct Pile {
         self.inset = inset
     }
 
-    /// Column ranges (local bins) where the pile is visible, in order.
-    func visibleRuns() -> [Range<Int>] {
+    /// Whether snow / things on bin `b` still count for physics: visible, or hidden only by the stacking order.
+    func alive(_ b: Int) -> Bool { visible[b] || (!held.isEmpty && held[b]) }
+
+    /// Column ranges (local bins) where the pile is visible (`alive`: or held), in order.
+    func visibleRuns(alive a: Bool = false) -> [Range<Int>] {
         var r: [Range<Int>] = [], b = 0
         while b < visible.count {
-            guard visible[b] else { b += 1; continue }
+            guard visible[b] || (a && alive(b)) else { b += 1; continue }
             var e = b
-            while e < visible.count && visible[e] { e += 1 }
+            while e < visible.count && (visible[e] || (a && alive(e))) { e += 1 }
             r.append(b..<e); b = e
         }
         return r

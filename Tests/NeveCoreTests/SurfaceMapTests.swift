@@ -13,7 +13,9 @@ import Testing
 
 // Field 1000x800 at origin (0,0): ground (dock top) at y=90, menu-bar area starts at y=780.
 func makeField(flakes: Int = 0, seed: UInt64 = 1) -> SnowField {
-    SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: flakes, seed: seed)
+    let f = SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: flakes, seed: seed)
+    f.goneGrace = 0   // most tests close windows and expect the knock-off at once; the grace has its own test (StackOrderTests)
+    return f
 }
 
 func win(_ n: Int, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> WindowInfo {

@@ -191,7 +191,7 @@ extension SnowField {
     private func rest(_ i: Int, _ dt: Float) {
         guard let sid = balls[i].surfaceID, let si = index[sid] else { setFalling(i, .zero); return }
         let s = surfaces[si], c = column(balls[i].pos.x) - s.c0
-        guard c >= 0, c < s.pile.heights.count, s.pile.visible[c] else { setFalling(i, .zero); return }
+        guard c >= 0, c < s.pile.heights.count, s.pile.alive(c) else { setFalling(i, .zero); return }
         let need = balls[i].radius * (1 + SnowField.sink), span = Int((balls[i].radius / Tuning.binWidth).rounded(.up))
         // Room over the ball's whole width (the ceiling under a window's rounded corner is not flat: the centre column alone overstates it).
         func room(_ k: Int) -> Float {
@@ -202,8 +202,8 @@ extension SnowField {
         if room(c) < need {   // too big to fit under the Dock bar / a low window: rolls to the nearest column where it fits
             var d = 1, dir: Float = 0
             while dir == 0, c - d >= 0 || c + d < s.pile.heights.count {
-                if c - d >= 0, s.pile.visible[c - d], room(c - d) >= need { dir = -1 }
-                else if c + d < s.pile.heights.count, s.pile.visible[c + d], room(c + d) >= need { dir = 1 }
+                if c - d >= 0, s.pile.alive(c - d), room(c - d) >= need { dir = -1 }
+                else if c + d < s.pile.heights.count, s.pile.alive(c + d), room(c + d) >= need { dir = 1 }
                 d += 1
             }
             if dir != 0 { balls[i].pos.x += dir * 90 * dt; balls[i].rotation += dir * 90 * dt / balls[i].radius }

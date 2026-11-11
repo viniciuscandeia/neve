@@ -54,6 +54,7 @@ public enum Tuning {
     static let driftSlope: Float = 0.3      // pt per pt of the drift profile (below the 0.35 repose)
     static let driftMinWidth: Float = 30
     static let wallFilletWidth: Float = 16  // draw only: the crest within this distance (at least) of a wall is lifted on a concave curve to the bank crest (no vertical cut)
+    static let goneGrace: Double = 0.6      // s a window may be missing from the poll before its pile is knocked off
     static let peelSpeed: Float = 180       // pt/s: a collapsing drift lets go from the wall outward
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2

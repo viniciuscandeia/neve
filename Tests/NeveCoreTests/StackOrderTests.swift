@@ -45,3 +45,43 @@ func togglingTheStackingOrderNeverChangesTheSnow(top: Double, frontW: Double) {
     let q = f.pile(id: 1)!
     for b in q.heights.indices where q.visible[b] { #expect(q.heights[b] <= max(h0[b], q.rawLimit(b)) + 0.5) }
 }
+
+private func volume(_ f: SnowField) -> Float { f.surfaces.reduce(0) { $0 + $1.pile.heights.reduce(0, +) } }
+
+@Test func manyOrderSwapsLeaveSnowBallsGiftsSnowmanAndFrostUntouched() {
+    let a = win(1, 100, 200, 600, 200), b = win(2, 150, 300, 200, 150)   // b (top 450) covers part of a's top (400) when in front
+    let f = makeField()
+    f.update(windows: [a, b])
+    pileUp(f, id: 1, rounds: 60); pileUp(f, id: 2, rounds: 60)
+    let fid = stand(f, x: 250, on: 1)
+    let bid = stackBalls(f, x: 220, on: 1, radii: [10])
+    f.giftState.gifts.append(Gift(pos: SIMD2(260, 420), vel: .zero, surface: 1, rot: 0, spin: 0, color: 0, scale: 1))
+    advance(f, 1)
+    let v0 = volume(f), fill = f.fillRatio(si: f.index[1]!), nb = f.balls.count, d0 = f.debris.count
+    for i in 0..<100 {
+        f.update(windows: i % 2 == 0 ? [b, a] : [a, b])
+        advance(f, 0.1)
+        #expect(f.surfaces.allSatisfy { !$0.pile.peeling })
+    }
+    f.update(windows: [b, a]); advance(f, 0.1)   // ends with b in front: a's top under b is covered
+    #expect(abs(volume(f) - v0) < 1e-2 && f.debris.count == d0)
+    #expect(fig(f, fid).surfaceID == 1 && fig(f, fid).foot.x > 100 && fig(f, fid).foot.x < 700)
+    #expect(f.balls.count == nb && ball(f, bid).surfaceID == 1)
+    #expect(f.gifts.count == 1 && f.gifts[0].surface == 1)
+    #expect(abs(f.fillRatio(si: f.index[1]!) - fill) < 1e-4)
+}
+
+@Test func aWindowMissingForOnePollKeepsItsPile() {
+    let a = win(1, 100, 200, 600, 200), b = win(2, 150, 500, 200, 100)
+    let f = makeField()
+    f.goneGrace = Tuning.goneGrace
+    f.update(windows: [a, b]); pileUp(f, id: 1, rounds: 60)
+    let h0 = f.pile(id: 1)!.heights, d0 = f.debris.count
+    f.update(windows: [b], dt: 0.1)
+    #expect(f.debris.count == d0)
+    f.update(windows: [a, b], dt: 0.1)
+    #expect(f.pile(id: 1)!.heights == h0 && f.debris.count == d0)
+    f.update(windows: [b], dt: 0.1)   // really gone: knocked off after the grace
+    _ = f.update(windows: [b, win(3, 800, 100, 50, 50)], dt: Float(Tuning.goneGrace) + 0.1)
+    #expect(f.pile(id: 1) == nil && f.debris.count > d0)
+}

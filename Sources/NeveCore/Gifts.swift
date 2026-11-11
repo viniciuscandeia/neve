@@ -78,7 +78,7 @@ extension SnowField {
             if leaving { g.out -= dt * fadeK / 0.4; if g.out <= 0 { giftState.gifts.remove(at: i); continue } }
             if let sid = g.surface {
                 guard let si = index[sid], column(g.pos.x) - surfaces[si].c0 >= 0, column(g.pos.x) - surfaces[si].c0 < surfaces[si].pile.heights.count,
-                      surfaces[si].pile.visible[column(g.pos.x) - surfaces[si].c0] else { g.surface = nil; g.vel = .zero; g.spin = 0; giftState.gifts[i] = g; continue }   // the pile is gone: it falls on
+                      surfaces[si].pile.alive(column(g.pos.x) - surfaces[si].c0) else { g.surface = nil; g.vel = .zero; g.spin = 0; giftState.gifts[i] = g; continue }   // the pile is gone: it falls on
                 g.rest += dt; g.land += dt
                 if g.rest >= Tuning.giftLife + 1 { giftState.gifts.remove(at: i); continue }
                 g.pos.y = standY(si: si, x: g.pos.x) + giftRest(g)

@@ -312,10 +312,10 @@ extension SnowField {
             return lose(i)   // its surface is gone
         }
         let s = surfaces[si], c = column(f.motion.xfer?.from.x ?? f.foot.x) - s.c0
-        let visible = s.pile.visible[c]
+        let visible = s.pile.alive(c)
         let half = f.radii.x, c0 = max(column(f.foot.x - half) - s.c0, 0), c1 = min(column(f.foot.x + half) - s.c0, s.pile.visible.count - 1)
         var covered = !visible
-        if !covered, c0 <= c1 { for b in c0...c1 where !s.pile.visible[b] { covered = true; break } }   // any part of the body under a window / the Dock
+        if !covered, c0 <= c1 { for b in c0...c1 where !s.pile.alive(b) { covered = true; break } }   // any part of the body under a window / the Dock
         if visible {
             let drawn = meanShown(si: si, col: column(f.motion.xfer?.from.x ?? f.foot.x), span: 3) ?? avg   // the foot and the collapse test read the same (drawn) snow
             if !f.fromBalls, drawn < 1, !melting { collapse(); return true }   // pile cleared / knocked off under the auto snowman
