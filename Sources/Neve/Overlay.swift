@@ -788,6 +788,16 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                 enc.setFragmentBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
                 var tone = SIMD2<Float>(contrast, Palette.dark)   // (increase contrast, dark blend)
                 enc.setFragmentBytes(&tone, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
+                var occ: [SIMD4<Float>] = []   // 2 x float4 per window in front-to-back order; the dragged one rides the mouse like its pile
+                for o in field.occluders {
+                    var rc = o.rect
+                    if o.id == shiftID { rc += SIMD4<Float>(shift.x, shift.y, shift.x, shift.y) }
+                    occ += [rc, SIMD4<Float>(o.radius, 0, 0, 0)]
+                }
+                var occN = UInt32(field.occluders.count)
+                if occ.isEmpty { occ = [.zero, .zero] }
+                enc.setFragmentBytes(&occ, length: occ.count * MemoryLayout<SIMD4<Float>>.stride, index: 2)
+                enc.setFragmentBytes(&occN, length: MemoryLayout<UInt32>.size, index: 3)
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pileCount)
             }
             if w.n > 0 {   // actors under the flakes
