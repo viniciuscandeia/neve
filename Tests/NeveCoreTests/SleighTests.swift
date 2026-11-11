@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/SleighTests.swift  (Figures+Sleigh.swift + Gifts.swift)
+// Cadence via a director-only clock (sleighInterval/chance follow the calendar: Dec 24 ~10 min, rare outside December, off with the pref / compact mode / economy, cooldown and big-event cap), then 1/60 s integration of the crossing, gift drops (giftTravel must match stepGifts), landing sunk in piles, opening with Option-click (confetti), fades.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

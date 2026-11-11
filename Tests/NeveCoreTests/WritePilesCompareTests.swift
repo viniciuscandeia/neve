@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/WritePilesCompareTests.swift  (shipped Render.writePiles must emit EXACTLY the buffer of the reference `writePilesRef` in WritePilesEquivalenceTests.swift)
+// Runs both on two identically built fields across pile shapes, a growing/shrinking Dock, bridges, seams, covered runs, short buffers and a dragged window; compares every field of the whole buffer (past `n` too), the count and the drop count. `NEVE_BENCH=1 Tests/run.sh -r WritePilesBench` prints ns/call reference vs shipped.
+// If you change writePiles output on purpose, update the reference copy in the same change (this pair mirrors Render.writePiles: keep in sync).
+
 import CoreGraphics
 import Foundation
 import Testing

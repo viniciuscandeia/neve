@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/SpaceCarryTests.swift  (Space switches and carrying snow when windows move / resize, review round L3: Dock pile and what stands on it survive a switch, a window present before and after keeps its snow, a vanished window returns at another x with the same width, frost / icicles survive a round trip, move+resize carries by the shift, carry sheds what no longer fits as debris (volume conserved), eased heights survive a move, an unchanged window keeps its velocity. Related: Surfaces.stashAway.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

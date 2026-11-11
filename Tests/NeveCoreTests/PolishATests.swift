@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PolishATests.swift  (polish round A: only crystals > 4 pt rotate, calm crystals keep a fixed angle, slab split stays a slab until small and conserves volume, drawn pile eases down within ~0.1 s scale, Rig snow colours come from Palette, `instanceLayoutMatchesTheShader` (Instance layout vs the Metal struct: update BOTH when it changes), instance velocity = delta pos / dt, calm flakes have no velocity.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

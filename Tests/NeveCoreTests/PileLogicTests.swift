@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/PileLogicTests.swift  (pile carry-over + drawn contour invariants)
+// Pile travels exactly as far as the window however the move is split (1 s per update so nothing sheds), pile centre follows the window within one column, the drawn contour (all segment ends of writePiles, fully eased) never enters a front window, contour irregularity is stable and travels with the pile, and more pile-shape properties.
+// Related: Surfaces.buildSurface carry, Render.writePiles.
+
 import CoreGraphics
 import Foundation
 import Testing

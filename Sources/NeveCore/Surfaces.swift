@@ -1,3 +1,16 @@
+// AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
+// Role: turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
+//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility/ceiling/cap vs windows in FRONT, drift walls, wobble, corner rounding) and `buildGround` (full-width ground pile,
+//   Dock bar surface id 0, bank beside the Dock; ground id = Tuning.groundID -1). Surface ids: window number (>0), 0 = Dock bar, -1 = ground.
+// Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction`/`shed` -> debris, velocity low-passed with
+//   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway`/`restoreStashed`: piles, frost, balls,
+//   figures, gifts; cap 64, 30 min). `movedOnly` limits a drag sample to the moved window and its x-neighbours (+-8 pt) unless `dragOnlyRebuild` is false (tests).
+// Other API here: deposit(surface:bin:volume:powder:), spill (end overflow -> debris), stepPeel (drift excess lets go), shed(pile...), `sweep(from:to:radius:dt:)` = cursor plow (lifts snow within radius of the segment into a berm ahead /
+//   to both sides, only the overflow flies as debris; needs pointerPush; breaks icicles; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
+// Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
+// Gotchas: window frames are LOCAL AppKit y-up; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
+//   scene mode (NEVE_DEMO_VANISH) filters a window out here. Tests: SurfaceMapTests, DragOnlyRebuildTests, SpaceCarryTests, DockGapTests, SweepTests.
+
 import CoreGraphics
 import Foundation
 

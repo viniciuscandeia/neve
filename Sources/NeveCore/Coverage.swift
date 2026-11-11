@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Coverage.swift  (maximized-window / compact mode)
+// Role: `coverage(of:in:cols:rows:)` (share of the usable area hidden by windows, 48x30 sample grid, plus the bounding box of the uncovered cells), `liveRect(frame:visible:uncovered:)` (uncovered part + Dock / side strips, menu bar excluded),
+//   `CompactState` (hysteresis: enter when >= 90 % hidden for 0.6 s, leave < 85 % for 0.2 s, frozen while a mouse button is down; `covered` = live strip < 8 pt => overlay pauses like for a fullscreen app; `pending` = a timer is running, an
+//   idle caller must look again), and `SnowField.setLive(_:)` / `wake(fraction:)` (flakes live and spawn only inside the live rect, just above its top edge; leaving compact mode wakes half the missing flakes staggered over ~2.5 s).
+// Coordinates: local AppKit y-up pt. Callers: Overlay.measureCover / advanceCover (shrinks the NSPanel + Metal layer to the live rect and fades shader occluders in over 0.6 s). Tests: CoverageTests.
+
 import CoreGraphics
 import Foundation
 

@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/MeltTests.swift  (Melt.swift + Drips.swift)
+// Piles drain monotonically within the duration, nothing spawns or lands and actors are gone during a melt, intro cancels a melt and keeps what is left, resume starts from the top with no flake on screen, deterministic, Reduce Motion melt = quick fade, drops form only while melting and respect the cap (none in calm/economy/low power), resumed melt restores the stack, closing the window terminates.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

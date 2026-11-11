@@ -1,3 +1,7 @@
+// AGENT HEADER - Sources/NeveCore/Localization.swift  (the ONE localisation entry point)
+// Role: `l10nBundle` (Bundle: Contents/Resources/Neve_NeveCore.bundle first - scripts/make-app.sh puts it there because SwiftPM's Bundle.module location breaks codesign - else Bundle.module for `swift run` / tests) and `tr(_:)`, which EVERY user-visible string must use.
+// Keys are the Portuguese text (development language); translations live in Resources/pt-BR.lproj/Localizable.strings and Resources/en.lproj/Localizable.strings: add a key to BOTH or the English UI shows Portuguese. Tests: LocalizationTests checks key parity.
+
 import Foundation
 
 /// SwiftPM's generated `Bundle.module` looks for the resource bundle at the .app root (unsealed, breaks codesign), so the app keeps it in Contents/Resources

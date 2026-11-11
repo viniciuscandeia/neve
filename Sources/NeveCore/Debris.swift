@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Debris.swift  (falling snow chunks)
+// Role: `addDebris(x:y:vx:fall:size:)` (capped by Tuning.maxDebris 1200) and `stepDebris(dt:)`: packed snow accelerates (gravity 1400 pt/s^2, terminal 1700), lands through the shared `tryLand` (volume `vol` is deposited; heavy falls call Effects.impact),
+//   or vanishes past a screen edge / below the bottom. Debris are `Flake`s of kind .debris (shape 1 clump, 2 slab, ...). A slab with `amp > 0` is an INTACT block (amp = seconds aloft + 1): it breaks only on a hit or randomly when fragile (`breakSlab`);
+//   `delay > 0` = held back until the release ripple reaches it (Tuning.rippleSpeed); `phase` < 0 = freshly swept off, cannot land for a moment. Loop removes by swap-with-last (order not preserved). Hot when avalanches/shedding run;
+//   Tuning.busyDebris (24) or any slab raises the frame rate (BusyReasons.debris).
+
 import CoreGraphics
 import Foundation
 

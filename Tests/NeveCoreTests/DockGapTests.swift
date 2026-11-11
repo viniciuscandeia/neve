@@ -1,3 +1,8 @@
+// AGENT HEADER - Tests/NeveCoreTests/DockGapTests.swift  (floating Dock bar: gap under it, bank over it)
+// Part 1 (bar x 500...900, glass bottom y = 10): ground snow stays inside the gap, snowmen never stand under the bar, standRange excludes low columns for every FigureKind, a ball too big for the gap rolls out. Part 2 (1440x900, bar (171,10,1098,84), r 25.2, top 94):
+// the ground bank grows into a flush shelf at the bar top, no contour point lies inside the bar silhouette and one chain goes over the top. The grown field is expensive (288k deposits in debug): built once per process and copied per test - keep that cache when editing.
+// Related: DockPush.swift, Tuning.bank*, Render.writePiles bridging.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,3 +1,5 @@
+// AGENT HEADER - Sources/NeveCore/Rig+Penguin.swift  (penguin drawing: `PenguinLook` + `Rig.penguin`, ~16 x 22 pt; body rotates about its middle, or about the belly contact as `lie` goes 0...1 and `sink` drops it into the groove). Pure geometry. Tests: PenguinTests.
+
 import Foundation
 
 /// Everything the rig needs to draw one penguin (about 16 x 22 pt at scale 1).

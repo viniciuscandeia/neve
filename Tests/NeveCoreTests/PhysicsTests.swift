@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PhysicsTests.swift  (core flake / debris physics: sky flakes build window piles only where they can reach, background flakes pass through windows, flakes respawn above the window they landed on, knocked-off snow accelerates, debris is removed off the screen or on a lower window, calm mode caps and restores flakes, slow drag at frame rate sheds nothing.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

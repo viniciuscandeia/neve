@@ -1,3 +1,10 @@
+// AGENT HEADER - Sources/NeveCore/DockPush.swift  (Dock bar resize pushes the ground snow)
+// Role: the Dock bar's read frame (`dockTarget`) is approached by the animated `dockCur` at Tuning.dockSpeed 800 pt/s so a jump or the Dock's own animation reads as a gradual push. `effective(_:)` substitutes the animated Dock rect into the window list
+//   (new / vertically moved / disjoint Docks snap), `stepDock` advances it, `dockIsolated` lets only Dock + ground rebuild when no window overlaps its reach, `berm(_:from:dir:volume:)` banks plowed ground snow ahead of a growing end (what does
+//   not fit is thrown as debris, dropped in calm), `bankMaxes`/`stepBank` maintain the repose-slope ground bank beside the bar (`bankLevel` per side rises 1 pt every 0.25 s once filled, up to a shelf flush with the Dock top).
+//   A shrinking end drops its Dock-top snow as clumps (buildSurface) and the bank slumps (dockSlump, Tuning.dockSlumpTime). Dock frame arrives from Sources/Neve/Dock.swift as WindowInfo number 0 (already glass-offset).
+// Tests: DockGapTests, DockPushTests, DockPerfTests, DockSpillTests. Units: pt, pt/s.
+
 import CoreGraphics
 import Foundation
 

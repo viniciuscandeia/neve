@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/SnowmanTests.swift  (Snowman.swift, 1000x800 field without flakes)
+// No snowman until the stretch is deep enough, site = centre of the widest visible stretch, stages advance in order and scoop snow, a cursor sweep through it collapses it into debris (next to it leaves it standing), debris capped at maxDebris, clear() removes it, cooldown before a rebuild and never more than one.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,3 +1,7 @@
+// AGENT HEADER - Sources/NeveCore/Scenario.swift  (deterministic perf load NEVE_SCENARIO=heavy)
+// Role: `Scenario.heavy` and `SnowField.stage(_:)`: idempotently sets Nevasca, fills every visible surface to >= 80 % of its limit (`fillPiles`), completes the auto snowman and builds two 3-ball snowmen (radii 20/14/10) ~150 pt apart on the widest visible ground stretch (`groundStretch`,
+//   kept snowmanClearance away from its ends) so fights start by themselves. AppController re-stages it every 20 s when NEVE_SCENARIO=heavy (perf A/B only). Tests: ScenarioTests.
+
 import Foundation
 
 /// Deterministic load for perf A/B runs (`NEVE_SCENARIO=heavy`, see main.swift).

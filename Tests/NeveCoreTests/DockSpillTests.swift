@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/DockSpillTests.swift  (DockSpill.swift: a full Dock-top pile near a bar end trickles to the ground bank; a low pile spills nothing)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

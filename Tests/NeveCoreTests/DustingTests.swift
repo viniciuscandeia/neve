@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/DustingTests.swift  (Pile.deposit on bare surfaces: first landings stay local specks and conserve volume; deep snow converges to the repose pile; one speck emits few PileSegs; debris keeps its volume on bare snow while powder flakes partly melt. Related: Tuning.speck*/dust*.)
+
 import Foundation
 import Testing
 @testable import NeveCore

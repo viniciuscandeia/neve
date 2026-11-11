@@ -1,3 +1,25 @@
+// AGENT HEADER - Sources/Neve/main.swift  (app entry point + AppController; the app's "brain", MainActor)
+// Role: top-level code (single-instance check, NSApplication .accessory = menu-bar agent, no Dock icon) and `AppController`, which owns ALL app-level policy:
+//   status item + NSMenu (MenuHeader/IntensityTile from SettingsView.swift), the "Ajustes" NSWindow (toolbar tabs), overlays (one `Overlay` per wanted NSScreen, Overlay.swift),
+//   pause/run state, timers, window polling, idle melt, Mission Control / screen saver / lock / sleep handling, login item (SMAppService), Accessibility prompt.
+// Globals: `neveInstance` = Info.plist `NeveInstance` or env NEVE_INSTANCE (dev bundle; no single-instance lock, no login item, prefs in suite io.github.viniciuscandeia.neve.dev.<name>); `ud` = the only UserDefaults store.
+// Threading: everything is @MainActor; notifications that may arrive off-main are delivered with queue:.main + MainActor.assumeIsolated. Timers are added to RunLoop .common so menus do not stall them.
+// Run state: running = (enabled||outroing) && !screensAsleep && !sessionInactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !userIdle.
+//   userIdle = no input for NEVE_IDLE_SECS (default 300 s) unless Modo ambiente: first startIdleMelt (snow melts, meltGen guards stale completions) then rendering pauses; input -> wakeFromIdle.
+//   refreshRunState() is the single re-evaluation point (status icon, overlay setRun, timers, Dock + poll kick). Prefs: syncPrefs diffs Pref snapshot (NeveCore/Prefs.swift) -> prefChanged(pref) is the only reaction path.
+// Window polling: every read goes through `sched` (PollScheduler, NeveCore/WindowInfo.swift: coalesced, <=30/s, bursts bounded). Sources: WindowWatcher AX events (transitionPoll / settlePoll),
+//   safety timer (2 s -> 5 s after 10 s quiet with AX; 0.5 s without Accessibility; 1 Hz while every screen is under a fullscreen app), 30 s Dock refresh, 0.3 s Mission Control probe (WindowList.swift onScreenWindowIDs),
+//   global mouse monitors (installed only while polling; drag sampling ~25 Hz), screen geometry (screensChanged, 0.5 s safety re-check). pollWindows() reads CGWindowList (CG top-left coords ->
+//   filterWindows converts to AppKit y-up), runs DragTracker + MissionControlGate, drops mostly-offscreen windows, inserts the Dock rect (WindowInfo number 0), then Overlay.update(windows:covering:dragTarget:mouse:).
+//   "behind windows" mode passes no surfaces. Fullscreen app on a screen => that overlay keeps its piles untouched (settleUntil: 1 s of ignored visibleFrame changes).
+// Screens: syncOverlays reconciles wantedScreens ("snowOn" default key: all|main|<displayID>; economy forces main) with overlays; unplugged displays are parked 1.5 s (`parked`) so piles survive KVM/wake flaps.
+// Side effects: UserDefaults keys via Pref raw values + snowOn, ajustesOpened, firstLaunchMenuShown (takeOnce), SettingsTab.key, intensity (Intensity.saved); NSWorkspace / DistributedNotificationCenter observers (screen lock,
+//   screensaver didstart/didstop with a 5 s fallback timer on the engine process); AXUIElementSetMessagingTimeout 0.25 s globally; MusicTap start/stop (syncMusic: off under Reduce Motion, economy, Low Power, scenes).
+// Env vars: NEVE_INSTANCE, NEVE_IDLE_SECS, NEVE_SCENARIO=heavy (re-stages a heavy load every 20 s), NEVE_SCENE=demo|fight (+ NEVE_SCENE_WAIT, NEVE_SCENE_MARK; `sceneKind` is defined in NeveCore/Scenario.swift;
+//   scene mode fixes the options, ignores the real cursor, SceneStage.swift supplies the demo windows, polled via a 60 Hz timer). NEVE_REDUCE_MOTION / NEVE_PERF are read elsewhere.
+// Gotchas: all user-visible strings go through tr() with keys in BOTH pt-BR and en Localizable.strings (NeveCore/Resources). Never kill Neve by name. AXObserver skips our own pid, so the Ajustes window posts its own NSWindow
+//   notifications into requestPoll. Hot path: pollWindows (<=30/s) and pollTick; keep allocations out of them.
+
 import NeveCore
 import AppKit
 import os

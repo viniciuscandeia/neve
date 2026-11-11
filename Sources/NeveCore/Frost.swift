@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Frost.swift  (freeze progress per window + frost lip drawing)
+// Role: `WinIce` (per-window freeze progress: acc, fill, frost, frozen, w0/h0 at start) tracked in `SnowField.iceWin`; `scanFrost()` (once a second: refresh each window's fill = mean height/limit of its top pile) and `stepFrost` (a window whose top
+//   pile stays >= frozenFill 0.7 full for frozenAfter 180 s (Nevasca: >= thawFill 0.25 for 120 s) freezes; below thawFill the progress is lost; NEVE_DEMO_ICE speeds it via SimConfig.iceSpeed), `spawnStalactites` (4-10 seeded spots, thicker near
+//   corners; spawns into Icicles.swift), `writeFrostPrims` (pale blue-white lip 0.8 pt under the bottom edge + corner haze, clipped by windows in front via `clipSegment`, Liang-Barsky, allocation-free), `covered`.
+// Window-relative state travels with a dragged window (the `shift` closure supplied by Overlay). Stashed across Space switches. Tests: FrostTests, IceAvalancheTests. Units pt/s; time = sim seconds.
+
 import CoreGraphics
 import Foundation
 

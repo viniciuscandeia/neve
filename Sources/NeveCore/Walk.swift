@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Walk.swift  (snowmen walking: gait, wind, hops between surfaces)
+// Role: Tuning.walk/fight constants (fightRange 250, maxFights 2, maxFigures 3, walkSpeed 14 pt/s x scale +-20 %, hop between ground and Dock: stepMax 10 pt high, stepGap 8 pt wide, hopTime 0.45 s, windPush/windLean, headlessLife 25 s, cheerTime 2,
+//   headHitsToLose 3), `Flutter` (scarf/arm pose of a walker, transforms only, no path rebuild; part of Pose in Rig) `Flutter.make/rate/arm` (pure pose from gust, gait, direction, phase) and SnowField walking helpers: `walkRange`/`standRange` (where a figure may stand on a surface), `transfer`/`hopStep` (`Xfer` hops between ground and Dock), `walkStep`.
+//   Disabled by `walkEnabled` (Pref.walk), Reduce Motion / calm and economy rules. Callers: stepFigure (Figures.swift), Fights. Tests: WalkTests, NaturalMotionTests.
+
 import CoreGraphics
 import Foundation
 

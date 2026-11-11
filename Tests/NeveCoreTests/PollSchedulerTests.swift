@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/PollSchedulerTests.swift  (PollScheduler cadence)
+// Drives the pure scheduler in 1 ms steps (`snapshot(t)` returns (changed, frameMoved)): idle wants nothing, requests stack into one read under the 30/s cap, a burst ends after guardTime + two identical snapshots but hits hardCap while changing, ordinary click = 1-2 reads, desktop click starts a burst, drag samples while moving then settles, demotes when movement stops while held, safety interval stretches when quiet, failed-read retries.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

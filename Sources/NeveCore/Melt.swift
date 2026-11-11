@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Melt.swift  (idle melt: snow thaws away)
+// Role: `beginMelt(duration:)` (app uses 12 s; Reduce Motion 0.6 s with no sag): spawning stops, flakes fade as they fall, every pile sinks at a constant rate (thin edges vanish first, contour keeps its shape), snowmen sag and lose accessories,
+//   balls / visitors / icicles fade; `stepMelt(dt:)` advances it; `meltDone` = full time run AND airborne debris/puffs/glints/drops finished (or hard cap `meltGrace` 2 s) => the overlay may pause rendering; `isMelting`, `pileVolume`, `fadeK`
+//   (speeds fade-outs so late starters finish). `beginIntro` (SnowField.swift) ends a melt keeping the snow left. Deterministic: sim time only. Caller chain: AppController.startIdleMelt -> Overlay.melt -> field.beginMelt; the overlay polls meltDone each tick.
+// Tests: MeltTests. Units: seconds of stepping, pt^2 for pile volume.
+
 import CoreGraphics
 import Foundation
 

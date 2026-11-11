@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/RigTests.swift  (Rig geometry: Prim is 64 bytes, prim counts per snowman stage, head moves by lean, facing mirrors the nose, auto scale equals stacked radii, PrimWriter drops past capacity, collapsing keeps only accessories, headless drops head and face. Layout of Prim must match PrimShader.swift.)
+
 import Testing
 @testable import NeveCore
 

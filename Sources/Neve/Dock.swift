@@ -1,3 +1,13 @@
+// AGENT HEADER - Sources/Neve/Dock.swift  (Dock bar frame via Accessibility)
+// Role: `DockWatcher` (@MainActor) finds the bottom Dock bar (the Dock process' AXList child) so the Dock can be a snow surface. Needs Accessibility trust (AXIsProcessTrusted); untrusted => frame nil, no Dock pile.
+// Flow: refresh(done:) runs `queryDockBar()` in Task.detached(.utility) (AX reads can block; global AX timeout is 0.25 s, set in main.swift), then back on MainActor: attach an AXObserver (resized/moved/
+//   destroyed/created/layoutChanged on the list, created on the app) on the MAIN run loop, feed `DockDebounce` (NeveCore/DockDebounce.swift: filters jitter and transient failed reads) and call `done()` only when the frame changed.
+//   Single-flight: requests during a query set `dirty` (one more query afterwards); `generation` discards results after trust loss. settleSoon(): trailing re-query 0.5 s after the last event because the Dock
+//   posts AX events while its add/remove animation still runs. A Dock on the left/right is a successful read of "no bar" (feedSide), not a failure.
+// Coordinates: AX gives CG top-left points; `Tuning.dockGlass(fromAX:)` applies the glass offset, then appKitFrame(fromCG:primaryHeight:) converts to AppKit y-up (primary screen height). `frame` is global AppKit coords.
+// Callers: AppController (main.swift): `dock.refresh` on Dock AX events, app launch/quit, screen changes, every 30 s; `dock.frame` becomes WindowInfo number 0 in pollWindows. Test counterparts: DockGapTests / DockPerfTests / DockPushTests (NeveCore side).
+// Gotcha: dockCallback runs on the main run loop => MainActor.assumeIsolated is sound; AXUIElement is wrapped in @unchecked Sendable DockQuery (immutable CF handle).
+
 import NeveCore
 import AppKit
 import ApplicationServices

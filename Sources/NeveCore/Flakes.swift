@@ -1,3 +1,12 @@
+// AGENT HEADER - Sources/NeveCore/Flakes.swift  (the snowfall: Flake struct, spawn, stepFlakes, landing)
+// Role: `Flake` (plain-old-data, shared by sky / background / debris / near / dormant kinds: pos, vx, fall, phase/amp/freq sway, size, alpha, seed, fade, rot/spin, vol = carried snow area, delay, shape, packed chunk profile, vel for motion
+//   streaks, wv wind inertia), `FlakeKind` (.sky lands, .background (smaller, dimmer, seed + 2 in the shader) lands, .near = rare big out-of-focus foreground discs that never land, .debris, .dormant = inactive slot, free), and SnowField
+//   `spawn`, `stepFlakes(dt:)` (THE per-frame hot path: wind field + gust LUT, per-flake sway with a bandGain notch near 0.2 Hz for HIG, pointer swirl/push (pointerPush), live-region wrap for compact mode, intro/outro/melt rules, landing
+//   test per flake against the column index) and `tryLand(x:prevY:newY:volume:fall:vol:span:)` (first visible surface top crossed this frame -> `deposit`, heavy falls -> Effects.impact), `stepWindDust` (strong gusts lift a puff and move a sliver
+//   of crest volume one bin leeward, volume conserved), `edgeCalm` (Reduce Motion: fewer/slower flakes near left/right edges), size/alpha/sway helpers, `introRank`/`slotKind`/`isActive` (pool bookkeeping).
+// Perf: stepFlakes cost is reported as flakesim by NEVE_PERF; uses fastSin/fastCos (Util.swift), avoids allocation, loops only [0, skyEnd) and [skyCount, skyCount + bgEnd). Time is in sim seconds; pt, pt/s; y up.
+// Gotchas: changing RNG consumption order changes every seeded test (DeterminismTests, FlakeMotionTests); sizes are biased small (u^2.2). Callers: SnowField.step. Rendered by Render.writeInstances + the flake shader (Renderer.swift).
+
 import CoreGraphics
 import Foundation
 

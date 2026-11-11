@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/DockPerfTests.swift  (Dock animation cost + incremental rebuild equivalence)
+// 40 snowy windows, the bar widens by 600 pt: the animation must end and leave other windows' piles exactly as with a static bar; after an identical snapshot a full rebuild must match the incremental one (visible/cap/runs/cover), including a Dock retracting over a low window and a tall window's frost/icicle `cover`.
+// `NEVE_BENCH=1` prints per-step wall time (CPU time via clock(), stable under load). Related: DockPush.swift `dockIsolated`, Surfaces.movedOnly.
+
 import CoreGraphics
 import Foundation
 import Testing

@@ -186,6 +186,8 @@ Tests/run.sh             # testes (Swift Testing)
 
 `Tests/run.sh --sanitize thread|address [-r] [FILTRO]` compila os testes com o sanitizador (TSan ou ASan) em `.build-thread` / `.build-address` e injeta o runtime do clang das Command Line Tools via `DYLD_INSERT_LIBRARIES` (o runner em si não é instrumentado). `NEVE_BENCH=1 Tests/run.sh -r CalmBench` mede `stepFlakes` contra `writeInstances` por quadro (microbenchmark para decidir `Tuning.interpolateCalm`).
 
+Cada arquivo de código (`Sources/`, `Tests/`, `scripts/`, `Package.swift`) começa com um cabeçalho `AGENT HEADER` escrito para agentes de código: responsabilidade do arquivo, tipos e funções principais, invariantes (unidades em pt, colunas globais x locais, sistemas de coordenadas), dependências, efeitos colaterais, notas de desempenho e armadilhas. **Mantenha o cabeçalho atualizado sempre que alterar o arquivo.**
+
 `NEVE_SCENARIO=heavy` (variável de ambiente) monta um cenário pesado e determinístico (Nevasca, pilhas cheias, bonecos brigando) a cada 20 s, para comparar desempenho.
 
 `NEVE_IDLE_SECS=<segundos>` encurta os 5 min de inatividade (padrão 300): passado o tempo, a neve derrete (~12 s; 0,6 s com Reduzir movimento) e só então a renderização pausa; voltar a usar o Mac durante ou depois do derretimento recomeça a neve caindo do topo da tela.

@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Resize.swift  (screen size / scale change)
+// Role: `remapHeights(_:to:)` (ground heights carried to a new column count by x proportion, area-weighted mean) and `SnowField.resize(size:origin:groundY:visibleTop:)`: window piles (and what stands on them) are stashed by window id and return with
+//   the windows, the ground keeps its heights by x proportion, flakes / balls / figures / gifts keep their x proportion, effects tied to the old geometry (debris, glints, puffs, drops, icicles, fights, shots) are dropped; the next `update`
+//   rebuilds surfaces. Dock pile heights wait in `dockCarry` (applies only to a rebuild within ~2 s). Caller: Overlay.rebuildGeometry. Tests: WindowClassTests (resize cases), SpaceCarryTests.
+
 import CoreGraphics
 import Foundation
 

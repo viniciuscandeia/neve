@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Figures+Penguin.swift  (penguin visitor: waddle, belly slide, groove plowing)
+// Role: Tuning.penguin* constants, `PenguinState` (Stage: rise, waddle, flop, slide, stand, air, sink; t, life 30 s) and the SnowField stepping/look code for `Figure.kind == .penguin`: it appears on a window top with >= penguinMinRun visible
+//   and enough snow ahead (mean h >= penguinMinH over penguinStretch), waddles (rock 8 deg at 2.5 Hz), flops onto its belly and slides (90 pt/s, decelerating faster in deep snow), carving a trench with Pile.plow (penguinGroove depth, penguinBerm share banked, the
+//   rest sprayed as puffs/debris), stands up when bare or slow. `penguinLook(of:)` feeds Rig.penguin (Rig+Penguin.swift). Started by EventDirector via startVisitor. Tests: PenguinTests. Units pt, pt/s, s.
+
 import CoreGraphics
 import Foundation
 

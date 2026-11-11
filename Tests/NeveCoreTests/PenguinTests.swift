@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/PenguinTests.swift  (Figures+Penguin.swift)
+// Slide carves a continuous groove with berms and plows a shallow groove conserving snow, launches off a resting ball, lands on ground or leaves past a window end, window-only and needs a snowy wide run, never in Reduce Motion, counts against the ambient cap (one at a time), ducks under the cursor, deterministic visits.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

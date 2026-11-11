@@ -1,4 +1,13 @@
 #!/bin/bash
+# AGENT HEADER - scripts/make-app.sh
+# Role: build Neve.app by hand (no Xcode): `swift build -c release`, assemble the bundle, write Info.plist, codesign. Output build/Neve.app (or $NEVE_APP_DIR/Neve.app).
+# Env knobs: NEVE_DEV=<name> (or `--dev <name>`) -> dev bundle build/Neve-<name>.app, bundle id io.github.viniciuscandeia.neve.dev, executable Neve-dev-<name>,
+#   Info.plist key NeveInstance=<name> (the app reads it as its instance name, see Sources/Neve/Prefs.swift / main.swift). NEVE_VERSION (CFBundleShortVersionString, default 1.0),
+#   NEVE_BUILD (CFBundleVersion, default = number of commits in HEAD), NEVE_UNIVERSAL=1 (arm64 + x86_64 via two builds + lipo; --arch needs Xcode), NEVE_SIGN (identity), NEVE_APP_DIR.
+# Bundle contents: Resources/Neve.icns (committed, see make-icon.sh); the SwiftPM resource bundle Neve_NeveCore.bundle (Localizable.strings pt-BR/en, found by
+#   Sources/NeveCore/Localization.swift in Contents/Resources); en/pt-BR InfoPlist.strings; LSUIElement=true (menu-bar agent, no Dock icon); NSAudioCaptureUsageDescription (music tap).
+# Signing: uses the "Neve Local Signing" identity if present (scripts/make-cert.sh) so Accessibility/audio grants survive rebuilds; else ad-hoc with a warning (grants are lost every build).
+# Callers: scripts/agent-run.sh, scripts/perf.sh, scripts/perf-suite.sh, scripts/release.sh. The Info.plist is a heredoc: keep keys in sync with release.sh validation.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Dev bundle: NEVE_DEV=<name> (or --dev <name>) -> build/Neve-<name>.app, own bundle id, executable Neve-dev-<name>.

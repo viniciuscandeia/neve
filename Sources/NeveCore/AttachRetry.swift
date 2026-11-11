@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/AttachRetry.swift  (pure helpers for attaching AX observers off the main thread)
+// Role: `AttachRetry` (maxAttempts 3, linear delay 1 s / 2 s, `classify([AXStep]) -> AttachOutcome`: any transient failure = partial attach, discard and retry; else >= 1 success = complete; none = incompatible), `AXStep`, `AttachOutcome` and `AttachGate`
+//   (@unchecked Sendable, NSLock: tickets per pid + a generation; `begin` refuses stale generation / already observed / in flight; `isCurrent` is asked by the AX worker before each call; `cancelAll` bumps the generation so queued work and sleeping retries die).
+// Caller: Sources/Neve/WindowWatcher.swift (the AX queue + main hop). Thread-safe by design; nothing here touches AX itself. Tests: AttachRetryTests.
+
 import Foundation
 
 /// Bounded retry for attaching an Accessibility observer to an app that is not ready (no AX server yet, or hung).

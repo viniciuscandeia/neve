@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/LocalizationTests.swift  (every Localizable.strings key has an English translation with matching format specifiers. If this fails you added/changed a tr() string in only one of Sources/NeveCore/Resources/{pt-BR,en}.lproj/Localizable.strings.)
+
 import Testing
 import Foundation
 @testable import NeveCore

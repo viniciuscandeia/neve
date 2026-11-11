@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/JunctionTests.swift  (overlapping windows with close tops read as ONE snow mass: back pile continues behind a lower front top, equal tops join without the front shoulder, junction survives a drag, the crest crosses the junction smoothly (<= 1 pt per bin within 24 pt). Related: SurfaceMap.computeSeams, Render.junctions/writePiles (saddle +-16 pt).)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/FrostTests.swift  (Frost.swift + Icicles.swift: windows freeze after the threshold only (Nevasca sooner, demo speed ~10 s), stalactite caps, fast move breaks them into debris and thaws, slow move carries them, knocked-off pile / resize thaw, Reduce Motion icicles appear full-grown and fade, frost prims only while frozen, clipped by windows in front.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

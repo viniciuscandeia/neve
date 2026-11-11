@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Fights.swift  (snowball fights between snowmen)
+// Role: `Fight` (two figure ids, turn, timer, thrown; `startFights` pairs free snowmen on the same run, `stepFights` runs them), `Shot` (a snowball in flight on a parabola: from/to/peak/dur, hit/head/target/surface, `rel` so a hit follows a moved target, `impacting` hold, `ghost(k)` trail positions), `Splat` (flattened snow stuck on a figure
+//   or pile, fades over Tuning.splatLife 1.2 s, <= maxSplats 8) and SnowField stepping: pairing of snowmen on the same surface within Tuning.fightRange 250 pt (<= maxFights 2), alternating throws every ~1.1-1.5 s, aim (65 % at the head), hit chance
+//   `Tuning.hitChance(distance:)` (0.8 up to 80 pt falling to 0.35 at 250), wind push on shots (shotWind), 3 head hits -> loser headless/droops, winner cheers; an undecided fight ends after maxThrows 24; fightRest 12 s. Shots/splats are drawn by
+//   `writeShotPrims` (Overlay.writePrims; `trails: false` under Reduce Motion). `shotLand`/`impactAt` feed the robin and avalanche jolts. Tests: FightTests, FightFxTests.
+
 import CoreGraphics
 import Foundation
 

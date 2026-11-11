@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/CoverageTests.swift  (maximized-window compact mode, Sources/NeveCore/Coverage.swift)
+// Covers coverage()/liveRect(), CompactState hysteresis (enter 90 % for 0.6 s, exit 85 % for 0.2 s, frozen while a mouse button is down), compact flakes spawn above the live strip, ground piles identical in compact and normal modes, exit wakes flakes only from the top edge,
+// raising intensity enters from above, writePiles fits a demand-sized buffer / a short one counts drops, PrimWriter counts drops.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

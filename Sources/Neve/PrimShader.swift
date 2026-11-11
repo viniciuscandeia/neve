@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/Neve/PrimShader.swift  (MSL source for SDF actor primitives; appended to the flake shader library)
+// Role: `primShaderSource` draws every figure / ball / carrot / gift / shot / icicle as signed-distance primitives, one instanced quad per `Prim` (NeveCore/Render.swift `Prim`, filled by `Rig` through `PrimWriter`):
+//   kind 0 = rotated ellipse (a = centre, b = radii, c.x = angle), kind 1 = capsule/line (a -> b, width), else convex quad (a, b, c, d; polyDist). `soft` widens the ~1 px antialias (used for shadows); colour is premultiplied.
+// Invariants: `struct Prim` here MUST match the Swift `Prim` layout (4 x float2, float4, uint, 3 x float); quad padding = soft + 2 pt. Drawn between the pile pass and the flake pass (actors under flakes) via Gpu.prims (Renderer.swift) from Overlay.render.
+// Capacity: Overlay's prim buffer holds `primCapacity` (800) prims and grows in update() after a frame that dropped some (PrimWriter.dropped); drawing order = write order (painter's algorithm, no depth buffer).
+
 /// SDF primitives (see `Prim` in NeveCore/Render.swift). Appended to the flake shader source: no second #include.
 let primShaderSource = """
 struct Prim { float2 a; float2 b; float2 c; float2 d; float4 color; uint kind; float soft; float width; float pad; };

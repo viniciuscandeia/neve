@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/AttachRetryTests.swift  (Sources/NeveCore/AttachRetry.swift: bounded backoff, partial attach = transient, AttachGate drops old retries after reactivation; pure, no AX calls)
+
 import Testing
 @testable import NeveCore
 

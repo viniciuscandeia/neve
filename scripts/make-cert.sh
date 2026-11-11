@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Creates a self-signed code-signing identity "Neve Local Signing" in the login keychain.
-# Signing with a stable identity keeps macOS privacy permissions (Accessibility) across rebuilds.
+# AGENT HEADER - scripts/make-cert.sh
+# Role: one-time creation of the self-signed code-signing identity "Neve Local Signing" in the login keychain (openssl req -> pkcs12 -> security import + add-trusted-cert).
+# Why: a stable signing identity keeps macOS privacy grants (Accessibility, audio capture) across rebuilds; make-app.sh picks it up automatically.
+# Idempotent (exits if the identity exists). Interactive: macOS asks for the login password when trusting the cert. Agents should not run it unattended.
 set -euo pipefail
 NAME="Neve Local Signing"
 if security find-identity -p codesigning | grep -q "$NAME"; then

@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/ClimbTests.swift  (snowmen hopping between the ground bank and the Dock top)
+// Scene: floating Dock bar x 500...900, top y = 90; hand-built ground banks beside the bar ends (flat 40 pt then 0.3 slope) and a Dock-top pile. Covers: climb up a full bank and walk the Dock, hop arc with squash and facing, a low bank turns back, step back down, the AUTO snowman never lands on a bare Dock.
+// Related code: Walk.swift (transfer/hopStep, Tuning.stepMax/stepGap), DockPush.swift (bank).
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PolishBTests.swift  (polish round B: characters stay within prim caps, robin shadow below its body, gift bounces then rests sunk, cheer hop squashes near the ground, shot ghost radius follows the ball, contrast changes outline colours. Related: Rig*.swift, Gifts.swift.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

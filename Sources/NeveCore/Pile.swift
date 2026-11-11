@@ -1,3 +1,13 @@
+// AGENT HEADER - Sources/NeveCore/Pile.swift  (snow height profile of ONE surface + deposit/relax/plow rules)
+// Role: `Pile` (public struct, value type stored in `Surface.pile`): per-bin arrays along one window top / the Dock bar / the ground. Units: pt heights, bins of Tuning.binWidth (2 pt), LOCAL bin index b <-> global column c0 + b.
+// Arrays (all count = heights.count unless empty = "none"): heights (real), shown (drawn, eased toward heights by Render.writePiles), visible (false = hidden under a window in front: snow is frozen, not lost), base (<= 0, follows rounded
+//   corners), cap (ceiling imposed by windows in front, inf = none), maxes (per-column max, ground bank beside the Dock), wobble (+-9 %/+-6 % long waves seeded by window id), boost (drift against a front window), mound (extra allowance
+//   for cursor-pushed heaps; only `cap` bounds it), peel (seconds until drift excess lets go), walls. `limit(b) = min(rawLimit + mound, cap)`; `rawLimit` = maxHeight * wobble + boost, tapered over `inset` (cornerInset) from the REAL window ends x0/x1.
+// Operations: deposit(bin:volume:powder:) spreads 1/4-1/2-1/4 then relaxes locally (slope <= Tuning.slope, dust/speck rules), softness tapers sticking near the limit; relax moves half the excess to a lower neighbour; snow slid off an end accumulates in
+//   spillL/spillR (SnowField turns it into debris); carve / plow dig grooves (penguin, snowman) with berms; settle rounds pushed heaps; round(radius:) follows corner arcs; addWalls builds drifts; visibleRuns() = stretches to draw.
+// Invariants: heights >= 0; a hidden neighbour acts as a wall (no flow, nothing lost); volume is conserved except explicit spill/debris. Pile is a struct: avoid copying whole arrays in hot code (use surfaces[si].pile in place, see Surfaces.sweep).
+// Callers: Surfaces.swift (build/deposit/shed), SurfaceMap.swift, Render.swift (writePiles reads it), Avalanche/Frost/Melt/Walk/Snowball/Figures (effects), tests PileLogicTests/SurfaceMapTests/PhysicsTests. Changing slope/limit math changes visuals everywhere and many tuned tests.
+
 import CoreGraphics
 import Foundation
 

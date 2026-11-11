@@ -1,3 +1,11 @@
+// AGENT HEADER - Sources/NeveCore/Effects.swift  (snow in motion: slabs, crumbs, puffs, craters, glints)
+// Role: `extension SnowField` for transient effects that all live in `debris` / `glints` / `puffs` as plain `Flake`s with a `shape` (so the writer, the cap Tuning.maxDebris and the landing code are shared). `shedBin` collects consecutive columns
+//   (up to 8 = 16 pt, same velocity) in `runBins` and `flushRuns()` emits ONE slab (>= 8 pt wide, avg >= 3 pt; plus crumbs and dust) or plain dots - every releasing entry point must call flushRuns when it is done. `shedDots` (about 1 dot
+//   per 3 pt of snow), `splitSlab` (a slab aloft > 0.25 s may split in two), `impact` (heavy landing digs a crater with a raised rim, +-4 columns), `addPuff`/`stepPuffs` (dust clouds, max Tuning.maxPuffs, rise 6 pt/s, live 0.6 s),
+//   `stepGlints` (sparkles on crests of piles >= 6 pt, max 6, tied to the DRAWN crest of their surface; off for Reduce Motion / economy / low power / outro / melt), `put` (cap-checked insert), `Flake.pack` (chunk profile packing used by the shader).
+// Units: pt, pt/s, pt^2 for carried volume (`vol`, conserved: it is deposited where the debris lands). Callers: Surfaces (shed/spill/sweep), Avalanche, Melt, Walk/Figures, Icicles. Rendering of these flakes: Render.writeInstances + Renderer.swift flake shader kinds 1-5.
+// Gotcha: glints ride the drawn crest (eased `shown`), recomputing the local bin against c0 each frame - a window that moved without a drag fades them.
+
 import CoreGraphics
 import Foundation
 

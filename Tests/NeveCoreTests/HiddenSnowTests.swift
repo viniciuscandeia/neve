@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/HiddenSnowTests.swift  (snow under a front window)
+// Back window x 100...400 top 400, front covers 150...350: hidden snow returns when the front leaves, no drain into hidden columns, sweeps over hidden columns remove nothing, cover-then-uncover keeps every pile, hidden snow travels with a moving window; plus walkRange vs the old O(bins) linear scan on 1000 random queries (oracle kept in the file) and surface index validity across add/remove/reorder.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Icicles.swift  (stalactites under frozen windows)
+// Role: `Icicle` (window-relative: win id, slot, dx from the left edge, len/maxLen, width, tilt, w0 = width at spawn so a resize breaks it) in `SnowField.icicles` (<= 10 per window, 40 per screen), `stepIce` (growth, break on fast window motion
+//   via icicleBreakSpeed = shedStart/2, vanish), `breakIcicle` (2-3 thin slabs; Reduce Motion fades instead; muted = gone), `breakIcicles` (cursor sweep a->b shatters them), `writeIciclePrims` (blue edge triangle + pale fill + white highlight,
+//   after the frost lip; `shift` moves ones on the dragged window), `hash01` (deterministic per-key noise, independent of the sim RNG). Colours from Palette.ice/iceEdge/iceShine. Uses `fxRng`.
+// Callers: Frost.swift (spawn), Surfaces.sweep (breaking), Overlay.writePrims (draw). Tests: IceAvalancheTests, FrostTests.
+
 import CoreGraphics
 import Foundation
 

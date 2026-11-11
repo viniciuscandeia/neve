@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/LowSeamTests.swift  (no narrow, thick, steep sliver up the Dock bar's side at any ground / Dock accumulation: visual regression guard for the bank/bridge geometry in Render.writePiles)
+
 import Testing
 import CoreGraphics
 @testable import NeveCore

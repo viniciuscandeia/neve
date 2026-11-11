@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/MusicTests.swift  (BeatDetector finds 2 beats/s at 120 bpm from a synthetic 100 Hz burst signal in 512-frame blocks, silence is exactly 0; SnowField.stepMusic: silent music changes nothing, beats kick the wind within bounds and alternate, ignored under economy. Related: Music.swift.)
+
 import Foundation
 import Testing
 @testable import NeveCore

@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/EffectsTests.swift  (Effects.swift: slabs, craters, puffs, glints)
+// Covers knock-off of a tall pile making volume-carrying slabs, plain dots on low piles, heavy slab landing digs a crater with a raised rim and throws clumps, Reduce Motion slabs fall without dust, slab split conserves volume, puff/glint caps, a vanished pile becoming a few chunks that keep the pile's profile,
+// and the release ripple (chunks held, then fall). Related: Debris.swift, Surfaces.shed.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

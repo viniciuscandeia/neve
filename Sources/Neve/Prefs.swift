@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/Neve/Prefs.swift  (app-side environment -> simulation config)
+// Role: process-wide lets that translate the OS / env into NeveCore inputs (NeveCore itself does no I/O): `osWindowRadius` (window corner radius by macOS version, Tuning.windowRadius), `simConfig` (SimConfig built from
+//   NEVE_SNOWMAN_FAST, NEVE_DIRECTOR_FAST, NEVE_DEMO_ICE, NEVE_DEMO_PENGUIN, NEVE_DEMO_SLEIGH, NEVE_DEMO_VANISH=<s>, NEVE_DEMO_AVALANCHE=<s>), `sceneKind` (NEVE_SCENE=demo|fight) and `sceneSeed` (NEVE_SEED, default 7 demo / 4 fight),
+//   and `Intensity.saved(ud)` (UserDefaults key `Intensity.key`, Int, default 1 = media). Evaluated once at launch: changing an env var needs a restart.
+// Note: the Bool preferences (enum Pref, OverlayPrefs) live in Sources/NeveCore/Prefs.swift; this file holds only what needs ProcessInfo / UserDefaults. Readers: main.swift, Overlay.swift (init uses simConfig / sceneSeed).
+
 import NeveCore
 import Foundation
 

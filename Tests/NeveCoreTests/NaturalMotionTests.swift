@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/NaturalMotionTests.swift  (wind is not periodic, noise is continuous, flake sway avoids the 0.2 Hz band (Apple HIG), wind dust conserves volume, calm floor / hold-down frame rates, fastSin stays close to sin. Related: Util.swift, Flakes.swift.)
+
 import CoreGraphics
 import Foundation
 import Testing

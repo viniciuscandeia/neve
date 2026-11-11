@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/WalkTests.swift  (Walk.swift: figures stay inside their stretch and turn around, a stack walks after 0.3 s, figures move with their window, no walking in Reduce Motion / when off, the auto snowman walks, wind: walking against it is slower, never pushes a walker past the ends, breezes do not move snowmen but Nevasca gusts do.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,3 +1,5 @@
+// AGENT HEADER - Sources/NeveCore/PerfStat.swift  (profiling accumulator: ns total / peak / count, ms per frame, ms per second; used by Sources/Neve/Perf.swift). Tests: PerfStatTests.
+
 /// Profiling accumulator for one timed slot (nanoseconds): total, worst single sample and sample count.
 public struct PerfStat {
     public var sum: UInt64 = 0, peak: UInt64 = 0, n = 0

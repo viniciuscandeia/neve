@@ -1,8 +1,12 @@
 #!/bin/bash
-# On-screen performance check: runs scripts/perf.sh over a fixed set of scenarios on the real screen and fails (exit 1) when a budget is broken.
-# Usage: scripts/perf-suite.sh [--quick]     env: SECS (30), RUNS (2), MAX_CPU (10 = % of one core), NEVE_LOCK_TIMEOUT
-# Moves the cursor during the --sweep scenarios (put back after each run) and opens two Finder windows: leave the Mac alone while it runs (~10 min).
-# Report: build/perf-report.md. Never touches the user's Neve (own dev bundle and defaults suite).
+# AGENT HEADER - scripts/perf-suite.sh
+# Role: on-screen performance gate. Runs scripts/perf.sh over a fixed SCENARIOS table (Média/Nevasca x still cursor / --sweep over the piles / sweep over empty space with
+# pointer push off) and exits 1 if a budget breaks. Report: build/perf-report.md (markdown table); per-run logs in build/perf-logs/.
+# Usage: scripts/perf-suite.sh [--quick]. Env: SECS (30), RUNS (2), MAX_CPU (10 % of one core; the Nevasca sweep row has its own 11), MAX_HITCH (5 ms/s), MAX_MEM (150 MB), NEVE_LOCK_TIMEOUT.
+# Scenario row format: "title|perf.sh args|awk check on fps/cpu/base|why[| cpu limit]"; the check compares against BASE = fps of the first scenario. perf.sh prints a
+#   `SUMMARY k=v ...` line that this script parses via eval (keys cpu fps step flakesim gpu hitch power wspower memMB ws idlew).
+# Side effects: builds its own dev bundle (NEVE_DEV=perf-<hash>), moves the REAL cursor and opens/hides Finder windows (done inside perf.sh, restored on exit), holds the screen lock
+#   (~10 min; leave the Mac alone). Never touches the user's Neve (dev bundle + dev defaults suite). Never run it concurrently with other screen work.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SECS=${SECS:-30}; RUNS=${RUNS:-2}; MAX_CPU=${MAX_CPU:-10}; MAX_HITCH=${MAX_HITCH:-5}; MAX_MEM=${MAX_MEM:-150}

@@ -1,3 +1,10 @@
+// AGENT HEADER - Sources/NeveCore/EventDirector.swift  (when visitors appear)
+// Role: `EventDirector` (one per SnowField, ticked at 1 Hz of SIMULATION time from step; seeded, clock-free: same seed + inputs => same visits). Rules: <= 3 ambient actors per screen (snowmen excluded), <= 1 big event (sleigh), `minGap` 45 s between ambient starts,
+//   per-kind cooldown counted from the END of the last visit, Poisson starts p = dt / mean, speed divisor from NEVE_DIRECTOR_FAST (SimConfig.directorSpeed), intervals x2 and 1 ambient at a time in Economy / Low Power, off for Reduce Motion / still / outro / walking off /
+//   Visitantes off; compact (maximized window) and behind-windows modes start only ground-capable kinds, only there. `spec(_:)` = per-kind interval/cooldown table, `kinds` = what the Poisson roll considers (rabbit, penguin, sleigh, robin),
+//   `request(kind, after:)` queues story follow-ups (skip minGap, never the caps), `ended(kind, at:)` must be called when a visit ends (SnowField.clear does it) or the cooldown stays infinite.
+// Plugging in a critter: see Figures.swift (`startVisitor` is private here). Tests exercising it: FigureHelpers, RabbitTests, PenguinTests, RobinTests, SleighTests, MeltTests.
+
 import Foundation
 
 /// Schedules visitors (ambient critters) and, later, big events. One per `SnowField`, ticked at 1 Hz of simulation time from `step`,

@@ -1,14 +1,11 @@
 #!/bin/sh
-# Runs the Swift Testing suite. With Command Line Tools only, `swift test` builds the tests but its
-# helper silently runs none of them, so build, then load the bundle into a tiny runner.
-#
-# Usage: Tests/run.sh [-r] [--sanitize thread|address] [FILTER]      (FILTER = regex on "Suite/testName", e.g. `Tests/run.sh FlakeMotion`)
-#   -r          release-optimised build (-c release -Xswiftc -enable-testing, separate .build/release dir). @testable import works under CLT;
-#               measured: full suite runs in ~3 s instead of ~95 s (debug), at the cost of a ~2 min optimised compile
-#   --sanitize  TSan / ASan build in a separate scratch dir (.build-thread / .build-address); the runner is not instrumented, so the CLT clang
-#               sanitizer runtime is injected with DYLD_INSERT_LIBRARIES. Debug unless -r is also given.
-#   FILTER      forwarded to Swift Testing as `--filter FILTER`; any further args are passed through as-is
-#               (e.g. `--verbose` prints "passed after N seconds" per test: use it to find the slow ones)
+# AGENT HEADER - Tests/run.sh
+# Role: THE way to run the Swift Testing suite here. With Command Line Tools only, `swift test` builds the bundle but its helper runs none of the tests, so this script builds
+# (`swift build --build-tests`), compiles a tiny runner into $B/runner/run (dlopen's NevePackageTests.xctest and calls __swiftPMEntryPoint, an SPI) and execs it.
+# Usage: Tests/run.sh [-r] [--sanitize thread|address] [FILTER] [extra Swift Testing args]. FILTER = regex on "Suite/testName" (e.g. `Tests/run.sh FlakeMotion`);
+#   -r = release build with -enable-testing (~3 s run vs ~95 s debug, ~2 min compile; @testable import works); --sanitize builds in .build-thread/.build-address and injects the CLT
+#   clang sanitizer runtime via DYLD_INSERT_LIBRARIES (runner not instrumented); --verbose prints per-test timings. Exits 2 when the build/runner/framework is missing.
+# Needs /Library/Developer/CommandLineTools/.../Frameworks/Testing.framework (same path as Package.swift's `clt`). Tests that touch the real screen must be idle-gated.
 set -e
 cd "$(dirname "$0")/.."
 F=/Library/Developer/CommandLineTools/Library/Developer/Frameworks

@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/WindowClassTests.swift  (WindowClass.swift + resize cases)
+// classifyWindows (layer 0 surface; floating panel surface; tiny or same-process-overlapped panel = occluder; system owners ignored), filterWindows occluder-only infos, isMissionControl (two+ full-screen Dock windows at layers 18...20), MissionControlGate debounce / watchdog / strong read, WindowIDWatch, plus resize(size:...) behaviour.
+
 import CoreGraphics
 import Foundation
 import Testing

@@ -1,5 +1,7 @@
 #!/bin/bash
-# Regenerates Resources/Neve.icns (committed, so builds don't need this): draws a 1024 PNG, scales it with sips, packs it with iconutil.
+# AGENT HEADER - scripts/make-icon.sh
+# Role: regenerate Resources/Neve.icns (committed to the repo, so normal builds do not need this). Runs `swift scripts/make-icon.swift` to draw a 1024 PNG, scales
+# it with sips to the 16..512 (+@2x) iconset sizes and packs it with iconutil. Dependencies: swift, sips, iconutil (macOS tools only). Writes only Resources/Neve.icns (temp dir otherwise).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); SET=$T/Neve.iconset; mkdir -p "$SET" Resources

@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PaletteTests.swift  (Palette: every colour has light and dark, blend takes 0.5 s, tick step capped at 1/30 s so the blend never pops, light vector is unit and from above, glints stay below 3 Hz, flake sizes bias small. Adding a colour: give it BOTH variants or this fails.)
+
 import Testing
 @testable import NeveCore
 
