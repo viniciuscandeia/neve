@@ -5,6 +5,7 @@
 # Usage: Tests/run.sh [-r] [--sanitize thread|address] [FILTER] [extra Swift Testing args]. FILTER = regex on "Suite/testName" (e.g. `Tests/run.sh FlakeMotion`);
 #   -r = release build with -enable-testing (~3 s run vs ~95 s debug, ~2 min compile; @testable import works); --sanitize builds in .build-thread/.build-address and injects the CLT
 #   clang sanitizer runtime via DYLD_INSERT_LIBRARIES (runner not instrumented); --verbose prints per-test timings. Exits 2 when the build/runner/framework is missing.
+# After the tests it runs `NEVE_SHADER_CHECK=1 <build>/Neve` (compiles all Metal shaders/pipelines, no UI) and fails on any error.
 # Needs /Library/Developer/CommandLineTools/.../Frameworks/Testing.framework (same path as Package.swift's `clt`). Tests that touch the real screen must be idle-gated.
 set -e
 cd "$(dirname "$0")/.."
@@ -43,4 +44,6 @@ if [ -n "$SAN" ]; then
   [ -n "$LIB" ] || { echo "run.sh: libclang_rt.${RT}_osx_dynamic.dylib not found next to $CLANG" >&2; exit 2; }
   export DYLD_INSERT_LIBRARIES=$LIB
 fi
-exec $B/runner/run "$BUNDLE" "$@"
+$B/runner/run "$BUNDLE" "$@"
+# Shader check: the app binary compiles every MSL library/pipeline (NEVE_SHADER_CHECK=1, no UI); a broken shader fails the run.
+NEVE_SHADER_CHECK=1 $B/$CFG/Neve || { echo "run.sh: NEVE_SHADER_CHECK failed (Metal shader/pipeline error above)" >&2; exit 1; }

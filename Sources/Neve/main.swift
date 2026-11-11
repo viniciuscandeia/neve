@@ -856,6 +856,9 @@ if neveInstance == nil, let id = Bundle.main.bundleIdentifier,
     exit(0)   // already running
 }
 
+if ProcessInfo.processInfo.environment["NEVE_SHADER_CHECK"] == "1" {   // compile every shader + pipeline, report on stderr, exit before any UI
+    exit(Gpu() == nil ? 1 : 0)
+}
 let app = NSApplication.shared
 let controller = AppController()
 app.delegate = controller

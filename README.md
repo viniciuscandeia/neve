@@ -181,7 +181,8 @@ Compilar a partir do código-fonte no próprio Mac de destino evita o bloqueio.
 
 ```sh
 swift build -c release   # compila
-Tests/run.sh             # testes (Swift Testing)
+Tests/run.sh             # testes (Swift Testing) + verificação dos shaders
+NEVE_SHADER_CHECK=1 .build/debug/Neve   # só compila shaders/pipelines Metal, erros no stderr, sai 0/1 sem abrir janelas
 ```
 
 `Tests/run.sh --sanitize thread|address [-r] [FILTRO]` compila os testes com o sanitizador (TSan ou ASan) em `.build-thread` / `.build-address` e injeta o runtime do clang das Command Line Tools via `DYLD_INSERT_LIBRARIES` (o runner em si não é instrumentado). `NEVE_BENCH=1 Tests/run.sh -r CalmBench` mede `stepFlakes` contra `writeInstances` por quadro (microbenchmark para decidir `Tuning.interpolateCalm`).

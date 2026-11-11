@@ -46,9 +46,11 @@ struct Gpu {
     init?() {
         MainActor.assumeIsolated { AppearanceWatcher.start() }
         guard let device = MTLCreateSystemDefaultDevice(),
-              let queue = device.makeCommandQueue(),
-              let library = try? device.makeLibrary(source: flakeShaderSource + primShaderSource + pileShaderSource, options: nil),
-              let flakes = Gpu.pipeline(device, library, "flakeVertex", "flakeFragment"),
+              let queue = device.makeCommandQueue() else { return nil }
+        let library: MTLLibrary
+        do { library = try device.makeLibrary(source: flakeShaderSource + primShaderSource + pileShaderSource, options: nil) }
+        catch { FileHandle.standardError.write(Data("Neve: shader compile failed: \(error)\n".utf8)); return nil }   // NEVE_SHADER_CHECK=1 surfaces this
+        guard let flakes = Gpu.pipeline(device, library, "flakeVertex", "flakeFragment"),
               let prims = Gpu.pipeline(device, library, "primVertex", "primFragment"),
               let piles = Gpu.pipeline(device, library, "pileVertex", "pileFragment") else { return nil }
         self.device = device
@@ -70,7 +72,8 @@ struct Gpu {
         c.sourceAlphaBlendFactor = .one
         c.destinationRGBBlendFactor = .oneMinusSourceAlpha
         c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        return try? device.makeRenderPipelineState(descriptor: d)
+        do { return try device.makeRenderPipelineState(descriptor: d) }
+        catch { FileHandle.standardError.write(Data("Neve: pipeline \(v)/\(f) failed: \(error)\n".utf8)); return nil }
     }
 }
 
