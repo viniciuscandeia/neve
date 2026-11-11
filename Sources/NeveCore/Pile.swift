@@ -200,6 +200,12 @@ public struct Pile {
         return removed - banked
     }
 
+    /// Light relaxation of bins lo...hi (a few passes): rounds what a push left steep.
+    mutating func settle(_ lo: Int, _ hi: Int) {
+        guard lo <= hi else { return }
+        for _ in 0..<3 { for i in lo...hi where visible[i] { _ = relax(i, i - 1); _ = relax(i, i + 1) } }
+    }
+
     /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.
     private func continuesPastScreen(left: Bool) -> Bool {
         left ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth

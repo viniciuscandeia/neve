@@ -28,7 +28,7 @@
 "Dica: segure ⌥ e arraste a neve para fazer bolas." = "Tip: hold ⌥ and drag the snow to make snowballs.";
 "20–30 fps, só a tela principal, menos efeitos." = "20–30 fps, main display only, fewer effects.";
 "Cursor empurra os flocos" = "Cursor Pushes Flakes";
-"Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada." = "When off, airborne flakes ignore the cursor; it still sweeps the settled snow.";
+"Desligado, o cursor não mexe nos flocos no ar nem empurra a neve acumulada." = "When off, the cursor neither moves airborne flakes nor pushes settled snow.";
 "Aparecer em capturas de tela" = "Show in Screenshots";
 "Nem todo app de captura respeita esta opção." = "Not every capture app respects this option.";
 "Abrir ao iniciar sessão" = "Open at Login";

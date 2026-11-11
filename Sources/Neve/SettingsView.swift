@@ -211,7 +211,7 @@ struct SettingsPane: View {
                 PrefBinding(.pointerPush, env.store) { b in
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle(isOn: b) { Label(tr("Cursor empurra os flocos"), systemImage: "cursorarrow.motionlines") }
-                        Text(tr("Desligado, os flocos no ar ignoram o cursor; ele ainda varre a neve acumulada.")).font(.caption).foregroundStyle(.secondary)
+                        Text(tr("Desligado, o cursor não mexe nos flocos no ar nem empurra a neve acumulada.")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if panel.reduceMotion { toggle(stillOpt) }

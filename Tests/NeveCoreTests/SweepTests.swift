@@ -120,7 +120,7 @@ private func swipe(_ f: SnowField, speed: Float, y: CGFloat = 505, settle: Int =
     let before = f.pile(id: 1)!.heights.reduce(0, +) * Tuning.binWidth
     _ = swipe(f, speed: 1000)
     let inFlight = f.debris.reduce(0) { $0 + $1.vol } + f.sweepOwed
-    let now = f.pile(id: 1)!.heights.reduce(0, +) * Tuning.binWidth
+    let p = f.pile(id: 1)!, now = (p.heights.reduce(0, +) + p.spillL + p.spillR) * Tuning.binWidth
     #expect(abs(before - now - inFlight) < 0.02 * before)
 }
 
@@ -130,4 +130,93 @@ private func swipe(_ f: SnowField, speed: Float, y: CGFloat = 505, settle: Int =
     let d0 = f.debris.count
     _ = swipe(f, speed: 1000)
     #expect(f.debris.count == d0)
+}
+
+// MARK: plow
+
+/// A pile well under its limit, so the plow has room to bank snow.
+private func lightField() -> SnowField {
+    let f = makeField()
+    f.update(windows: [win(1, 200, 300, 300, 200)])
+    pileUp(f, id: 1, rounds: 3)
+    return f
+}
+
+private func volume(_ f: SnowField) -> Float {
+    let p = f.pile(id: 1)!
+    return (p.heights.reduce(0, +) + p.spillL + p.spillR) * Tuning.binWidth
+}
+private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol } + f.sweepOwed }
+
+@Test func sweepPlowsASnowBermAheadOfTheCursor() {
+    for dir: CGFloat in [1, -1] {
+        let f = lightField()
+        let before = f.pile(id: 1)!.heights
+        let x0: CGFloat = dir > 0 ? 300 : 400
+        f.sweep(from: CGPoint(x: x0, y: 502), to: CGPoint(x: x0 + 20 * dir, y: 502), radius: 10, dt: 1 / 20)
+        let after = f.pile(id: 1)!.heights
+        let mid = Int((x0 + 10 * dir - 200) / 2), ahead = mid + Int(dir) * 14, behind = mid - Int(dir) * 14
+        #expect(after[mid] < before[mid])
+        #expect((ahead - 4...ahead + 4).reduce(0) { $0 + after[$1] - before[$1] } > 0.5)
+        #expect((behind - 4...behind + 4).reduce(0) { $0 + abs(after[$1] - before[$1]) } < 0.1)
+    }
+}
+
+@Test func verticalSweepPartsTheSnowToBothSides() {
+    let f = lightField()
+    let before = f.pile(id: 1)!.heights
+    f.sweep(from: CGPoint(x: 350, y: 540), to: CGPoint(x: 350, y: 500), radius: 10, dt: 1 / 20)
+    let after = f.pile(id: 1)!.heights, mid = 75
+    #expect(after[mid] < before[mid])
+    #expect((mid - 12...mid - 6).reduce(0) { $0 + after[$1] - before[$1] } > 0.2)
+    #expect((mid + 6...mid + 12).reduce(0) { $0 + after[$1] - before[$1] } > 0.2)
+}
+
+@Test func plowConservesVolumeAndStaysSmooth() {
+    for speed: Float in [60, 400, 1200] {
+        let f = lightField()
+        let v0 = volume(f)
+        _ = swipe(f, speed: speed)
+        for _ in 0..<5 { f.sweep(from: CGPoint(x: 460, y: 505), to: CGPoint(x: 470, y: 505), radius: 10, dt: 1 / 60) }   // the end of the window
+        #expect(abs(v0 - volume(f) - carried(f)) < 0.01 * v0)
+        let h = f.pile(id: 1)!.heights
+        #expect(h.allSatisfy { $0.isFinite && $0 >= 0 })
+        var slope: Float = 0
+        for i in 1..<h.count { slope = max(slope, abs(h[i] - h[i - 1])) }
+        #expect(slope < 6)
+    }
+}
+
+@Test func plowedSnowPastTheWindowEndFallsAsDebris() {
+    let f = lightField()
+    let d0 = f.debris.count, v0 = volume(f)
+    for _ in 0..<40 { f.sweep(from: CGPoint(x: 430, y: 505), to: CGPoint(x: 455, y: 505), radius: 10, dt: 1 / 30) }
+    #expect(f.debris.count > d0 || f.sweepOwed > 0)
+    #expect(abs(v0 - volume(f) - carried(f)) < 0.01 * v0)
+}
+
+@Test func pointerPushOffLeavesPilesAlone() {
+    let f = lightField()
+    f.pointerPush = false
+    let before = f.pile(id: 1)!.heights
+    f.sweep(from: CGPoint(x: 300, y: 502), to: CGPoint(x: 400, y: 502), radius: 10)
+    #expect(f.pile(id: 1)!.heights == before)
+    #expect(!f.snowNear(from: CGPoint(x: 300, y: 530), to: CGPoint(x: 400, y: 530), radius: 20))   // pile bins in the path no longer count
+}
+
+/// Timing only (prints µs per call); the pile is restored every call so each pass cuts a fresh pile, as the first frames of a real swipe do.
+@Test func plowMicrobench() {
+    let f = lightField()
+    let saved = f.surfaces[0].pile.heights
+    var total = Duration.zero
+    for i in 0..<20000 {
+        let x = CGFloat(230 + (i % 40) * 6)
+        let s: CGFloat = i % 3 == 0 ? 14 : 6   // 840 and 360 pt/s
+        f.surfaces[0].pile.heights = saved
+        let t0 = ContinuousClock.now
+        f.sweep(from: CGPoint(x: x, y: 505), to: CGPoint(x: x + s, y: 505), radius: 10, dt: 1 / 60)
+        total += ContinuousClock.now - t0
+        if i % 50 == 0 { f.stepDebris(dt: 1 / 60) }
+    }
+    print("SWEEP µs/call:", total / 20000)
 }
