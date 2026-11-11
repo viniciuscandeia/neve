@@ -269,7 +269,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         guard stillPaused else { return }
         stillPaused = false
         lastTimestamp = 0
-        link?.isPaused = occluded || !window.isVisible
+        link?.isPaused = occluded || !window.isVisible || suspended
     }
 
     private var pileSeen = -1
@@ -520,7 +520,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             l.add(to: .main, forMode: .common)
             link = l
         }
-        if occluded { pauseLink() } else { link?.isPaused = false }
+        if occluded || suspended { pauseLink() } else { link?.isPaused = false }
     }
 
     /// Every pause path: the display link stops and the panel stops catching the mouse (a paused tick can no longer let go of it).
@@ -537,7 +537,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         guard window.isVisible else { return }
         occluded = !window.occlusionState.contains(.visible)
         if !occluded { lastTimestamp = 0 }
-        if occluded { pauseLink() } else { link?.isPaused = false }
+        if occluded || suspended { pauseLink() } else { link?.isPaused = false }
     }
 
     func teardown() {

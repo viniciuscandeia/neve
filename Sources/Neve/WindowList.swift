@@ -16,6 +16,8 @@ import NeveCore
     }
 }
 
+@MainActor func invalidateScreenCache() { ScreenCache.frames = nil }
+
 /// On-screen normal windows, front to back. Bounds need no Screen Recording permission.
 @MainActor public func readWindows(primaryHeight: CGFloat, exclude: Set<Int> = [], scene: Set<Int>? = nil) -> [WindowInfo]? {
     readWindowsAndMC(primaryHeight: primaryHeight, exclude: exclude, scene: scene)?.windows
@@ -51,4 +53,14 @@ import NeveCore
     }
     let mc = scene == nil && isMissionControl(raw, screens: screens)
     return (filterWindows(raw, exclude: exclude, primaryHeight: primaryHeight, radius: osWindowRadius, scene: scene, ownPID: Int(getpid()), screens: screens), mc)
+}
+
+
+// CGWindowListCreate is marked unavailable in Swift; the C symbol is fine. IDs only: ~65 us vs ~190 us (and no parsing) for CGWindowListCopyWindowInfo.
+private let createWindowList = unsafeBitCast(dlsym(dlopen(nil, RTLD_NOW), "CGWindowListCreate"), to: (@convention(c) (UInt32, UInt32) -> Unmanaged<CFArray>?).self)
+
+/// On-screen window IDs, front to back (nil on failure).
+public func onScreenWindowIDs() -> [Int]? {
+    guard let a = createWindowList(CGWindowListOption([.optionOnScreenOnly, .excludeDesktopElements]).rawValue, kCGNullWindowID)?.takeRetainedValue() else { return nil }
+    return (0..<CFArrayGetCount(a)).map { Int(bitPattern: CFArrayGetValueAtIndex(a, $0)) }
 }

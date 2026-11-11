@@ -49,17 +49,21 @@ public func isMissionControl(_ raw: [RawWindow], screens: [CGRect]) -> Bool {
 public struct MissionControlGate: Sendable {
     public private(set) var active = false
     public private(set) var hits = 0
-    private var since = 0.0, latched = false
+    private var since = 0.0, latched = false, lastPositive = false
     public static let maxSeconds = 15.0
     public init() {}
     /// True when a positive read is still unconfirmed (the caller should look again soon).
     public var pending: Bool { hits > 0 && !active }
-    @discardableResult public mutating func read(_ positive: Bool, now: Double) -> Bool {
+    /// `strong`: the read was triggered by a change of the on-screen window list (see `WindowIDWatch`), so one positive read is enough.
+    /// True while the window list is still the Exposé layout (suspended, or released by Esc / watchdog but reads still positive): the caller must not touch the piles.
+    public var holdsPiles: Bool { active || (latched && lastPositive) }
+    @discardableResult public mutating func read(_ positive: Bool, now: Double, strong: Bool = false) -> Bool {
+        lastPositive = positive
         guard positive else { hits = 0; active = false; latched = false; return false }
         if latched { return false }
         hits += 1
         if active, now - since > Self.maxSeconds { active = false; latched = true; hits = 0; return false }
-        if !active, hits >= 2 { active = true; since = now }
+        if !active, hits >= (strong ? 1 : 2) { active = true; since = now }
         return active
     }
     public mutating func release() { if active || hits > 0 { latched = true }; active = false; hits = 0 }
@@ -70,3 +74,12 @@ public func isScreensaverEngine(_ bundleID: String?) -> Bool { bundleID == "com.
 
 /// Menu-bar item: ⌥-click opens Ajustes directly. ⌃⌥ is VoiceOver's modifier pair, and a keyboard open (no mouse event) must still show the menu.
 public func optionClickOpensSettings(option: Bool, control: Bool, mouse: Bool) -> Bool { option && !control && mouse }
+
+
+/// Cheap change detector for the on-screen window ID list (front to back): Mission Control adds Dock windows, so the list changes ~at once.
+public struct WindowIDWatch: Sendable {
+    private var last: [Int]?
+    public init() {}
+    /// True when `ids` differs from the previous call's (the first call counts as a change).
+    public mutating func changed(_ ids: [Int]) -> Bool { defer { last = ids }; return ids != last }
+}

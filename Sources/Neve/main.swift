@@ -16,7 +16,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var screensAsleep = false
     private var sessionInactive = false
     private var screensaver = false   // the screen saver covers the displays: nothing to draw under it
-    private var missionControl = false, mcTimer: Timer?, mcGate = MissionControlGate(), mcMonitor: Any?
+    private var missionControl = false, mcTimer: Timer?, mcGate = MissionControlGate(), mcMonitor: Any?, mcProbe: Timer?, mcIDs = WindowIDWatch(), mcStrong = false
     private var ssTimer: Timer?   // screen saver on: polling is off, so this slow timer notices it ended without a didstop
     private let panel = PanelState()
     private var loggedMetal = false
@@ -143,6 +143,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Real configuration changes (screens added / removed, frame or scale) apply at once, per screen;
     /// only visibleFrame-only changes (Dock, menu bar) wait for a transitioning screen to settle.
     @objc private func screensChanged() {
+        invalidateScreenCache()   // the cache's own observer registers lazily and may run after this
         lastScreensCheck = CACurrentMediaTime()
         syncPanelInfo()
         let wanted = wantedScreens
@@ -202,6 +203,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
         }
         overlays += made
+        if missionControl { made.forEach { $0.setSuspended(true) } }   // created during Mission Control: stay hidden
         panel.metalMissing = overlays.isEmpty && !NSScreen.screens.isEmpty
         refreshRunState()
     }
@@ -500,6 +502,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncMouseMonitor()
         slowTimer?.invalidate()
         slowTimer = nil
+        mcProbe?.invalidate()
+        mcProbe = nil
         scheduleSafety(slow: true)
     }
 
@@ -521,6 +525,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             st.tolerance = 1
             RunLoop.main.add(st, forMode: .common)
             slowTimer = st
+            // Nothing notifies us when Mission Control opens: a 0.3 s probe of the on-screen window IDs (~65 us, ~0.02% CPU) requests a read when the list changes.
+            let pr = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.mcProbeTick() }
+            }
+            pr.tolerance = 0.05
+            RunLoop.main.add(pr, forMode: .common)
+            mcProbe = pr
         }
     }
 
@@ -577,10 +588,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let raw = read.windows
-        let mcNow = mcGate.read(read.missionControl, now: CACurrentMediaTime())   // 2 consecutive reads to suspend, 1 to release, 15 s watchdog
+        let strong = mcStrong; mcStrong = false
+        let mcNow = mcGate.read(read.missionControl, now: CACurrentMediaTime(), strong: strong)   // 2 consecutive reads to suspend, 1 to release, 15 s watchdog
         setMissionControl(mcNow)
         mcTimer?.invalidate(); mcTimer = nil
-        if missionControl || mcGate.pending {   // the window list is the Exposé layout: leave the piles alone and look again in 0.25 s (the only poll while it lasts)
+        if missionControl || mcGate.pending || mcGate.holdsPiles {   // the window list is the Exposé layout: leave the piles alone and look again in 0.25 s (the only poll while it lasts)
             sched.didRead(ok: true, changed: false, frameMoved: false)
             mcTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.requestPoll() } }
             return
@@ -613,14 +625,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func mcProbeTick() {
+        guard polling, !userIdle, sceneKind == nil, let ids = onScreenWindowIDs(), mcIDs.changed(ids) else { return }
+        mcStrong = true
+        requestPoll()
+    }
+
     private func setMissionControl(_ on: Bool) {
         guard on != missionControl else { return }
         missionControl = on
         for o in overlays { o.setSuspended(on) }
-        if on, mcMonitor == nil {   // Esc / a click closes Mission Control: release at once instead of waiting for the next read
+        if on, mcMonitor == nil {   // Esc closes Mission Control: release at once (needs Accessibility for global key events; without it the next negative read releases). A click may or may not close it ("+", Spaces bar): just look again now.
             mcMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
-                guard e.type == .leftMouseDown || e.keyCode == 53 else { return }
-                MainActor.assumeIsolated { self?.mcGate.release(); self?.setMissionControl(false); self?.requestPoll() }
+                MainActor.assumeIsolated {
+                    if e.type == .leftMouseDown { self?.requestPoll(); return }
+                    guard e.keyCode == 53 else { return }
+                    self?.mcGate.release(); self?.setMissionControl(false); self?.requestPoll()
+                }
             }
         } else if !on, let m = mcMonitor { NSEvent.removeMonitor(m); mcMonitor = nil }
     }
