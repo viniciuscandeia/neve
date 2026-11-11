@@ -64,6 +64,7 @@ public final class SnowField {
     var fxRng: SplitMix64        // icicles / avalanches: kept apart from `rng` so they never perturb the other sequences
     var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
     var sweepOwed: Float = 0     // cursor-dent volume (pt^2) not yet launched as debris
+    var sweptAt = -1.0           // `time` of the last cursor push (Surfaces.sweep): pushed heaps slump toward their repose slope once the blade has moved on
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints
     var surfaces: [Surface] = []
@@ -345,6 +346,7 @@ public final class SnowField {
         stepDock(dt: dt)
         stepBank(dt: dt)
         stepDockSpill(dt: dt)
+        stepSlump()
         stepPuffs(dt: dt)
         stepWindDust(dt: dt)
         stepGlints(dt: dt)
