@@ -435,7 +435,7 @@ extension SnowField {
         let speed = len2.squareRoot() / dt, share = min(len2.squareRoot() / (1.33 * r), 1)
         let depth = min(max(speed / 150, 0.6), 6)   // total dent depth of a pass (pt): a slow brush barely marks, a fast swipe cuts
         let horizontal = abs(dx) >= abs(dy)
-        var owed: Float = 0, cx: Float = 0, cy: Float = 0, sum: Float = 0
+        var owed: Float = 0, ox: Float = 0, oy: Float = 0, cx: Float = 0, cy: Float = 0, sum: Float = 0
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         breakGifts(ax, ay, Float(b.x), Float(b.y), r, v)
@@ -472,35 +472,44 @@ extension SnowField {
             }
             if removed > 0 {
                 let xl = min(ax, ax + dx) - r, xr = max(ax, ax + dx) + r
-                var lowK = b0, highK = b1, banked: Float
-                if horizontal { banked = berm(si, atX: dx > 0 ? xr : xl, dir: dx > 0 ? 1 : -1, area: removed, lo: &lowK, hi: &highK) }
-                else { banked = berm(si, atX: xl, dir: -1, area: removed / 2, lo: &lowK, hi: &highK) + berm(si, atX: xr, dir: 1, area: removed / 2, lo: &lowK, hi: &highK) }
+                var lowK = b0, highK = b1, banked: Float = 0, ex: Float = 0, ey: Float = 0
+                let sides: [(Float, Int)] = horizontal ? [(dx > 0 ? xr : xl, dx > 0 ? 1 : -1)] : [(xl, -1), (xr, 1)]
+                for (bx, dir) in sides {   // each leftover (nothing fits before the run ends) flies off at that run end, never at the cursor
+                    let part = removed / Float(sides.count)
+                    let got = berm(si, atX: bx, dir: dir, area: part, lo: &lowK, hi: &highK, end: &ex, endY: &ey)
+                    banked += got; ox += (part - got) * ex; oy += (part - got) * ey
+                }
                 surfaces[si].pile.settle(max(lowK - 2, 0), min(highK + 2, surfaces[si].pile.heights.count - 1))   // round the groove and the lip: no 1-bin spikes
                 owed += removed - banked; cx += wx; cy += wy; sum += removed
             }
         }
         guard sum > 0, !calm, !silent else { return }
         if speed > 600, Float.random(in: 0..<1, using: &rng) < 0.3 { addPuff(x: cx / sum, y: cy / sum + 3) }   // fast swipe: a light powder puff as feedback
-        sweepOwed = min(sweepOwed + max(owed, 0), 600)
-        launchSweepDebris(x: cx / sum, y: cy / sum, v: v, speed: speed, r: r)
+        guard owed > 0.01 else { return }
+        sweepOwed = min(sweepOwed + owed, 600)
+        launchSweepDebris(x: ox / owed, y: oy / owed, v: v, speed: speed, r: r)
     }
 
-    /// Banks `area` (pt^2) ahead of global x in direction `dir` as a rounded berm (taper over nine bins), capped by the pile limit; what does not fit
-    /// spreads further ahead (up to 40 bins) and the rest (the surface or visible run ends) is not banked. Returns the area banked; `lo`/`hi` grow to the touched bins.
-    func berm(_ si: Int, atX x: Float, dir: Int, area: Float, lo: inout Int, hi: inout Int) -> Float {
-        let n = surfaces[si].pile.heights.count, start = Int(x * invBin) - surfaces[si].c0 + dir
-        var banked: Float = 0
+    /// Banks `area` (pt^2) ahead of global x in direction `dir`: a rounded berm (taper over nine bins) that may heap up to 25% over the pile limit
+    /// (never over a window's `cap`), then whatever is left fills bins further along the run. Returns the area banked; the rest hit the run end at global
+    /// (`end`, `endY`). `lo`/`hi` grow to the touched bins. Overfill is bounded by the 1.25 ceiling however many passes pile onto it.
+    func berm(_ si: Int, atX x: Float, dir: Int, area: Float, lo: inout Int, hi: inout Int, end: inout Float, endY: inout Float) -> Float {
+        let n = surfaces[si].pile.heights.count, c = surfaces[si].c0, start = Int(x * invBin) - c + dir
+        var banked: Float = 0, last = min(max(start - dir, 0), n - 1)
         func add(_ k: Int, _ want: Float) -> Bool {   // false: ran into the end of the run
             guard k >= 0, k < n, surfaces[si].pile.visible[k] else { return false }
-            let h = surfaces[si].pile.heights[k], nh = min(h + want / Tuning.binWidth, max(surfaces[si].pile.limit(k), h))
+            let h = surfaces[si].pile.heights[k]
+            let nh = min(h + want / Tuning.binWidth, max(min(surfaces[si].pile.limit(k) * Tuning.heapFactor, surfaces[si].pile.cap[k]), h))
             surfaces[si].pile.heights[k] = nh; banked += (nh - h) * Tuning.binWidth
-            lo = min(lo, k); hi = max(hi, k); pilesDirty = true
+            lo = min(lo, k); hi = max(hi, k); pilesDirty = true; last = k
             return true
         }
         let w: [Float] = [0.07, 0.13, 0.17, 0.17, 0.15, 0.12, 0.09, 0.06, 0.04]
-        for (i, wi) in w.enumerated() where !add(start + dir * i, wi * area) { break }
+        var open = true
+        for (i, wi) in w.enumerated() where !add(start + dir * i, wi * area) { open = false; break }
         var m = 9
-        while banked < area - 0.01, m < 40, add(start + dir * m, area - banked) { m += 1 }
+        while open, banked < area - 0.01 { if add(start + dir * m, area - banked) { m += 1 } else { open = false } }
+        end = binCenter(c + last); endY = surfaces[si].edgeY + surfaces[si].pile.base[last] + surfaces[si].pile.heights[last]
         return banked
     }
 

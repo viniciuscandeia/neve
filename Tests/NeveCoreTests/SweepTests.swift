@@ -15,10 +15,10 @@ private func pileField() -> SnowField {
     let before = f.pile(id: 1)!.heights, d0 = f.debris.count
     f.sweep(from: CGPoint(x: 340, y: 502), to: CGPoint(x: 360, y: 502), radius: 10)
     let after = f.pile(id: 1)!.heights
-    #expect(f.debris.count > d0)
+    #expect(f.debris.count == d0)   // the pile is full, yet nothing sprays at the cursor: the snow heaps ahead of it
     // bin i covers x = 200 + 2i; path x 340...360 (+10) = bins 65...85
     #expect(after[75] < before[75])
-    for i in [10, 40, 55, 100, 120] { #expect(after[i] == before[i]) }
+    for i in [10, 40, 55] { #expect(after[i] == before[i]) }
 }
 
 @Test func sweepAboveThePileRemovesNothing() {
@@ -29,11 +29,12 @@ private func pileField() -> SnowField {
     #expect(f.debris.count == d0)
 }
 
-@Test func debrisFliesInTheCursorDirection() {
+@Test func debrisFliesInTheCursorDirectionFromTheRunEnd() {
     for dir: CGFloat in [1, -1] {
         let f = pileField()
         let d0 = f.debris.count
-        f.sweep(from: CGPoint(x: 350 - 10 * dir, y: 502), to: CGPoint(x: 350 + 10 * dir, y: 502), radius: 10)
+        let x0: CGFloat = dir > 0 ? 440 : 260
+        for _ in 0..<60 { f.sweep(from: CGPoint(x: x0, y: 505), to: CGPoint(x: x0 + 40 * dir, y: 505), radius: 10, dt: 1 / 30) }
         let vs = f.debris[d0...].map(\.vx)
         #expect(!vs.isEmpty)
         #expect(vs.allSatisfy { $0 * Float(dir) > 0 })
@@ -190,7 +191,7 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
 @Test func plowedSnowPastTheWindowEndFallsAsDebris() {
     let f = lightField()
     let d0 = f.debris.count, v0 = volume(f)
-    for _ in 0..<40 { f.sweep(from: CGPoint(x: 430, y: 505), to: CGPoint(x: 455, y: 505), radius: 10, dt: 1 / 30) }
+    for _ in 0..<80 { f.sweep(from: CGPoint(x: 440, y: 505), to: CGPoint(x: 480, y: 505), radius: 10, dt: 1 / 30) }
     #expect(f.debris.count > d0 || f.sweepOwed > 0)
     #expect(abs(v0 - volume(f) - carried(f)) < 0.01 * v0)
 }
@@ -202,6 +203,25 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
     f.sweep(from: CGPoint(x: 300, y: 502), to: CGPoint(x: 400, y: 502), radius: 10)
     #expect(f.pile(id: 1)!.heights == before)
     #expect(!f.snowNear(from: CGPoint(x: 300, y: 530), to: CGPoint(x: 400, y: 530), radius: 20))   // pile bins in the path no longer count
+}
+
+@Test func plowOnAPileAtItsLimitHeapsAheadAndNeverSpraysAtTheCursor() {
+    let f = pileField()   // full: every bin at or above its limit
+    let v0 = volume(f), before = f.pile(id: 1)!.heights, d0 = f.debris.count
+    for k in 0..<30 { f.sweep(from: CGPoint(x: 260 + CGFloat(k) * 4, y: 505), to: CGPoint(x: 280 + CGFloat(k) * 4, y: 505), radius: 10, dt: 1 / 30) }
+    let p = f.pile(id: 1)!
+    #expect(abs(v0 - volume(f) - carried(f)) < 0.01 * v0)
+    #expect(p.heights.indices.allSatisfy { p.heights[$0] <= max(before[$0], p.limit($0) * Tuning.heapFactor) + 0.01 })   // heap is capped
+    #expect(f.debris[d0...].allSatisfy { $0.pos.x > 430 })   // anything that flies off does so at the run end, not at the cursor
+}
+
+@Test func plowHeapRespectsTheCeilingCap() {
+    let f = lightField()
+    for i in 90..<130 { f.surfaces[0].pile.cap[i] = 3 }
+    let before = f.pile(id: 1)!.heights
+    for _ in 0..<20 { f.sweep(from: CGPoint(x: 300, y: 505), to: CGPoint(x: 330, y: 505), radius: 10, dt: 1 / 20) }
+    let after = f.pile(id: 1)!.heights
+    for i in 90..<130 { #expect(after[i] <= max(before[i], 3) + 0.01) }
 }
 
 /// Timing only (prints µs per call); the pile is restored every call so each pass cuts a fresh pile, as the first frames of a real swipe do.
