@@ -1,6 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Tuning.swift  (every simulation constant, Intensity, SimConfig)
 // Role: `Tuning` = static knobs, all in points (pt), seconds, pt/s, or pt^2 for areas, y-up. Groups: snow field (flakes per 1440x900 screen, backgroundFraction, binWidth = 2 pt per pile bin, slope = max step between neighbouring
 //   bins, dustSlope/dustDepth/speck* = how thin snow stays in mounds, cornerInset), pile caps (maxPileHeight = window tops, groundMaxHeight, moundMax = sanity bound on cursor-pushed heaps), Dock bank (bankSlope/bankShelf/bankLimit/
+//   Drawn contour knobs (crestSlope, crestMaxStep, snowyMin, stretchGap, ownerGapMax, capBlend*, bridge*) and the Pile relax window (relaxReach, relaxPasses, moundReach) are here too.
 //   bankLevelMax, dockGlassOffset: the visible glass is 5 pt BELOW the AX list frame on macOS >= 26 (CG y-down), windowRadius 22 pt on macOS >= 26 else 10, dock* plow constants), drift/peel against front windows, wind, debris/puffs/glints/
 //   drops caps, shed (a moved window sheds snow from shedStart to shedFull pt/s), snowman/ball sizes, pointer push radius, frame-rate floors (calmFloorFPS 30, economy 20), `interpolateCalm` (env NEVE_INTERP=1, default off: measured costlier).
 // `Intensity` (leve, media, forte, nevasca; UserDefaults key "intensity", Int raw value; multiplier on flake count, windGain; titles via tr()). `SimConfig` (Sendable): knobs the APP injects (snowman/ice/director speed, demo flags) so NeveCore never reads env.
@@ -64,6 +65,19 @@ public enum Tuning {
     static let speckFloor: Float = 1.5      // below this a bin neither relaxes nor counts as built up: bare snow stays as isolated specks until later landings stack on it
     static let speckStick: Float = 0.04     // share of a landing that sticks on a completely bare bin (rises to 1 as the bin reaches speckFloor)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
+    static let relaxReach = 8               // Pile.deposit relaxes this many bins either side of the landing (+1 for the trim) ...
+    static let relaxPasses = 6              // ... in this many passes
+    static let moundReach = 9               // a deposit re-checks a pushed heap's allowance this many bins either side
+    // Drawn contour (Render.writePiles, Contour.writeGroups): draw only, never changes heights
+    static let crestSlope: Float = 0.95     // steepest drawn crest step per bin (a gentle ramp: <= 1 pt per 2 pt step)
+    static let crestMaxStep: Float = 2.0    // two owners further apart than this after the lift are not joined
+    static let snowyMin: Float = 0.15       // a shown height above this is snow in the draw (less is bare: it splits stretches)
+    static let stretchGap = 3               // this many bare columns split a drawn stretch
+    static let ownerGapMax = 4              // columns without an owner between two owners (side-by-side windows) that are bridged
+    static let capBlendRoom: Float = 1.5    // packed up to a window's underside: the crest blends onto it over the last 1.5 pt of room ...
+    static let capBlendSpan: Float = 1.45   // ... (the blend is complete 0.05 pt before the cap)
+    static let bridgeReach: Float = 60      // ground bank <-> Dock pile ends within this in x join in one slice ...
+    static let bridgeTol: Float = 2.5       // ... when their tops differ by at most this (the top has up to 1.5 pt of noise)
     /// Window corner radius: ~22pt from macOS 26 (Tahoe) on, ~10pt before.
     public static func windowRadius(for v: OperatingSystemVersion) -> CGFloat { v.majorVersion >= 26 ? 22 : 10 }   // measured: a Finder window's bottom corner on macOS 26
     public static let defaultWindowRadius: CGFloat = 22   // the app passes the OS-dependent value via WindowInfo.radius

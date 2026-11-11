@@ -190,9 +190,9 @@ extension SnowField {
                 var k = b
                 while k < e {
                     var lo = k
-                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
+                    while lo < e && h[lo] <= Tuning.snowyMin && fill(lo) == nil { lo += 1 }
                     var hi = lo, j = lo + 1, gap = 0
-                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
+                    while j < e && gap < Tuning.stretchGap { if h[j] <= Tuning.snowyMin && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
                     k = max(hi + 1, j)
                     if lo < e {
                         lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
@@ -223,10 +223,10 @@ extension SnowField {
         for g in pileEnds where g.id == Tuning.groundID {
             for d in pileEnds where d.id == 0 {
                 // Only the ground stretch nearest the Dock end bridges (the ground run can be split into several snowy stretches).
-                if g.last.x <= d.first.x, d.first.x - g.last.x < 60, abs(d.first.t - g.last.t) <= 2.5,
+                if g.last.x <= d.first.x, d.first.x - g.last.x < Tuning.bridgeReach, abs(d.first.t - g.last.t) <= Tuning.bridgeTol,
                    !pileEnds.contains(where: { ($0.id == Tuning.groundID && $0.last.x > g.last.x && $0.last.x <= d.first.x) || ($0.id == 0 && $0.first.x < d.first.x) }) {
                     put(g.last.x, g.last.t, g.last.b, d.first.x, d.first.t, d.first.b, d.drag)
-                } else if d.last.x <= g.first.x, g.first.x - d.last.x < 60, abs(g.first.t - d.last.t) <= 2.5,
+                } else if d.last.x <= g.first.x, g.first.x - d.last.x < Tuning.bridgeReach, abs(g.first.t - d.last.t) <= Tuning.bridgeTol,
                           !pileEnds.contains(where: { ($0.id == Tuning.groundID && $0.first.x < g.first.x && $0.first.x >= d.last.x) || ($0.id == 0 && $0.last.x > d.last.x) }) {
                     put(d.last.x, d.last.t, d.last.b, g.first.x, g.first.t, g.first.b, d.drag)
                 }
@@ -290,7 +290,7 @@ extension SnowField {
         let sm = (l + 2 * h + r) / 4, cap = s.pile.cap[i], ceiling = s.edgeY + s.pile.base[i] + cap   // infinite where no window is in front
         let plain = min(max(s.edgeY + s.pile.base[i] + sm + jitter(s, i, sm), floor), ceiling)
         guard cap.isFinite else { return plain }
-        let u = min(max((h - (cap - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
+        let u = min(max((h - (cap - Tuning.capBlendRoom)) / Tuning.capBlendSpan, 0), 1), k = u * u * (3 - 2 * u)
         return plain + (ceiling - plain) * k
     }
 }
