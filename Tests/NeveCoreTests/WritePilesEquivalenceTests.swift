@@ -153,8 +153,10 @@ extension SnowField {
                 for c in pileEnds where c.id == l.right && c.first.x >= a.last.x && c.first.x - a.last.x < 8 {
                     // The lower side rises to the other's top over a gentle ramp (the drift reaches the front pile's surface, no cliff).
                     var a = a, c = c
-                    liftSeam(p, &a, &c)
+                    if l.front == 0 { liftSeam(p, &a, &c) }
+                    let n0 = n
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)
+                    if l.front != 0 { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2) }
                 }
             }
         }

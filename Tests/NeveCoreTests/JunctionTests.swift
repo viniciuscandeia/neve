@@ -59,3 +59,18 @@ private func continuous(_ s: [PileSeg], _ a: Float, _ b: Float) -> String? {
     let s = pileSegs(f)
     #expect(continuous(s, 300, 390) == nil, "\(continuous(s, 300, 390) ?? "")")
 }
+
+// On-screen report: a spike at the junction (front 4pt higher) and a 5-8pt vertical step (front 1pt lower, back crest higher). The crest crosses the
+// front window's edge as one smooth curve: at most 1pt per bin (2pt) within 24pt of it, for front tops above and below the back one.
+@Test func crestCrossesTheJunctionSmoothly() {
+    for (top, rounds, mirrored) in [(CGFloat(404), 40, false), (404, 10, false), (399, 40, false), (399, 8, false), (397, 40, false), (394, 40, false), (404, 40, true), (399, 8, true)] {
+        let s = pileSegs(scene(frontTop: top, frontRounds: rounds, mirrored: mirrored))
+        let xj: Float = mirrored ? 400 : 300
+        var prev: Float?
+        for x in stride(from: xj - 24, through: xj + 24, by: 2) {
+            guard let t = topAt(s, x) else { Issue.record("top \(top) rounds \(rounds) mirrored \(mirrored): gap at \(x)"); break }
+            if let p = prev { #expect(abs(t - p) <= 1, "top \(top) rounds \(rounds) mirrored \(mirrored): crest step \(t - p) at \(x)") }
+            prev = t
+        }
+    }
+}

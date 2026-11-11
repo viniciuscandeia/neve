@@ -249,8 +249,10 @@ extension SnowField {
                 for c in pileEnds where c.id == l.right && c.first.x >= a.last.x && c.first.x - a.last.x < 8 {
                     // The lower side rises to the other's top over a gentle ramp (the drift reaches the front pile's surface, no cliff).
                     var a = a, c = c
-                    liftSeam(p, &a, &c)
+                    if l.front == 0 { liftSeam(p, &a, &c) }   // a junction is blended below instead
+                    let n0 = n
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)   // moves with the drag only when both sides do (else it would detach from the side that stays)
+                    if l.front != 0 { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2) }   // overlap junction: one smooth crest
                 }
             }
         }
@@ -351,14 +353,41 @@ extension SnowField {
                 let sm = (l0 + 2 * h + r) / 4, foot = B.edgeY + B.pile.base[k]
                 let t = min(foot + sm + Self.jitter(B, k, sm), foot + B.pile.cap[k])
                 let floor = max(foot, Self.roundedTop(x: binCenter(B.c0 + k), F.frame, radius: F.radius))
-                guard t > floor + 0.15 else { continue }
+                let fb = F.edgeY + F.pile.base[i], fh = F.pile.shown[i]
+                // Only where the back snow shows and the two bodies touch (a lower front pile that does not reach the back snow stays its own body;
+                // on the front's rounded corner the shoulder always sinks into the back snow).
+                guard t > floor + 0.15, fh <= 0.15 || fb + fh >= floor - 1 || F.pile.base[i] < -0.01 else { continue }
                 j.merged[i] = true; j.top[i] = t
-                j.base[i] = F.pile.shown[i] > 0.15 ? min(F.edgeY + F.pile.base[i] - 1, floor - 1) : floor - 1
+                j.base[i] = fh > 0.15 ? min(fb - 1, floor - 1) : floor - 1
+                if let r = skip[bid]?.last, r.upperBound == k { skip[bid]![skip[bid]!.count - 1] = r.lowerBound..<(k + 1) } else { skip[bid, default: []].append(k..<(k + 1)) }
             }
             front[l.front] = j
-            skip[bid, default: []].append(ka..<kb)
         }
         return (front, skip)
+    }
+
+    /// Overlap junction at x `xj`: the crests of both stretches (and the bridge) within `w` of it are replaced by a smoothstep blend between the
+    /// crest heights at xj - w and xj + w (a saddle, no step or spike where the two piles meet). Draw-only; never below a slice's base.
+    func blendCrest(_ p: UnsafeMutablePointer<PileSeg>, _ rs: [Range<Int>], at xj: Float, w: Float = 16) {
+        func at(_ x: Float) -> Float? {   // crest height over x (highest covering slice), else the nearest end on that side
+            var best: Float?, near: (d: Float, t: Float)?
+            for r in rs { for i in r {
+                let s = p[i]
+                if s.x0 <= x && x <= s.x1 { let t = s.top0 + (s.top1 - s.top0) * (x - s.x0) / max(s.x1 - s.x0, 1e-3); best = max(best ?? t, t) }
+                for (ex, et) in [(s.x0, s.top0), (s.x1, s.top1)] where (ex - xj) * (x - xj) > 0 { let d = abs(ex - x); if d < near?.d ?? .infinity { near = (d, et) } }
+            } }
+            return best ?? near?.t
+        }
+        guard let tl = at(xj - w), let tr = at(xj + w) else { return }
+        func f(_ x: Float, _ t: Float, _ b: Float) -> Float {
+            let u = (x - (xj - w)) / (2 * w)
+            guard u > 0, u < 1 else { return t }
+            return max(tl + (tr - tl) * u * u * (3 - 2 * u), b)
+        }
+        for r in rs { for i in r {
+            p[i].top0 = f(p[i].x0, p[i].top0, p[i].base0); p[i].top1 = f(p[i].x1, p[i].top1, p[i].base1)
+            p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3); p[i].n0 = p[i].slope; p[i].n1 = p[i].slope
+        } }
     }
 
     /// The lower side of a seam rises toward the other's top (no cliff), but only by what the physics backs: at most 6pt (a drift's usual

@@ -84,14 +84,14 @@ struct SeamLink {
 
 extension SnowField {
     /// Overlap: a front window hiding the back one with its top 1...maxDrift above joins at its side edge(s) (the back snow drifts up
-    /// to the front top). Overlap with the tops within 1pt: a junction without support (the front end's shoulder is hidden in the drawing instead,
+    /// to the front top). Overlap with the front top 1pt above to maxPileHeight/2 below: a junction without support (the front end's shoulder is hidden in the drawing instead,
     /// see `junctions`). Side by side: gap <= 6 and tops within 4 join both ends. Rects are front to back.
     func computeSeams(rects: [CGRect], windows: [WindowInfo]) -> [SeamLink] {
         var out: [SeamLink] = []
         for i in rects.indices where windows[i].number != 0 && !windows[i].occluderOnly {
             for k in (i + 1)..<max(rects.count, i + 1) where windows[k].number != 0 && !windows[k].occluderOnly {
                 let f = rects[i], b = rects[k], step = f.maxY - b.maxY
-                if step > 1 || (step >= -1 && f.minX < b.maxX - 2 && f.maxX > b.minX + 2), step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
+                if step > 1 || (step >= -CGFloat(Tuning.maxPileHeight) / 2 && f.minX < b.maxX - 2 && f.maxX > b.minX + 2), step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
                     let sup = step > 1, fid = windows[i].number
                     if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: windows[k].number, right: fid, rightSupported: sup, front: fid)) }
                     if f.maxX < b.maxX - 2, f.maxX > b.minX + 2 { out.append(SeamLink(left: fid, right: windows[k].number, leftSupported: sup, front: fid)) }
