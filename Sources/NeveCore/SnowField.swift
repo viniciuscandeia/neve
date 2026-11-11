@@ -13,6 +13,7 @@ public struct BusyReasons: OptionSet, Sendable {
 /// A window's snow (and freeze progress) set aside while its window is on another Space.
 struct Stashed {
     var heights: [Float], stamp: Double
+    var mound: [Float] = []            // a pushed heap's extra allowance (Pile.mound), so it is not trimmed on return
     var ice: WinIce? = nil
     var overhang: [Int: Float] = [:]   // snow past the screen edge, by column relative to the old surface's c0
     var topY: Float = 0                // ... and its top edge (the window may return at another height)
@@ -57,6 +58,7 @@ public final class SnowField {
     var entries: [Entry] = []
     var lastWindows: [WindowInfo] = []
     var dockCarryUntil = 0.0   // the carried Dock pile only applies to a rebuild within ~2 s of the resize (an auto-hidden Dock showing up later starts fresh)
+    var dockMoundCarry: [Float] = []   // ... and its pushed-heap allowance
     var dockCarry: [Float] = []   // Resize.swift: Dock pile heights by (new) global column, waiting for the Dock surface to be rebuilt
     var dockTarget: CGRect?, dockCur: CGRect?, dockPrev: CGRect?   // DockPush.swift: read frame, animated frame, frame before this rebuild
     var dockSlump: Float = 0

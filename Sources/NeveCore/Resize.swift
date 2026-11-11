@@ -27,9 +27,9 @@ extension SnowField {
     public func resize(size s: CGSize, origin o: CGPoint, groundY g: CGFloat, visibleTop t: CGFloat) {
         let newSize = SIMD2(Float(s.width), Float(s.height))
         stashAway(surfaces.filter { $0.id > 0 })
-        let oldGround = surfaces.first { $0.id == Tuning.groundID }?.pile.heights ?? []
-        var oldDock = [Float](repeating: 0, count: numCols)   // the Dock pile by global column, carried like the ground (applied when its surface is rebuilt)
-        if let d = surfaces.first(where: { $0.id == 0 }) { for (k, h) in d.pile.heights.enumerated() where d.c0 + k >= 0 && d.c0 + k < numCols { oldDock[d.c0 + k] = h } }
+        let oldGround = surfaces.first { $0.id == Tuning.groundID }?.pile.heights ?? [], oldGroundMound = surfaces.first { $0.id == Tuning.groundID }?.pile.mound ?? []
+        var oldDock = [Float](repeating: 0, count: numCols), oldDockMound = oldDock   // the Dock pile by global column, carried like the ground (applied when its surface is rebuilt)
+        if let d = surfaces.first(where: { $0.id == 0 }) { for (k, h) in d.pile.heights.enumerated() where d.c0 + k >= 0 && d.c0 + k < numCols { oldDock[d.c0 + k] = h; if !d.pile.mound.isEmpty { oldDockMound[d.c0 + k] = d.pile.mound[k] } } }
         let k = size.x > 0 ? newSize.x / size.x : 1
         size = newSize; origin = o; groundY = Float(g); visibleTop = Float(t)
         numCols = max(1, Int((newSize.x / Tuning.binWidth).rounded(.up)))
@@ -55,9 +55,11 @@ extension SnowField {
         var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: -1e5, x1: 2e5 + newSize.x)
         pile.maxHeight = Tuning.groundMaxHeight
         pile.heights = remapHeights(oldGround, to: numCols)
+        if oldGroundMound.contains(where: { $0 > 0 }) { pile.mound = remapHeights(oldGroundMound, to: numCols) }
         surfaces = [Surface(id: Tuning.groundID, frame: CGRect(x: -1e5, y: -1, width: 2e5 + CGFloat(newSize.x), height: 1), edgeY: 0, c0: 0, anchor: 0, pile: pile)]
         index = [Tuning.groundID: 0]
         dockCarryUntil = time + 2; dockCarry = oldDock.contains { $0 > 0 } ? remapHeights(oldDock, to: numCols) : []
+        dockMoundCarry = oldDockMound.contains { $0 > 0 } ? remapHeights(oldDockMound, to: numCols) : []
         seams = []
         lastWindows = []; boundsDirty = true
         buildColumns()

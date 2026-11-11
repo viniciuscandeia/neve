@@ -264,3 +264,46 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
     for i in 1..<p.heights.count where p.visible[i] && p.visible[i - 1] && abs(p.base[i] - p.base[i - 1]) < 0.5 {   // rounded corners drop the base: not the heap's slope
         #expect(abs(p.base[i] + p.heights[i] - p.base[i - 1] - p.heights[i - 1]) <= Tuning.slope * 2 + Tuning.dustSlope + 1) }   // a mound, not a spike (surface step within the snow's angle of repose)
 }
+
+// MARK: heap persistence (Space round trip, resize, ordinary rebuilds) and drawing
+
+private func heapField() -> SnowField {
+    let f = pileField()
+    for k in 0..<80 { f.sweep(from: CGPoint(x: 230 + CGFloat(k % 40) * 3, y: 505), to: CGPoint(x: 250 + CGFloat(k % 40) * 3, y: 505), radius: 10, dt: 1 / 30) }
+    return f
+}
+private func heapPeak(_ f: SnowField) -> Float { f.pile(id: 1)!.heights.max() ?? 0 }
+
+@Test func heapSurvivesASpaceRoundTrip() {
+    let f = heapField(); let h = heapPeak(f)
+    #expect(h > Tuning.maxPileHeight + 2)
+    f.dropPiles(); f.markStale()
+    f.update(windows: [], now: 1)
+    f.update(windows: [win(1, 200, 300, 300, 200)], now: 2)
+    #expect(heapPeak(f) >= h - 0.5)
+}
+
+@Test func heapSurvivesAResize() {
+    let f = heapField(); let h = heapPeak(f)
+    f.resize(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780)
+    f.update(windows: [win(1, 200, 300, 300, 200)], now: 1)
+    #expect(heapPeak(f) >= h - 0.5)
+}
+
+@Test func heapSurvivesMovingItsWindowAndAnotherAppearing() {
+    let f = heapField(); let h = heapPeak(f)
+    f.update(windows: [win(1, 200, 300, 300, 200), win(2, 700, 200, 200, 100)], now: 1)
+    #expect(heapPeak(f) >= h - 0.5)
+    f.update(windows: [win(1, 230, 310, 300, 200), win(2, 700, 200, 200, 100)], now: 2)
+    #expect(heapPeak(f) >= h - 0.5)
+}
+
+@Test func aTallHeapIsDrawnAtItsFullHeight() {
+    let f = pileField()
+    let si = f.index[1]!, b = f.surfaces[si].pile.heights.count / 2
+    f.surfaces[si].pile.mound = [Float](repeating: 0, count: f.surfaces[si].pile.heights.count)
+    for k in (b - 6)...(b + 6) { f.surfaces[si].pile.heights[k] = 150; f.surfaces[si].pile.mound[k] = 150 }
+    f.pilesDirty = true
+    let top = pileSegs(f).filter { $0.x0 > 200 && $0.x1 < 500 }.map { max($0.top0, $0.top1) }.max() ?? 0
+    #expect(top - f.surfaces[si].edgeY > 140)
+}

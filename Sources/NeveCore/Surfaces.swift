@@ -150,7 +150,7 @@ extension SnowField {
         for s in gone {
             let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }
             guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty else { continue }
-            stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, ice: iceWin.first { $0.id == s.id },
+            stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, mound: s.pile.mound, ice: iceWin.first { $0.id == s.id },
                                   overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
                                   topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
         }
@@ -367,6 +367,7 @@ extension SnowField {
         else if let e = stash.removeValue(forKey: id) {   // back from another Space: same width -> same snow; always what stood on it (a different width / a long absence only loses the snow)
             stashBack.append((dx: Float(frame.minX) - e.minX, dy: Float(frame.maxY) - e.topY, x: Float(frame.minX)...Float(frame.maxX), e: e))
             if clock - e.stamp < 1800, e.heights.count == pile.heights.count {
+            if e.mound.count == pile.heights.count { pile.mound = e.mound }
             for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
             pile.shown = pile.heights
             let u0 = Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)), u1 = Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1
@@ -380,10 +381,11 @@ extension SnowField {
             }
         }
         else if id == 0, !dockCarry.isEmpty, time <= dockCarryUntil {   // the Dock pile carried across a screen resize
+            if dockMoundCarry.count == dockCarry.count { pile.mound = (0..<pile.heights.count).map { c0 + $0 >= 0 && c0 + $0 < dockCarry.count ? dockMoundCarry[c0 + $0] : 0 } }
             for b in pile.heights.indices where c0 + b >= 0 && c0 + b < dockCarry.count { pile.heights[b] = pile.visible[b] ? min(dockCarry[c0 + b], pile.limit(b)) : dockCarry[c0 + b] }
             pile.shown = pile.heights
         }
-        if id == 0 { dockCarry = [] }
+        if id == 0 { dockCarry = []; dockMoundCarry = [] }
         return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel, radius: Float(min(radius, frame.width / 2, frame.height / 2)),
                        cover: rects[0..<front].filter { $0.intersects(frame) })
     }
