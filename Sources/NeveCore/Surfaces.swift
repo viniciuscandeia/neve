@@ -282,20 +282,20 @@ extension SnowField {
         }
         pile.round(radius: Float(min(radius, frame.width / 2, frame.height / 2)), c0: c0, minX: Float(frame.minX), maxX: Float(frame.maxX))
         let y = CGFloat(edgeY) + 1
-        var hideTop = [Float](repeating: 0, count: c1 - c0)   // top of the window hiding each hidden bin
+        var hideTop = [Float](repeating: 0, count: c1 - c0), hideRadius = hideTop   // top (and corner radius) of the window hiding each hidden bin
         for b in 0..<(c1 - c0) {
             let x = CGFloat(binCenter(c0 + b))
             var hidden = false
             var ceiling = Float.infinity   // lowest underside of a front window above the edge in this column
             for j in 0..<front {
                 let r = rects[j]
-                if r.contains(CGPoint(x: x, y: y)) { hidden = true; hideTop[b] = Float(r.maxY); break }
+                if r.contains(CGPoint(x: x, y: y)) { hidden = true; hideTop[b] = Float(r.maxY); hideRadius[b] = Float(min(radii[j], r.width / 2, r.height / 2)); break }
                 if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radii[j])) }   // the front window's own radius (the Dock bar's is larger)
             }
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
         }
-        pile.addWalls(hideTop: hideTop, edgeY: edgeY)
+        pile.addWalls(hideTop: hideTop, hideRadius: hideRadius, edgeY: edgeY)
         var vel = SIMD2<Float>.zero
         if let k = old.firstIndex(where: { $0.id == id }) {
             let prev = old.swapRemove(k)
@@ -347,7 +347,7 @@ extension SnowField {
                 var kept = prev.pile
                 kept.visible = pile.visible
                 kept.cap = pile.cap
-                kept.base = pile.base; kept.boost = pile.boost; kept.walls = pile.walls
+                kept.base = pile.base; kept.boost = pile.boost; kept.walls = pile.walls; kept.wallInfo = pile.wallInfo
                 kept.supportL = pile.supportL; kept.supportR = pile.supportR
                 for b in kept.heights.indices where pile.visible[b] {   // hidden bins stay frozen; uncovered ones shed what no longer fits
                     let h = kept.heights[b], keep = min(h, kept.cap[b])

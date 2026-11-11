@@ -87,7 +87,8 @@ extension SnowField {
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
                 // Packed up to a window's underside: drawn exactly at it (no smoothing / noise pulling it down), so the snow hugs the window's rounded corner.
                 // Blended over the last 1.5pt (no pop when a column fills up to the window).
-                let plain = min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
+                let smf = s.pile.fillet(i, sm)
+                let plain = min(max(edge + base[i] + smf + jitter(i, smf), fill(i) ?? -.infinity), ceiling(i))
                 guard s.pile.cap[i].isFinite else { return plain }
                 let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
                 return plain + (ceiling(i) - plain) * k
@@ -125,6 +126,8 @@ extension SnowField {
                             }
                         }
                         pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
+                        if hi == e - 1, e < cnt, case let pts = wallTail(s, bin: e - 1, side: 1, from: prev, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = prev; for c in pts { put(q.x, q.t, q.b, c.x, c.t, c.b, drag, inset: drop); q = c } }
+                        if lo == b, b > 0, case let pts = wallTail(s, bin: b, side: -1, from: first, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = first; for c in pts { put(c.x, c.t, c.b, q.x, q.t, q.b, drag, inset: drop); q = c } }
                     }
                 }
                 b = e

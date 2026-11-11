@@ -5,7 +5,7 @@
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
-//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`).
+//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`). `Pile.fillet` lifts the crest beside a wall (a higher front window in front) and `wallTail` draws the back run on into the front corner cut-out (clipped by the shader inside the outline): no vertical cut.
 //   `blendCrest` smoothsteps the crest over half-width min(80, max(16, 6 * |crest difference|)) pt (the cap keeps a tall heap from being flattened), never draws a bin that holds a pushed heap (`moundAt`) lower than itself, and is skipped while only one side of the junction is being dragged.
 // Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
 // Gotchas: WritePilesEquivalenceTests (and WritePilesCompareTests) mirror / compare writePiles - when you change its output, update them in the SAME change. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
@@ -187,7 +187,8 @@ extension SnowField {
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
                 // Packed up to a window's underside: drawn exactly at it (no smoothing / noise pulling it down), so the snow hugs the window's rounded corner.
                 // Blended over the last 1.5pt (no pop when a column fills up to the window).
-                let plain = min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
+                let smf = s.pile.fillet(i, sm)   // draw-only concave lift toward a wall's bank crest (no vertical cut against a higher front window)
+                let plain = min(max(edge + base[i] + smf + jitter(i, smf), fill(i) ?? -.infinity), ceiling(i))
                 guard s.pile.cap[i].isFinite else { return plain }
                 let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
                 return plain + (ceiling(i) - plain) * k
@@ -227,6 +228,8 @@ extension SnowField {
                             }
                         }
                         pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
+                        if hi == e - 1, e < cnt, case let pts = wallTail(s, bin: e - 1, side: 1, from: prev, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = prev; for c in pts { put(q.x, q.t, q.b, c.x, c.t, c.b, drag, inset: drop); q = c } }
+                        if lo == b, b > 0, case let pts = wallTail(s, bin: b, side: -1, from: first, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = first; for c in pts { put(c.x, c.t, c.b, q.x, q.t, q.b, drag, inset: drop); q = c } }
                     }
                 }
             }
@@ -301,6 +304,23 @@ extension SnowField {
         }
         if let timer { let tp3 = timer(); pileSeconds.ease += tp1 - tp0; pileSeconds.contour += tp2 - tp1; pileSeconds.join += tp3 - tp2 }
         return n
+    }
+
+    /// Draw-only tail of a back pile's run into the hidden bins beside a wall (a higher front window in front): flat from the run end, easing to the front's top over its corner
+    /// radius, so the corner's cut-out above the rounded outline is filled with snow and the crest never ends in a vertical cut. Everything inside the front outline is clipped by the shader (z).
+    /// `from` = the run end's point, `bin` = that end bin, `side` +1 (hidden bins to the right) / -1; empty when there is no wall or a junction owns those bins. Outward from the run end.
+    func wallTail(_ s: Surface, bin: Int, side: Int, from: (x: Float, t: Float, b: Float), skip: [Range<Int>]) -> [(x: Float, t: Float, b: Float)] {
+        guard s.id != Tuning.groundID, s.id != 0, s.pile.wallInfo.count == s.pile.walls.count else { return [] }
+        let bw = Tuning.binWidth, wx = Float(s.c0 + bin + (side > 0 ? 1 : 0)) * bw
+        guard let i = s.pile.walls.firstIndex(of: wx) else { return [] }
+        let info = s.pile.wallInfo[i], cnt = s.pile.visible.count
+        var out: [(x: Float, t: Float, b: Float)] = []
+        for j in 1...(Int((info.radius / bw).rounded(.up)) + 1) {
+            let k = bin + side * j
+            guard k >= 0, k < cnt, !s.pile.visible[k], !skip.contains(where: { $0.contains(k) }) else { break }
+            out.append((from.x + Float(side * j) * bw, from.t + (min(from.t, info.top) - from.t) * min(1, Float(j) * bw / max(info.radius, bw)), from.b))
+        }
+        return out
     }
 
     /// Stable irregularity of a pile top keyed on the window-relative column (travels with the pile), interpolated between every 4th column.

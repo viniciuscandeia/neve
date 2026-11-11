@@ -7,7 +7,7 @@
 //   `limit(b) = min(rawLimit(b) + mound, cap)`; `rawLimit` = (maxes or maxHeight) * wobble + boost, tapered to 0 over `inset` from x0 / x1 unless supportL / supportR (end faces a drift / seam: no taper, dip or spill).
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax moves half the
 //   excess to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
-//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts;
+//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts (limit rises to the front top at the wall for step <= maxDrift, also against the wobble) and records `wallInfo`; fillet(b:h:) = draw-only concave lift beside a wall;
 //   visibleRuns() = visible bin ranges.
 // Pile is a struct: avoid copying whole arrays in hot code (mutate surfaces[si].pile in place, see Surfaces.sweep). Callers: Surfaces.swift (build / deposit / shed), SurfaceMap.swift, Render.swift (writePiles reads it), and read or mutated directly by
 //   Avalanche, Frost, Melt, Walk, Snowball, Figures*. Tests: PileLogicTests, SurfaceMapTests, PhysicsTests and others. Changing slope / limit math changes visuals everywhere and many tuned tests.
@@ -32,6 +32,7 @@ public struct Pile {
     var wobble: [Float] = []     // per-bin multiplier on the ceiling (long waves along the pile, see setWobble); empty = 1
     var boost: [Float] = []      // extra height limit per bin: snow banked against a front window (empty = none)
     var walls: [Float] = []      // x of each wall (visible bin next to a hidden one), global
+    var wallInfo: [WallInfo] = []   // parallel to `walls`: what the drawn fillet / corner tail need (draw only)
     var supportL = false         // the pile end faces a drift (SeamLink): no corner dip, taper or spill there
     var supportR = false
     var mound: [Float] = []      // per bin: extra height allowed by snow the cursor pushed into a heap (only `cap` bounds it); empty = none
@@ -71,15 +72,34 @@ public struct Pile {
         }
     }
 
+    /// Per wall: the bank crest height over the edge (the front top for step <= maxDrift, capped beyond), the front window's top (absolute y) and its corner radius.
+    struct WallInfo { var peak: Float, top: Float, radius: Float }
+
+    /// Draw only: the crest `h` (smoothed height over the edge) of a visible bin within `wallFilletWidth` (more when the lift is tall, <= 40) of a wall is lifted on a concave curve to the wall's bank crest,
+    /// so thin or young snow never ends in a vertical cut against a higher front window. Never lowers; fades out on bare bins.
+    func fillet(_ b: Int, _ h: Float) -> Float {
+        guard !walls.isEmpty, h > 0.15 else { return h }
+        let x = binCenter(c0 + b), g = min(1, h / 3)
+        var out = h
+        for (i, w) in walls.enumerated() {
+            let u = 1 - abs(x - w) / min(max(Tuning.wallFilletWidth, 2 * (wallInfo[i].peak - h)), 40)   // wider when the lift is tall: the slope stays <= 1
+            if u > 0 { out = max(out, h + (wallInfo[i].peak - h) * u * u * g) }
+        }
+        return out
+    }
+
     /// Snow banks against the front windows hiding the neighbours of visible bins (walls): the limit rises toward the wall
     /// to reach the front top (step <= maxDrift), a capped drift (<= driftFar) or a small ramp, sloping off over >= driftMinWidth.
-    mutating func addWalls(hideTop: [Float], edgeY: Float) {
+    mutating func addWalls(hideTop: [Float], hideRadius: [Float], edgeY: Float) {
         let n = heights.count, bw = Tuning.binWidth
-        func wall(_ top: Float, _ wx: Float, _ self_: inout Pile) {
-            let step = top - edgeY
-            let peak = step <= Tuning.maxDrift ? step : step <= Tuning.driftFar ? Tuning.maxDrift : self_.maxHeight + Tuning.driftFarRamp
-            let amount = peak - self_.maxHeight
+        func wall(_ k0: Int, _ wx: Float, _ self_: inout Pile) {
+            let top = hideTop[k0], step = top - edgeY
+            let peak = step <= Tuning.maxDrift ? max(step, 0) : step <= Tuning.driftFar ? Tuning.maxDrift : self_.maxHeight + Tuning.driftFarRamp
             self_.walls.append(wx)
+            self_.wallInfo.append(WallInfo(peak: peak, top: top, radius: hideRadius[k0]))
+            // The ceiling (wavy: down to ~85 % of maxHeight) must reach the peak AT the wall, so the bank limit is what is missing there.
+            let wk = min(max(Int((wx / bw).rounded()) - self_.c0, 0), n - 1)
+            let amount = peak - self_.maxHeight * (self_.wobble.isEmpty ? 1 : self_.wobble[wk])
             guard amount > 0 else { return }
             let width = max(Tuning.driftMinWidth, amount / Tuning.driftSlope)
             if self_.boost.isEmpty { self_.boost = [Float](repeating: 0, count: n) }
@@ -89,8 +109,8 @@ public struct Pile {
             }
         }
         for b in 0..<n where visible[b] {
-            if b > 0, !visible[b - 1] { wall(hideTop[b - 1], Float(c0 + b) * bw, &self) }
-            if b + 1 < n, !visible[b + 1] { wall(hideTop[b + 1], Float(c0 + b + 1) * bw, &self) }
+            if b > 0, !visible[b - 1] { wall(b - 1, Float(c0 + b) * bw, &self) }
+            if b + 1 < n, !visible[b + 1] { wall(b + 1, Float(c0 + b + 1) * bw, &self) }
         }
     }
 
