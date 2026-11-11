@@ -1,9 +1,9 @@
 // AGENT HEADER - Sources/NeveCore/SurfaceMap.swift  (Surface record, column index, seams between window piles)
-// Role: `Surface` (id, unclipped local frame, edgeY = top edge height, c0 = first GLOBAL column, anchor, pile, vel, radius, cover = rects of windows in front, runs = visible local-bin ranges) and `Entry`.
+// Role: `Surface` (id: window number, 0 = Dock bar, Tuning.groundID = screen bottom; unclipped local frame, edgeY = top edge height, c0 = first GLOBAL column, anchor, pile, vel, radius, cover = rects of windows in front, runs = visible local-bin ranges) and `Entry`.
 //   The per-column index is CSR: `offsets[col]..<offsets[col+1]` into `entries` (surface index + edgeY, ordered front to back per column), rebuilt by buildColumns() whenever surfaces change; flakes use it to find what they land on.
 //   Helpers: column(x), edgeVisible, surface(id:), pile(id:), meanHeight(si:col:span:), visibleRun(si:bin:) (binary search).
 //   `SeamLink` + computeSeams(rects:windows:): windows whose piles read as ONE snowbank (side by side gap <= 6 pt with tops within 4, or overlapped with the front top 1...maxDrift above / up to maxPileHeight/2 below). `*Supported` ends
-//   hold snow against the neighbour (no dip, taper or spill); `front` = id of the front window for overlap junctions (0 = side by side). Render.writePiles `junctions()` draws the merged crest (saddle over +-16 pt).
+//   hold snow against the neighbour (no dip, taper or spill); `front` = id of the front window for overlap junctions (0 = side by side). Render.writePiles `junctions()` / `blendCrest` draw the merged crest (smoothstep saddle, half-width max(16, 6 * crest difference) pt).
 // Rects are front to back; coordinates local AppKit y-up pt. Callers: Surfaces.swift (rebuild), Render.swift, Flakes.swift (landing), Walk/Figures (standing surfaces). Tests: SurfaceMapTests, JunctionTests, LowSeamTests.
 
 import CoreGraphics

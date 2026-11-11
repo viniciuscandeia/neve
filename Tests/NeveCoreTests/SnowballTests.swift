@@ -1,4 +1,7 @@
-// AGENT HEADER - Tests/NeveCoreTests/SnowballTests.swift  (Snowball.swift: scoop takes volume from the pile, rolling grows the ball and lowers the pile, carrying through the air does not grow, dropped ball falls and rests, smaller on bigger stacks, off-centre rolls off, bigger on smaller does not stack. Pile = ground at height h over x 100...800.)
+// AGENT HEADER - Tests/NeveCoreTests/SnowballTests.swift  (Snowball.swift; ground pile at height h over x 100...800)
+// scoop takes volume from the pile (no snow = no ball), rolling grows the ball (<= ballMax) and lowers the pile, carrying through the air does not grow, a dropped ball falls and rests, a smaller ball stacks on a bigger one (off-centre rolls off, bigger on
+//   smaller does not stack), three decreasing balls promote to a user figure (two do not; a fourth cannot join), balls ride a slowly moving window / fall when it closes or moves fast, a cursor sweep breaks balls and a stacked snowman whole, `clear()`
+//   removes balls and the oldest melts beyond Tuning.maxBalls, hitTest / pickSnowball, a ball landing while the drawn pile is still easing does not snap.
 
 import CoreGraphics
 import Testing

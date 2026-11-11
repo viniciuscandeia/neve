@@ -1,6 +1,6 @@
 // AGENT HEADER - Tests/NeveCoreTests/ActorFixesTests.swift  (regression tests from the actor review; Swift Testing, `@testable import NeveCore`, seeded, no I/O)
 // Covers: ending fights leaves no frozen fighters, covered snowmen fade out/in, headless auto snowman collapses so a new one builds, rabbit / robin hops ride a moving window, visitors fade instead of vanishing, Space stash keeps user snowmen / balls / gifts,
-// fights do not cross hidden gaps, carrot fetch stays on its stretch, promoted stacks ease details in, shots follow moved targets and splats outlive their figure. Helpers: FigureHelpers.swift. Run: Tests/run.sh [-r] ActorFixes.
+// fights do not cross hidden gaps, carrot fetch stays on its stretch, promoted stacks ease details in, shots follow moved targets and splats outlive their figure, facing turns over a few frames. Helpers: FigureHelpers.swift (stand / standAuto / advance) and makeField / win / pileUp in SurfaceMapTests.swift. Run: Tests/run.sh [-r] ActorFixes.
 
 import CoreGraphics
 import Testing

@@ -1,5 +1,7 @@
-// AGENT HEADER - Tests/NeveCoreTests/FlakeMotionTests.swift  (Flakes.swift motion)
-// Determinism per seed, terminal speed grows with size, smooth wind response, pointerPush off ignores the cursor, the NEVE_PERF `timer` hook changes nothing, `.near` out-of-focus flakes (~2 % of sky, never deposit, off in calm/economy/low power, written as kind 6 soft discs), Reduce Motion edge calming.
+// AGENT HEADER - Tests/NeveCoreTests/FlakeMotionTests.swift  (Flakes.swift motion, spawn and landing)
+// Determinism per seed, terminal speed grows with size, smooth wind response (`wv` never snaps), pointerPush off ignores the cursor, the NEVE_PERF `timer` hook changes nothing, `.near` out-of-focus flakes (~2 % of sky, sizes 8-13, never deposit, off in calm /
+//   economy / low power, written as Instance kind 6 soft discs), Reduce Motion `edgeCalm` (outer 12 % tapers to 0.3; fewer spawns and slower fall at the edges), sustained wind (`windSlow`) piles more snow leeward in `tryLand`, and
+//   `writeInstances(lag:)` (0 = unchanged, lag backs flakes off along their velocity; `FrameRate.interpAlpha`).
 // Benchmark `CalmBench` (stepFlakes vs writeInstances per frame, Nevasca) runs only with NEVE_BENCH=1: `NEVE_BENCH=1 Tests/run.sh -r CalmBench` (used to decide Tuning.interpolateCalm).
 
 import Foundation

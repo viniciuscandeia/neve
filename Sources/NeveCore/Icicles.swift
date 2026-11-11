@@ -1,8 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Icicles.swift  (stalactites under frozen windows)
-// Role: `Icicle` (window-relative: win id, slot, dx from the left edge, len/maxLen, width, tilt, w0 = width at spawn so a resize breaks it) in `SnowField.icicles` (<= 10 per window, 40 per screen), `stepIce` (growth, break on fast window motion
-//   via icicleBreakSpeed = shedStart/2, vanish), `breakIcicle` (2-3 thin slabs; Reduce Motion fades instead; muted = gone), `breakIcicles` (cursor sweep a->b shatters them), `writeIciclePrims` (blue edge triangle + pale fill + white highlight,
-//   after the frost lip; `shift` moves ones on the dragged window), `hash01` (deterministic per-key noise, independent of the sim RNG). Colours from Palette.ice/iceEdge/iceShine. Uses `fxRng`.
-// Callers: Frost.swift (spawn), Surfaces.sweep (breaking), Overlay.writePrims (draw). Tests: IceAvalancheTests, FrostTests.
+// Role: `Icicle` (window-relative: win id, slot, dx from the left edge, len/maxLen, width, tilt, w0 = window width at spawn so a resize breaks it) in `SnowField.icicles` (<= 10 per window, 40 per screen, spawned by Frost.swift), `stepIce`
+//   (runs in SnowField.step after stepFlakes / stepPeel: calls stepFrost, grows icicles at grow * config.iceSpeed (x2 Nevasca, none while the anchor is hidden by a front window), and scanFrost once a second; an icicle breaks when its window
+//   closes, resizes, moves faster than icicleBreakSpeed = shedStart/2, or is no longer frozen), `breakIcicle` (2-3 thin slabs via `put`; calm / melting: it fades out as `dying` instead; muted by `silent` = just gone), `breakIcicles` (cursor sweep
+//   a->b, called from Surfaces.swift's sweep, skips the dragged window), `writeIciclePrims` (writes the frost lip first, then blue edge triangle + pale fill + white highlight; `shift` moves ones on the dragged window; skips ones hidden by a window in
+//   front), `hash01` (deterministic per-key noise via SplitMix64, independent of the sim RNG, also used by Frost / Melt). Colours from Palette.ice / iceEdge / iceShine. Uses `fxRng`.
+// Draw caller: Sources/Neve/Overlay.swift. Tests: IceAvalancheTests, FrostTests.
 
 import CoreGraphics
 import Foundation

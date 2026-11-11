@@ -1,5 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/IceAvalancheTests.swift  (Icicles + Avalanche)
-// Three windows with piles frozen after ~3 min of snowfall: a fast drag shatters icicles into slab debris, a slow move carries them, resize breaks them, Reduce Motion fades them without debris; avalanche from a top window feeds the lower pile, cascade depth is bounded, one chain at a time with cooldown, none under Reduce Motion, volume conserved.
+// Icicles (3 windows 100/400/700 x, piles frozen after ~200 s at 4 fps): a fast drag shatters them into slab debris, a slow move carries them, a resize breaks them, Reduce Motion fades them without debris, breaking one does not bump pileVersion.
+// Avalanche (`stackedField`: a top window above a wide full one): `triggerAvalanche` feeds the lower pile, `chain.cascades` <= 3, one chain at a time with a 60 s cooldown, none under Reduce Motion, volume conserved (removed == `chain.released`,
+//   carried by debris `vol`). Uses `chain` internals (started / released / cascades).
 
 import CoreGraphics
 import Testing

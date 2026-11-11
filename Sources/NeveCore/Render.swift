@@ -1,13 +1,14 @@
 // AGENT HEADER - Sources/NeveCore/Render.swift  (CPU side of the GPU buffers: Instance, Prim, PrimWriter, PileSeg, writeInstances, writePiles)
-// Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation, so the renderer (Sources/Neve/Overlay.swift) just writes into shared MTLBuffers.
-//   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake .. 6 out-of-focus disc; chunk profile packed in kind>>8), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad) + `PrimWriter` (appends into a caller-owned
-//   buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (44 B, one per bin pair of a snowy run), `JunctionDraw`, `PileEnd`.
-//   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops, glints, debris); `lag` only for Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
-//   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: Tuning.pileEase 0.25 s; drop 0.05 s, small drops 0.12 s;
-//   Reduce Motion snaps), draws each visible run (top = neighbour blur + stable per-column noise + front-window ceiling clamp), bridges ground bank <-> Dock pile, joins n0/n1 normals, and draws seams / junctions between overlapping windows.
-// Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt. Buffers are 3-slot rings in the overlay.
-// Gotchas: Tests/NeveCoreTests/WritePilesEquivalenceTests (and WritePilesCompareTests) mirror/compare writePiles - when you change its output, update them in the SAME change. Hot path: writePiles/writeInstances run every frame the
-//   picture changes; writePiles splits time into pileSeconds ease/contour/join when `timer` is set (NEVE_PERF).
+// Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
+//   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
+//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (52 B, one per bin pair of a snowy run), `JunctionDraw`, `PileEnd`.
+//   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
+//   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
+//   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
+//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`).
+// Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
+// Gotchas: WritePilesEquivalenceTests (and WritePilesCompareTests) mirror / compare writePiles - when you change its output, update them in the SAME change. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
+//   stays testable. Hot path: writePiles / writeInstances run every frame the picture changes; writePiles splits time into pileSeconds ease / contour / join when `timer` is set (NEVE_PERF).
 
 import CoreGraphics
 import Foundation

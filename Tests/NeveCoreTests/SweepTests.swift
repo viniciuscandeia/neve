@@ -1,5 +1,8 @@
 // AGENT HEADER - Tests/NeveCoreTests/SweepTests.swift  (cursor sweep, Surfaces.sweep + pointer swirl)
-// Window top y = 500, x 200...500, piles built by direct deposits: a sweep clears only its path and throws debris along the cursor direction, a sweep above the pile removes nothing, the dragged window's pile is not swept, falling flakes part around a still pointer and a distant pointer does nothing; "soft dent": a cursor driven at a given speed at 60 fps leaves a dent whose depth grows with speed (Tuning.plowFloor).
+// Window top y = 500, x 200...500, piles built by direct deposits (`pileField` full, `lightField` 3 rounds). A sweep clears only its path (the snow heaps ahead of the cursor, or to both sides for a vertical pass; nothing sprays at the cursor on a full pile),
+//   a sweep above the pile removes nothing, debris flies in the cursor direction from the run end, the dragged window's pile is not swept, falling flakes part around a still pointer and a distant pointer does nothing. "Soft dent": a swipe never pops a
+//   column, faster cuts deeper (Tuning.plowFloor leaves a thin layer), volume is conserved between pile, debris and `sweepOwed`, Reduce Motion / pointerPush off leave piles alone, a heap respects the ceiling cap, grows with more pushing and is not trimmed by
+//   snowfall. Heap persistence: survives a Space round trip, a `resize`, moving its window; a tall heap is drawn at full height. `plowMicrobench` only prints timing.
 
 import CoreGraphics
 import Testing

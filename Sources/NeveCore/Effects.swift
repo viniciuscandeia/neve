@@ -1,10 +1,12 @@
 // AGENT HEADER - Sources/NeveCore/Effects.swift  (snow in motion: slabs, crumbs, puffs, craters, glints)
-// Role: `extension SnowField` for transient effects that all live in `debris` / `glints` / `puffs` as plain `Flake`s with a `shape` (so the writer, the cap Tuning.maxDebris and the landing code are shared). `shedBin` collects consecutive columns
-//   (up to 8 = 16 pt, same velocity) in `runBins` and `flushRuns()` emits ONE slab (>= 8 pt wide, avg >= 3 pt; plus crumbs and dust) or plain dots - every releasing entry point must call flushRuns when it is done. `shedDots` (about 1 dot
-//   per 3 pt of snow), `splitSlab` (a slab aloft > 0.25 s may split in two), `impact` (heavy landing digs a crater with a raised rim, +-4 columns), `addPuff`/`stepPuffs` (dust clouds, max Tuning.maxPuffs, rise 6 pt/s, live 0.6 s),
-//   `stepGlints` (sparkles on crests of piles >= 6 pt, max 6, tied to the DRAWN crest of their surface; off for Reduce Motion / economy / low power / outro / melt), `put` (cap-checked insert), `Flake.pack` (chunk profile packing used by the shader).
-// Units: pt, pt/s, pt^2 for carried volume (`vol`, conserved: it is deposited where the debris lands). Callers: Surfaces (shed/spill/sweep), Avalanche, Melt, Walk/Figures, Icicles. Rendering of these flakes: Render.writeInstances + Renderer.swift flake shader kinds 1-5.
-// Gotcha: glints ride the drawn crest (eased `shown`), recomputing the local bin against c0 each frame - a window that moved without a drag fades them.
+// Role: `extension SnowField` for transient effects, kept as plain `Flake`s with a `shape` in `debris` / `puffs` / `glints` (shared writer, cap Tuning.maxDebris and landing code). `shedBin` collects consecutive columns (<= 8 = 16 pt, same
+//   velocity; returns 0 while `silent`) in `runBins`; `flushRuns()` emits ONE slab (shape 2; >= 8 pt wide, avg >= 3 pt; plus 1-3 crumbs and dust puffs) or plain dots via `shedDots` - every releasing entry point must call flushRuns when
+//   done. `splitSlab` (plain slab aloft > 0.25 s splits at 1.5/s; uses `delay` as its aloft timer there). `impact` (heavy landing: volume deposited as crater + raised rim over +-4 columns, 3-6 clumps jump up, puff, sets impactAt,
+//   then calls avalancheImpact). `addPuff`/`stepPuffs` (shape 3, `delay` = life Tuning.puffLife, rise 6 pt/s). `stepGlints` (sparkles on crests of piles >= 6 pt, <= Tuning.maxGlints, one per 2 s; off when calm / economy /
+//   lowPower / quiet (outro or melt): live ones fade). `dropBlocks` (vanished-window pile -> INTACT slabs, amp = 1, packed profile via `Flake.pack`, held `delay` so they release in a ripple at Tuning.rippleSpeed from originX), `slabHit`,
+//   `breakSlab`, `trailPowder` (stepDebris's helpers for those slabs), `put` (cap-checked append), `crestY`.
+// Callers of shedBin/flushRuns/dropBlocks: Surfaces.swift, Avalanche, DockPush.berm, Figures+Robin. Units: pt, pt/s, `vol` = pt^2 (conserved: deposited where the debris lands). Uses `rng` (not fxRng). Rendering: Render.writeInstances.
+// Gotcha: a glint rides the DRAWN crest (`crestY` of eased `shown`); it stores the GLOBAL column in `phase` and the surface's frame.minX at birth in `vol`, so a window that moved without a drag fades it.
 
 import CoreGraphics
 import Foundation

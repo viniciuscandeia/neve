@@ -1,7 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Figures+Penguin.swift  (penguin visitor: waddle, belly slide, groove plowing)
-// Role: Tuning.penguin* constants, `PenguinState` (Stage: rise, waddle, flop, slide, stand, air, sink; t, life 30 s) and the SnowField stepping/look code for `Figure.kind == .penguin`: it appears on a window top with >= penguinMinRun visible
-//   and enough snow ahead (mean h >= penguinMinH over penguinStretch), waddles (rock 8 deg at 2.5 Hz), flops onto its belly and slides (90 pt/s, decelerating faster in deep snow), carving a trench with Pile.plow (penguinGroove depth, penguinBerm share banked, the
-//   rest sprayed as puffs/debris), stands up when bare or slow. `penguinLook(of:)` feeds Rig.penguin (Rig+Penguin.swift). Started by EventDirector via startVisitor. Tests: PenguinTests. Units pt, pt/s, s.
+// Role: Tuning.penguin* constants, `PenguinState` (Stage: rise 0.4 s, waddle, flop 0.2 s, slide, stand 0.3 s, air, sink 0.45 s; `life` 20-40 s from startPenguin) and the SnowField code for `Figure.kind == .penguin`.
+//   `startPenguin` (window tops only, never ground / Dock; first visible run >= penguinMinRun 200 pt with mean h >= 3; one penguin at a time; off in ground-only mode) places it at 25-75 % of the run. It waddles 18 pt/s (rock 8 deg at 2.5 Hz);
+//   when 120 pt ahead carry snow (mean h >= 3) and 4 s have passed since the last slide it flops onto its belly and slides from 90 pt/s, braking 8 + 1.5 * depth ahead pt/s^2, plowing a trench via `Pile.plow` (`plowPath`: penguinGroove 2.5 pt
+//   deep, berm share banked, the rest owed in `spray` and thrown as debris + puffs; snow conserved), standing up when < 15 pt/s or the snow ahead is bare. It launches (`launch`, ballistic `flyPenguin`) off a resting user ball or at the window
+//   end (50 %, else it sinks), and lands on any pile / ball below, else leaves the screen. When `life` runs out it heads for the nearer window end. `sweepPenguins` (cursor segment -> duck hop). `penguinLook(of:)` feeds Rig.penguin.
+// Started by EventDirector (startVisitor; `stepPenguinDemo` for NEVE_DEMO_PENGUIN); stepped from stepFigure via `stepPenguin` (false = removed). Uses `rng` for effects, `director.rng` for visit choices. Tests: PenguinTests. Units pt, pt/s, s.
 
 import CoreGraphics
 import Foundation

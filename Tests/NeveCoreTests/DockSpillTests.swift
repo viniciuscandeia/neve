@@ -1,4 +1,6 @@
 // AGENT HEADER - Tests/NeveCoreTests/DockSpillTests.swift  (DockSpill.swift: a full Dock-top pile near a bar end trickles to the ground bank; a low pile spills nothing)
+// 1440x900 field with a Dock bar x 500...900. `fullDockPileNearEndTricklesToBank` (calm and not calm): after the left end rejects snow, the bank near the end grows by > 5 and total volume (piles + debris + pending trickle) is never created.
+// `lowDockPileSpillsNothing`: a thin pile leaves dockTrickle at 0 and the bank unchanged.
 
 import CoreGraphics
 import Testing

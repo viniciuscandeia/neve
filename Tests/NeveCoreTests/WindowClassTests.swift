@@ -1,5 +1,7 @@
-// AGENT HEADER - Tests/NeveCoreTests/WindowClassTests.swift  (WindowClass.swift + resize cases)
-// classifyWindows (layer 0 surface; floating panel surface; tiny or same-process-overlapped panel = occluder; system owners ignored), filterWindows occluder-only infos, isMissionControl (two+ full-screen Dock windows at layers 18...20), MissionControlGate debounce / watchdog / strong read, WindowIDWatch, plus resize(size:...) behaviour.
+// AGENT HEADER - Tests/NeveCoreTests/WindowClassTests.swift  (WindowClass.swift + resize / Resize.swift cases + two small predicates)
+// classifyWindows (layer 0 surface; floating panel surface; tiny or same-process-overlapped panel = occluder; system owners, other layers and Neve's own floating windows ignored; a >= 90 % screen-covering window of another app is ignored), filterWindows
+//   occluder-only infos, isMissionControl (two+ full-screen Dock windows at layers 18...20, alpha > 0.3), MissionControlGate (debounce / watchdog / strong read / release), WindowIDWatch, `occluderOnly` windows carry no snow. Resize: `remapHeights`,
+//   `resize(size:...)` keeps ground snow by proportion and window snow by id (stash), and carries the Dock pile. Also `optionClickOpensSettings` and `isScreensaverEngine`.
 
 import CoreGraphics
 import Foundation

@@ -1,8 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Fights.swift  (snowball fights between snowmen)
-// Role: `Fight` (two figure ids, turn, timer, thrown; `startFights` pairs free snowmen on the same run, `stepFights` runs them), `Shot` (a snowball in flight on a parabola: from/to/peak/dur, hit/head/target/surface, `rel` so a hit follows a moved target, `impacting` hold, `ghost(k)` trail positions), `Splat` (flattened snow stuck on a figure
-//   or pile, fades over Tuning.splatLife 1.2 s, <= maxSplats 8) and SnowField stepping: pairing of snowmen on the same surface within Tuning.fightRange 250 pt (<= maxFights 2), alternating throws every ~1.1-1.5 s, aim (65 % at the head), hit chance
-//   `Tuning.hitChance(distance:)` (0.8 up to 80 pt falling to 0.35 at 250), wind push on shots (shotWind), 3 head hits -> loser headless/droops, winner cheers; an undecided fight ends after maxThrows 24; fightRest 12 s. Shots/splats are drawn by
-//   `writeShotPrims` (Overlay.writePrims; `trails: false` under Reduce Motion). `shotLand`/`impactAt` feed the robin and avalanche jolts. Tests: FightTests, FightFxTests.
+// Role: `Fight` (two figure ids, turn, timer, thrown), `Shot` (a snowball in flight on a parabola: from/to/peak/dur, hit/head/target/surface; `rel` makes a hit shot follow a moved target; `impacting` squash hold Tuning.impactHold 0.07 s;
+//   `ghost(k)` trail positions), `Splat` (flattened snow stuck on a figure or pile, fades over splatLife 1.2 s, <= maxSplats 8) and SnowField stepping. `startFights` pairs free snowmen on the same surface and same visible run
+//   within Tuning.fightRange 250 pt (<= maxFights 2); `stepFights` ends a fight when a figure is gone / hidden / apart, or after maxThrows 24; `launch` alternates throws every throwGap 1.1 s + 0-0.4 s, 65 % aimed at the head, hit chance
+//   `Tuning.hitChance(distance:)` (0.8 up to 80 pt falling to 0.35 at 250), gust drift (`shotWind`; > 14 pt of drift = miss); `land` makes the splat, a spray of clumps + puff and calls registerHit (3rd head hit -> `decapitate`: head becomes a
+//   loose falling Snowball, loser headless, winner cheers) or rabbitHit. Shots with `target == SnowField.cursorTarget` (-2) come from CursorThrow. `writeShotPrims` draws splats / trails / shots (`trails: false` under Reduce Motion).
+// Most Tuning fight constants live in Walk.swift (fightRange, maxThrows, fightRest 12 s, headAim...). `shotLand` / `impactAt` (the latter is set by Effects.impact) are read by the robin. Tests: FightTests, FightFxTests.
 
 import CoreGraphics
 import Foundation

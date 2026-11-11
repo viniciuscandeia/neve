@@ -1,5 +1,7 @@
-// AGENT HEADER - Tests/NeveCoreTests/L5PhysicsTests.swift  (physics edge cases collected in review round L5)
-// Avalanche fullness uses the wavy limit and drift triggers at its limit, landing slab lays volume along its width, impact leaves no cliff, slab kept until fully off the screen edge, released slab ramps up (no lurch), meanShown follows the drawn snow, clear() resets avalanche / cursor throw / bank, snow resumes after outro without intro, intro after outro keeps fading flakes.
+// AGENT HEADER - Tests/NeveCoreTests/L5PhysicsTests.swift  (physics edge cases collected in review round L5; a grab bag, one test per fix)
+// Avalanche fullness uses the wavy limit and a drift triggers at its limit (`fullSpot`), a landing slab lays volume along its width, `impact` leaves no cliff, a slab is kept until fully off the screen edge, a released slab ramps up (no lurch), `meanShown` /
+//   `standY` follow the drawn snow, clear() resets avalanche chain / cursor throw / bank level, snow resumes after outro without intro, intro after outro keeps fading flakes, gifts fade in the outro, glints fade when their mode turns off / ride the DRAWN
+//   crest and fade when the window slid or shrank, throw velocity does not depend on the mouse event rate.
 
 import CoreGraphics
 import Testing

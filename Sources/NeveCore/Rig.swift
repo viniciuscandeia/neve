@@ -1,8 +1,10 @@
-// AGENT HEADER - Sources/NeveCore/Rig.swift  (pure geometry: looks -> Prim lists; snowman, balls, shots, icicles)
-// Role: `Pose` (hop, lean, squash, shake, `Flutter`), `SnowmanLook` (foot, radii bottom/middle/head, facing, pose, built stages 0...7, newest 0...1, fade, collapsing, headless, droop, headTilt, carrot) and `Rig` (enum of static functions that APPEND prims to a `PrimWriter`; draw order = z order):
-//   `Rig.snowman`, `Rig.ball` (rolling speckles, face for the held head), shot/splat drawing, plus colour accessors reading `Palette.*.now`. Other actors: Rig+Critters (rabbit), Rig+Penguin, Rig+Robin, Rig+Sleigh (sleigh, deer, gift, confetti).
-// Units: ball-radius units mapped to pt at the figure's scale; local x forward, y up; transform order: mirror x, scale, rotate about origin, then squash about the foot. No simulation state, no allocation (PrimWriter is caller-owned), so output is testable (RigTests, SnowmanTests).
-// Invariant: any new prim count must fit Overlay's prim buffer (it grows after a frame that dropped prims). Called from Sources/Neve/Overlay.writePrims every frame for every visible figure.
+// AGENT HEADER - Sources/NeveCore/Rig.swift  (pure geometry: looks -> Prim lists; snowman, loose balls, shots, splats)
+// Role: `Pose` (hop, lean, squash, shake, `Flutter` scarf / arm swing), `SnowmanLook` (foot, radii bottom/middle/head, facing, pose, built stages 0...7 = base, middle, head, coal buttons + eyes, nose, arms, scarf; newest 0...1, fade, collapsing, headless,
+//   droop, headTilt, carrot) and `Rig` (enum of static functions that APPEND prims to a caller-owned `PrimWriter`; draw order = z order): `Rig.snowman`, `Rig.ball` (rolling speckles, or a face for a flying head), `Rig.shot` / `shotGhost` / `splat`,
+//   shared helpers (`body`, `eyes`, `nose`, `scarf`, `arm`, the `Fr` local->world transform, `rot`, `a`, `c4`) and colour accessors reading `Palette.*.now` (computed, so they follow the light / dark blend). Other actors live in Rig+Critters (rabbit, carrot),
+//   Rig+Penguin, Rig+Robin, Rig+Sleigh (sleigh, deer, gift, confetti). Icicles / frost / piles are NOT drawn here (Icicles.swift, Frost.swift, Render.swift).
+// Units: points at the figure's scale, local x forward, y up; `Fr` transform order: mirror x, scale, rotate about the origin, then squash about the foot (squash 1 = 1.5 wide x 0.6 tall). No simulation state, no allocation, so output is testable (RigTests, SnowmanTests).
+// Invariant: any new prim count must fit Overlay's prim buffer (PrimWriter counts `dropped`; Overlay grows the buffer after a frame that dropped prims). Called from Sources/Neve/Overlay.swift writePrims every frame for every visible figure.
 
 import Foundation
 

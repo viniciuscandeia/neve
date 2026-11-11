@@ -1,6 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/DockDebounce.swift  (steadies the AX-read Dock rect)
-// Role: `DockDebounce`: ignores sub-2 pt jitter and keeps the last frame for `grace` consecutive failed reads (AX timeout while the Dock is busy), so the ground bank neither reshapes nor sheds/regrows; `feed` -> (changed, retry), `feedSide` (Dock on the left/right = no bar,
-//   no grace), `reset` (trust lost). Pure value type; used by Sources/Neve/Dock.swift DockWatcher. Tests: DockGapTests / DockPerfTests.
+// Role: `DockDebounce` (pure value type) ignores reading changes <= 2 pt on every edge and, after a failed read (nil), keeps the last frame for `grace` (3) further misses, so the ground bank neither reshapes nor sheds/regrows.
+//   `feed(_:)` -> (changed, retry: ask the caller to re-read soon, only during the grace window); `feedSide()` (Dock read fine but on left/right/hidden = no bar: clears the frame at once, no grace); `reset()`.
+// Caller: DockWatcher in Sources/Neve/Dock.swift. Tests: L7Tests, SurfaceMapTests.
 
 import CoreGraphics
 

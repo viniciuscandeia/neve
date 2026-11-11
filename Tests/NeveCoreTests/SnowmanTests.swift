@@ -1,5 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/SnowmanTests.swift  (Snowman.swift, 1000x800 field without flakes)
-// No snowman until the stretch is deep enough, site = centre of the widest visible stretch, stages advance in order and scoop snow, a cursor sweep through it collapses it into debris (next to it leaves it standing), debris capped at maxDebris, clear() removes it, cooldown before a rebuild and never more than one.
+// AGENT HEADER - Tests/NeveCoreTests/SnowmanTests.swift  (Snowman.swift + intro / outro + melt interaction; 1000x800 field without flakes, coarse 1/20 s steps)
+// No auto snowman until the stretch is deep enough (Tuning.snowmanDepth, snowmanStretch), the site is the centre of the widest visible stretch and keeps Tuning.snowmanClearance from Dock ends / screen edges (waits when none has clearance), stages advance in
+//   order and scoop snow, a cursor sweep through it collapses it into debris (next to it leaves it standing), debris capped at maxDebris, clear() removes it and a cleared pile collapses it, cooldown before a rebuild and never more than one, disabled
+//   switch never builds. Also in this file: `beginIntro` ramps the flake count from 0 over its duration (flakes enter from above), `collapseAll` (outro) turns piles into debris and shatters balls / the stack at once, and a 5-minute Nevasca run builds the pile
+//   and snowman without collapsing; a melt freezes the build and starts no new snowman.
 
 import CoreGraphics
 import Testing

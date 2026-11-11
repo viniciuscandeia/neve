@@ -1,5 +1,8 @@
 // AGENT HEADER - Tests/NeveCoreTests/PenguinTests.swift  (Figures+Penguin.swift)
-// Slide carves a continuous groove with berms and plows a shallow groove conserving snow, launches off a resting ball, lands on ground or leaves past a window end, window-only and needs a snowy wide run, never in Reduce Motion, counts against the ambient cap (one at a time), ducks under the cursor, deterministic visits.
+// 1000x800 field, window 1 at x 100...900 with 12 pt snow. A slide carves a continuous groove (every column lower, depth <= Tuning.penguinGroove) with berms ahead and on both sides; `Pile.plow` cut == banked + sprayed and the field conserves snow
+//   (pile + debris) within a puff; the penguin rests on the DRAWN snow (`shown`), brakes harder in deep snow and stops at bare snow, launches off a resting ball (air stage, spin), lands on ground or leaves past a window end, is window-only
+//   (needs a visible run >= 200 pt with mean h >= 3; not in ground-only / compact mode), never spawns in Reduce Motion and leaves when it starts, counts against the ambient cap (one at a time; Economy 1), follow-ups skip the gap, ducks under the cursor
+//   (`sweepFigures`), and visits are deterministic.
 
 import CoreGraphics
 import Testing

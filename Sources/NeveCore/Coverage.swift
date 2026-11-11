@@ -1,8 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Coverage.swift  (maximized-window / compact mode)
-// Role: `coverage(of:in:cols:rows:)` (share of the usable area hidden by windows, 48x30 sample grid, plus the bounding box of the uncovered cells), `liveRect(frame:visible:uncovered:)` (uncovered part + Dock / side strips, menu bar excluded),
-//   `CompactState` (hysteresis: enter when >= 90 % hidden for 0.6 s, leave < 85 % for 0.2 s, frozen while a mouse button is down; `covered` = live strip < 8 pt => overlay pauses like for a fullscreen app; `pending` = a timer is running, an
-//   idle caller must look again), and `SnowField.setLive(_:)` / `wake(fraction:)` (flakes live and spawn only inside the live rect, just above its top edge; leaving compact mode wakes half the missing flakes staggered over ~2.5 s).
-// Coordinates: local AppKit y-up pt. Callers: Overlay.measureCover / advanceCover (shrinks the NSPanel + Metal layer to the live rect and fades shader occluders in over 0.6 s). Tests: CoverageTests.
+// Role: `coverage(of:in:cols:rows:)` (share of `area` hidden by window rects, sampled on a 48x30 grid of cell centres, plus the bounding box of the uncovered cells), `liveRect(frame:visible:uncovered:)` (uncovered part + Dock / side strips,
+//   menu bar excluded, clipped to frame), `CompactState` (hysteresis: enter at >= 90 % hidden for 0.6 s, leave < 85 % for 0.2 s, frozen while a mouse button is down; `covered` = compact with live height < 8 pt, the overlay then pauses;
+//   `pending` = a timer is running, an idle caller must look again) and `SnowField.setLive(_:)` / `wake(fraction:)` / `activeFlakes`.
+// setLive: flakes live and spawn only inside the live rect (local coords, spawn just above its top edge), areaScale = rect area / screen area (min 0.08), then re-applies intensity. wake: each dormant active flake respawns above the top
+//   with probability `fraction` and a random extra height up to 2.5 s of fall. The free functions are coordinate-agnostic: Overlay.measureCover feeds global rects, then offsets the live rect to local before setLive.
+// Callers: Overlay.measureCover / advanceCover (Sources/Neve; wake(fraction: 0.5) on leaving compact). Tests: CoverageTests.
 
 import CoreGraphics
 import Foundation

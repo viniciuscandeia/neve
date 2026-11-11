@@ -1,6 +1,7 @@
-// AGENT HEADER - Tests/NeveCoreTests/WritePilesEquivalenceTests.swift  (reference oracle for Render.writePiles)
-// Holds `SnowField.writePilesRef`, a copy of the PRE-optimisation writePiles (rediscovers runs from `visible`, allocates `held`, joins bridges against every slice) that WritePilesCompareTests compares byte-for-byte with the shipped version, plus the bridge/seam cases. It MIRRORS Render.writePiles: any intentional
-// change to the shipped output (including junction/seam/bridge logic that is inlined, not shared via `junctions()`) must be applied here too, or the comparison fails. Do not "optimise" this file: its slowness and simplicity are the point.
+// AGENT HEADER - Tests/NeveCoreTests/WritePilesEquivalenceTests.swift  (reference oracle for Render.writePiles; contains no @Test)
+// Holds `SnowField.writePilesRef`, a copy of the PRE-optimisation writePiles (rediscovers runs from `visible` with a copy of the junction-skipped bins, allocates `held`, joins bridges against every slice, has its own inline `jitter`) that
+//   WritePilesCompareTests compares field-by-field with the shipped version. It MIRRORS Render.writePiles: it shares only `junctions()`, `tintRefs`, `liftSeam` and `blendCrest` with the shipped code (so a change there needs no edit here); any intentional
+//   change to the shipped output elsewhere (easing constants, contour / fill / top rules, bridge and seam logic, slice fields) must be applied here too, or the comparison fails. Do not "optimise" this file: its slowness and simplicity are the point.
 
 import CoreGraphics
 import Foundation

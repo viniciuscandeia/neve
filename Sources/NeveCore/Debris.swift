@@ -1,8 +1,9 @@
 // AGENT HEADER - Sources/NeveCore/Debris.swift  (falling snow chunks)
-// Role: `addDebris(x:y:vx:fall:size:)` (capped by Tuning.maxDebris 1200) and `stepDebris(dt:)`: packed snow accelerates (gravity 1400 pt/s^2, terminal 1700), lands through the shared `tryLand` (volume `vol` is deposited; heavy falls call Effects.impact),
-//   or vanishes past a screen edge / below the bottom. Debris are `Flake`s of kind .debris (shape 1 clump, 2 slab, ...). A slab with `amp > 0` is an INTACT block (amp = seconds aloft + 1): it breaks only on a hit or randomly when fragile (`breakSlab`);
-//   `delay > 0` = held back until the release ripple reaches it (Tuning.rippleSpeed); `phase` < 0 = freshly swept off, cannot land for a moment. Loop removes by swap-with-last (order not preserved). Hot when avalanches/shedding run;
-//   Tuning.busyDebris (24) or any slab raises the frame rate (BusyReasons.debris).
+// Role: `addDebris(x:y:vx:fall:size:)` (false when Tuning.maxDebris 1200 is reached) and `stepDebris(dt:)`, the per-frame loop over `debris` (Flakes of kind .debris; `shape` 1 clump, 2 slab...). Snow accelerates (gravity 1400 pt/s^2, terminal
+//   1700), vx relaxes toward wind, and it lands through the shared `tryLand` (Flakes.swift: deposits `size*depositScale` volume; heavy falls there call Effects.impact) or vanishes past a side edge / below the bottom. Shape-2 slabs may `splitSlab`.
+// Flake fields used here: `phase` > 0 = freshly shed, cannot land yet (counts down by dt; shed paths set it, e.g. 0.5 in Avalanche); on a held slab phase < 0 = seconds since release (ramps the slide up over 0.15 s). `amp` > 0 = INTACT
+//   slab (amp = seconds aloft + 1): breaks via `slabHit`/`breakSlab` on a hit, or randomly when fragile (size < 40, aloft > 0.15 s; not in calm). `delay` > 0 on an intact slab = held until the release ripple reaches it (sags, slides at 0.3x); on a plain shape-2 slab it is the aloft timer for splitSlab.
+// Removal is swap-with-last, iterating backwards (order not preserved). Hot when shedding / avalanches run: debris.count > Tuning.busyDebris (24) or any slab raises BusyReasons.debris (SnowField.busyReasons).
 
 import CoreGraphics
 import Foundation

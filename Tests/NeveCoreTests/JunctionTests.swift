@@ -1,4 +1,7 @@
-// AGENT HEADER - Tests/NeveCoreTests/JunctionTests.swift  (overlapping windows with close tops read as ONE snow mass: back pile continues behind a lower front top, equal tops join without the front shoulder, junction survives a drag, the crest crosses the junction smoothly (<= 1 pt per bin within 24 pt). Related: SurfaceMap.computeSeams, Render.junctions/writePiles (saddle +-16 pt).)
+// AGENT HEADER - Tests/NeveCoreTests/JunctionTests.swift  (overlapping windows with close tops read as ONE snow mass)
+// Back window 1 x 100...400 top 400, front window 2 overlapping it (also `mirrored`: front on the left). Checks on the Render.writePiles output (`pileSegs`): the back pile continues behind a lower front top and nothing is drawn under the front top, equal
+//   tops join without the front shoulder, the junction survives a drag, the crest crosses it smoothly (<= 1 pt per 2 pt step within 24 pt), the blend window adapts to the crest difference (half-width max(16, 6 |dh|)), and the shading reference
+//   (`tint0/tint1`, flag 4 in `dragged`) never jumps (<= 0.5 pt per pt). Related: SurfaceMap.computeSeams, Render.junctions / blendCrest.
 
 import CoreGraphics
 import Testing

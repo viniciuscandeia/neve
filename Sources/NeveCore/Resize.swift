@@ -1,7 +1,9 @@
 // AGENT HEADER - Sources/NeveCore/Resize.swift  (screen size / scale change)
-// Role: `remapHeights(_:to:)` (ground heights carried to a new column count by x proportion, area-weighted mean) and `SnowField.resize(size:origin:groundY:visibleTop:)`: window piles (and what stands on them) are stashed by window id and return with
-//   the windows, the ground keeps its heights by x proportion, flakes / balls / figures / gifts keep their x proportion, effects tied to the old geometry (debris, glints, puffs, drops, icicles, fights, shots) are dropped; the next `update`
-//   rebuilds surfaces. Dock pile heights wait in `dockCarry` (applies only to a rebuild within ~2 s). Caller: Overlay.rebuildGeometry. Tests: WindowClassTests (resize cases), SpaceCarryTests.
+// Role: `remapHeights(_:to:)` (heights carried to a new column count by x proportion, area-weighted mean per new column) and `SnowField.resize(size:origin:groundY:visibleTop:)`: window piles (surfaces with id > 0, and what stands on them) are stashed by
+//   window id (stashAway) and return with the windows; the ground keeps its heights and mounds by x proportion; the Dock pile waits in `dockCarry` / `dockMoundCarry` (applied only to a rebuild within ~2 s, `dockCarryUntil`); flakes / balls / figures /
+//   gifts keep their x proportion (x scaled by the width ratio); effects tied to the old geometry (debris, glints, puffs, drops, icicles, carrots, confetti, splats, fights, shots) and chain / dockTrickle / seams / dock animation state are dropped. The
+//   surfaces are reduced to the ground only; the next `update` rebuilds the rest (boundsDirty). Also resets the live region (liveX0/X1/liveTop) to the whole screen.
+// Caller: Overlay (rebuildGeometry, Sources/Neve/Overlay.swift). Tests: WindowClassTests (resize cases), SweepTests.
 
 import CoreGraphics
 import Foundation

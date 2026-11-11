@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Snowman.swift  (the auto snowman: design, build, site selection)
 // Role: `Snowman` design constants (7 stages: base, middle, head, coal, nose, arms, scarf; stage seconds [14,14,12,8,8,8,8] of snowfall; balls 23+17+13 pt, total height 51 at scale 1; snow shares gathered per stage), and SnowField: `snowmanScale` (1...1.5 by
-//   screen width), `stepBuilder` (starts a build where `findSite` finds a >= snowmanStretch 70 pt stretch whose mean pile height >= SimConfig.snowmanDepth, clearance 20 pt, cooldown 120 s of snowfall), `advanceBuild`, `scoop` (lowers the pile around the base
-//   with cosine falloff), `sweepFigures` (cursor segment shatters a standing figure), `collapse(velocity:)` (auto snowman shatters; cooldown starts; used by tests and the outro). Builds only during snowfall time (SimConfig.snowmanSpeed speeds it for NEVE_SNOWMAN_FAST demos). Tests: SnowmanTests.
+//   screen width), `stepBuilder` (runs in SnowField.step while no auto snowman exists; starts a build where `findSite` finds a >= snowmanStretch 70 pt stretch whose mean pile height >= SimConfig.snowmanDepth, clearance 20 pt, cooldown 120 s of snowfall), `advanceBuild`, `scoop` (lowers the pile around the base
+//   with cosine falloff), `sweepFigures` (cursor segment shatters a standing figure), `collapse(velocity:)` (auto snowman shatters, cooldown starts; also called by Figures.swift when its surface is gone, its pile is cleared, or it has stood headless past Tuning.headlessLife). Builds only during snowfall time (SimConfig.snowmanSpeed speeds it for NEVE_SNOWMAN_FAST demos). Tests: SnowmanTests.
 
 import CoreGraphics
 import Foundation
