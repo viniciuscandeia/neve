@@ -3,7 +3,7 @@
 //   The per-column index is CSR: `offsets[col]..<offsets[col+1]` into `entries` (surface index + edgeY, ordered front to back per column), rebuilt by buildColumns() whenever surfaces change; flakes use it to find what they land on.
 //   Helpers: column(x), edgeVisible, surface(id:), pile(id:), meanHeight(si:col:span:), visibleRun(si:bin:) (binary search).
 //   `SeamLink` + computeSeams(rects:windows:): windows whose piles read as ONE snowbank (side by side gap <= 6 pt with tops within 4, or overlapped with the front top 1...maxDrift above / up to maxPileHeight/2 below). `*Supported` ends
-//   hold snow against the neighbour (no dip, taper or spill); `front` = id of the front window for overlap junctions (0 = side by side). Render.writePiles `junctions()` / `blendCrest` draw the merged crest (smoothstep saddle, half-width min(80, max(16, 6 * crest difference)) pt; heap-guarded, skipped while one side is dragged).
+//   hold snow against the neighbour (no dip, taper or spill); `front` = id of the HIGHER window of an overlap junction (stacking order never matters; 0 = side by side). Render.writePiles `junctions()` / `blendCrest` draw the merged crest (smoothstep saddle, half-width min(80, max(16, 6 * crest difference)) pt; heap-guarded, skipped while one side is dragged).
 // Rects are front to back; coordinates local AppKit y-up pt. Callers: Surfaces.swift (rebuild), Render.swift, Flakes.swift (landing), Walk/Figures (standing surfaces). Tests: SurfaceMapTests, JunctionTests, LowSeamTests.
 
 import CoreGraphics
@@ -92,22 +92,26 @@ struct SeamLink {
 }
 
 extension SnowField {
-    /// Overlap: a front window hiding the back one with its top 1...maxDrift above joins at its side edge(s) (the back snow drifts up
-    /// to the front top). Overlap with the front top 1pt above to maxPileHeight/2 below: a junction without support (the front end's shoulder is hidden in the drawing instead,
-    /// see `junctions`). Side by side: gap <= 6 and tops within 4 join both ends. Rects are front to back.
+    /// Order independent (frames only; the list index only enumerates pairs): of two windows the one with the HIGHER top (`H`; equal tops: the narrower, then the lower window number) is the wall / `front` of the link, the other one the lower window `L`.
+    /// Overlap: H's top 1...maxDrift above L's, its side edge(s) inside L's span: L's snow drifts up to H's top and H's end holds snow against it (`*Supported`). Overlap with tops within 1 pt: a junction without support. Side by side:
+    /// gap 0...6 and tops within 4 join both ends. The draw merges L's crest into H's slices (see `junctions`).
     func computeSeams(rects: [CGRect], windows: [WindowInfo]) -> [SeamLink] {
         var out: [SeamLink] = []
         for i in rects.indices where windows[i].number != 0 && !windows[i].occluderOnly {
             for k in (i + 1)..<max(rects.count, i + 1) where windows[k].number != 0 && !windows[k].occluderOnly {
-                let f = rects[i], b = rects[k], step = f.maxY - b.maxY
-                if step > 1 || (step >= -CGFloat(Tuning.maxPileHeight) / 2 && f.minX < b.maxX - 2 && f.maxX > b.minX + 2), step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
-                    let sup = step > 1, fid = windows[i].number
-                    if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: windows[k].number, right: fid, rightSupported: sup, front: fid)) }
-                    if f.maxX < b.maxX - 2, f.maxX > b.minX + 2 { out.append(SeamLink(left: fid, right: windows[k].number, leftSupported: sup, front: fid)) }
-                } else if abs(step) <= 4 {
+                let iHigh = rects[i].maxY != rects[k].maxY ? rects[i].maxY > rects[k].maxY
+                    : rects[i].width != rects[k].width ? rects[i].width < rects[k].width : windows[i].number < windows[k].number   // equal tops: the narrower one is the wall (it can sit inside the other)
+                let hi = iHigh ? i : k, lo = iHigh ? k : i
+                let f = rects[hi], b = rects[lo], step = f.maxY - b.maxY
+                let fid = windows[hi].number, lid = windows[lo].number
+                if f.minX < b.maxX - 2, f.maxX > b.minX + 2, step <= CGFloat(Tuning.maxDrift), f.minY <= b.maxY + 1 {
+                    let sup = step > 1
+                    if b.minX < f.minX - 2, f.minX < b.maxX - 2 { out.append(SeamLink(left: lid, right: fid, rightSupported: sup, front: fid)) }
+                    if f.maxX < b.maxX - 2, f.maxX > b.minX + 2 { out.append(SeamLink(left: fid, right: lid, leftSupported: sup, front: fid)) }
+                } else if step <= 4 {
                     let l = f.minX < b.minX ? f : b, r = f.minX < b.minX ? b : f
                     if r.minX - l.maxX >= 0, r.minX - l.maxX <= 6 {
-                        out.append(SeamLink(left: windows[f.minX < b.minX ? i : k].number, right: windows[f.minX < b.minX ? k : i].number, leftSupported: true, rightSupported: true))
+                        out.append(SeamLink(left: f.minX < b.minX ? fid : lid, right: f.minX < b.minX ? lid : fid, leftSupported: true, rightSupported: true))
                     }
                 }
             }

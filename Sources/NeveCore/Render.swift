@@ -5,7 +5,7 @@
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
-//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`). `Pile.fillet` lifts the crest beside a wall (a higher front window in front) and `wallTail` draws the back run on into the front corner cut-out (clipped by the shader inside the outline): no vertical cut.
+//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`). Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall, `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. `Pile.fillet` lifts the crest beside a wall: no vertical cut.
 //   `blendCrest` smoothsteps the crest over half-width min(80, max(16, 6 * |crest difference|)) pt (the cap keeps a tall heap from being flattened), never draws a bin that holds a pushed heap (`moundAt`) lower than itself, and is skipped while only one side of the junction is being dragged.
 // Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
 // Gotchas: WritePilesEquivalenceTests (and WritePilesCompareTests) mirror / compare writePiles - when you change its output, update them in the SAME change. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
@@ -156,10 +156,12 @@ extension SnowField {
         // The ground slice between the bank column and the Dock end is replaced by the bridge body below (one fill, no doubled halo / crest); held back until we know a bridge exists.
         var heldL: PileSeg?, heldR: PileSeg?, bridgedL = false, bridgedR = false   // at most one ground slice per side
         for s in surfaces {
-            let h = s.pile.shown, base = s.pile.base
+            var h = s.pile.shown
+            let base = s.pile.base
             curZ = zOf[s.id] ?? groundZ
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
+            if s.id > 0, !s.pile.hideTop.isEmpty { h = drawHeights(s) }   // see drawHeights
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
             func ceiling(_ i: Int) -> Float { edge + base[i] + s.pile.cap[i] }   // infinite where no window is in front
             // Stable irregularity keyed on the window-relative column (travels with the pile), interpolated between every 3rd column.
@@ -200,7 +202,8 @@ extension SnowField {
                 guard let jd, jd.merged[i] else { return (x(i), top(i, b, e), edge + base[i] - drop) }
                 return (x(i), max(top(i, b, e), jd.top[i]), jd.base[i])
             }
-            for run in junc.skip[s.id].map({ Self.cut(s.runs, $0) }) ?? s.runs {
+            let allRuns = s.id > 0 && !s.pile.hideTop.isEmpty ? [0..<cnt] : s.runs   // windows under a higher window: every bin (draw is geometry; the shader hides what is occluded)
+            for run in junc.skip[s.id].map({ Self.cut(allRuns, $0) }) ?? allRuns {
                 let b = run.lowerBound, e = run.upperBound
                 // Snowy stretches only: 3+ bare bins split the run, so two specks far apart stay two specks (no 1pt film drawn between them).
                 var k = b
@@ -228,8 +231,6 @@ extension SnowField {
                             }
                         }
                         pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
-                        if hi == e - 1, e < cnt, case let pts = wallTail(s, bin: e - 1, side: 1, from: prev, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = prev; for c in pts { put(q.x, q.t, q.b, c.x, c.t, c.b, drag, inset: drop); q = c } }
-                        if lo == b, b > 0, case let pts = wallTail(s, bin: b, side: -1, from: first, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = first; for c in pts { put(c.x, c.t, c.b, q.x, q.t, q.b, drag, inset: drop); q = c } }
                     }
                 }
             }
@@ -306,21 +307,30 @@ extension SnowField {
         return n
     }
 
-    /// Draw-only tail of a back pile's run into the hidden bins beside a wall (a higher front window in front): flat from the run end, easing to the front's top over its corner
-    /// radius, so the corner's cut-out above the rounded outline is filled with snow and the crest never ends in a vertical cut. Everything inside the front outline is clipped by the shader (z).
-    /// `from` = the run end's point, `bin` = that end bin, `side` +1 (hidden bins to the right) / -1; empty when there is no wall or a junction owns those bins. Outward from the run end.
-    func wallTail(_ s: Surface, bin: Int, side: Int, from: (x: Float, t: Float, b: Float), skip: [Range<Int>]) -> [(x: Float, t: Float, b: Float)] {
-        guard s.id != Tuning.groundID, s.id != 0, s.pile.wallInfo.count == s.pile.walls.count else { return [] }
-        let bw = Tuning.binWidth, wx = Float(s.c0 + bin + (side > 0 ? 1 : 0)) * bw
-        guard let i = s.pile.walls.firstIndex(of: wx) else { return [] }
-        let info = s.pile.wallInfo[i], cnt = s.pile.visible.count
-        var out: [(x: Float, t: Float, b: Float)] = []
-        for j in 1...(Int((info.radius / bw).rounded(.up)) + 1) {
-            let k = bin + side * j
-            guard k >= 0, k < cnt, !s.pile.visible[k], !skip.contains(where: { $0.contains(k) }) else { break }
-            out.append((from.x + Float(side * j) * bw, from.t + (min(from.t, info.top) - from.t) * min(1, Float(j) * bw / max(info.radius, bw)), from.b))
+    /// Order-independent walls: the heights a window pile is DRAWN with. Bins GEOMETRICALLY under a higher window (`Pile.hideTop`, whatever the stacking) are drawn whether or not that window is in front (the shader clips what is
+    /// really hidden). Within the corner radius of a wall they continue the snow of the bin next to the wall flat (never above the higher top), filling the corner's cut-out; elsewhere they keep their own snow clamped under the higher
+    /// top. Snow with no snow beside it is not drawn in the corner zone: no floating specks.
+    func drawHeights(_ s: Surface) -> [Float] {
+        var h = s.pile.shown
+        let cnt = h.count, edge = s.edgeY, base = s.pile.base, bw = Tuning.binWidth
+        guard !s.pile.hideTop.isEmpty else { return h }
+        let ht = s.pile.hideTop
+        var zone = [Float](repeating: -1, count: cnt)
+        for (wi, wx) in s.pile.walls.enumerated() where wi < s.pile.wallInfo.count {
+            let wb = Int((wx / bw).rounded()) - s.c0
+            let lc = wb - 1 >= 0 && wb - 1 < cnt && ht[wb - 1] > 0, rc = wb >= 0 && wb < cnt && ht[wb] > 0
+            guard lc != rc else { continue }
+            let e = rc ? wb - 1 : wb, dir = rc ? 1 : -1
+            guard e >= 0, e < cnt, h[e] > 0.15 else { continue }
+            let tail = max(min(h[e], s.pile.wallInfo[wi].top - edge - base[e]), 0)
+            for j in 1...(Int((s.pile.wallInfo[wi].radius / bw).rounded(.up)) + 1) {
+                let k = e + dir * j
+                guard k >= 0, k < cnt, ht[k] > 0 else { break }
+                zone[k] = max(zone[k], tail)
+            }
         }
-        return out
+        for i in 0..<cnt where ht[i] > 0 { h[i] = zone[i] >= 0 ? zone[i] : min(h[i], max(ht[i] - edge - base[i], 0)) }
+        return h
     }
 
     /// Stable irregularity of a pile top keyed on the window-relative column (travels with the pile), interpolated between every 4th column.
@@ -374,11 +384,12 @@ extension SnowField {
             // Nearest visible back bin on each side of every hidden one (one pass each way).
             let r0 = max(ka - 1, 0), r1 = min(kb + 1, nb)
             var left = [Int](repeating: -1, count: r1 - r0), right = left, last = -1
-            for k in 0..<r1 { if B.pile.visible[k] { last = k }; if k >= r0 { left[k - r0] = last } }
+            func cov(_ k: Int) -> Bool { !B.pile.hideTop.isEmpty && B.pile.hideTop[k] > 0 }   // geometry, not the stacking order
+            for k in 0..<r1 { if !cov(k) { last = k }; if k >= r0 { left[k - r0] = last } }
             last = -1
-            for k in stride(from: nb - 1, through: r0, by: -1) { if B.pile.visible[k] { last = k }; if k < r1 { right[k - r0] = last } }
+            for k in stride(from: nb - 1, through: r0, by: -1) { if !cov(k) { last = k }; if k < r1 { right[k - r0] = last } }
             func hv(_ k: Int) -> Float {
-                if B.pile.visible[k] || k < r0 || k >= r1 { return hb[k] }
+                if !cov(k) || k < r0 || k >= r1 { return hb[k] }
                 let a = left[k - r0], c = right[k - r0]
                 let v: Float = a >= 0 && c >= 0 ? hb[a] + (hb[c] - hb[a]) * Float(k - a) / Float(c - a) : a >= 0 ? hb[a] : c >= 0 ? hb[c] : 0
                 return max(hb[k], min(v, max(B.pile.limit(k), 0)))
@@ -396,7 +407,7 @@ extension SnowField {
                 // on the front's rounded corner the shoulder always sinks into the back snow).
                 guard t > floor + 0.15, fh <= 0.15 || fb + fh >= floor - 1 || F.pile.base[i] < -0.01 else { continue }
                 j.merged[i] = true; j.top[i] = t; j.ref[i] = B.edgeY + B.pile.base[k] - (B.id == Tuning.groundID ? 0 : 1)
-                j.base[i] = fh > 0.15 ? min(fb - 1, floor - 1) : floor - 1
+                j.base[i] = min(foot - 1, fh > 0.15 ? fb - 1 : .infinity)   // from the lower window's own top edge: visible when it is in front, clipped by the shader when it is not
                 if let r = skip[bid]?.last, r.upperBound == k { skip[bid]![skip[bid]!.count - 1] = r.lowerBound..<(k + 1) } else { skip[bid, default: []].append(k..<(k + 1)) }
             }
             front[l.front] = j

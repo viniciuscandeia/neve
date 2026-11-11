@@ -1,6 +1,6 @@
 // AGENT HEADER - Tests/NeveCoreTests/WallBankTests.swift  (back window snow meets a narrower, HIGHER front window inside its span: no vertical cut)
 // Back window 1 x 100...700 top 400; front window 2 x 300...500 centred, top 400 + step (6, 13, 20, 40, 100). Checks the back pile (Pile.addWalls banks it up the wall to the front top for step <= maxDrift, small capped ramp beyond),
-//   the drawn back crest (Pile.fillet + Render.wallTail through writePiles) has slope <= ~2pt per bin approaching each wall and into the front's corner cut-out (grown and young snow), and Occluder.hides covers every back slice
+//   the drawn back crest (Pile.fillet + Render.drawHeights through writePiles) has slope <= ~2pt per bin approaching each wall and into the front's corner cut-out (grown and young snow), and Occluder.hides covers every back slice
 //   point inside the front outline. Related: DriftTests, JunctionTests, Render.writePiles, Occluder.
 
 import CoreGraphics

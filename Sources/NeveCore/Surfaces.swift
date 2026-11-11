@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
 // Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
-//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT, drift walls, wobble, corner rounding) and `buildGround` (full-width ground pile,
+//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), wobble, corner rounding) and `buildGround` (full-width ground pile,
 //   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Figures.
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
@@ -142,7 +142,7 @@ extension SnowField {
                 if let reach, r.intersects(reach) { s.cover = rects[0..<i].filter { $0.intersects(s.frame) } }
                 built.append(s); continue
             }
-            if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, radii: windows.map(\.radius), front: i, old: &old, spawned: &spawned) { built.append(s) }
+            if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, radii: windows.map(\.radius), windows: windows, front: i, old: &old, spawned: &spawned) { built.append(s) }
             spawned += flushRuns()   // runs never span two surfaces
         }
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
@@ -285,7 +285,7 @@ extension SnowField {
         return u
     }
 
-    func buildSurface(id: Int, frame: CGRect, edgeY: Float, radius: CGFloat, rects: [CGRect], radii: [CGFloat], front: Int,
+    func buildSurface(id: Int, frame: CGRect, edgeY: Float, radius: CGFloat, rects: [CGRect], radii: [CGFloat], windows: [WindowInfo], front: Int,
                               old: inout [Surface], spawned: inout Int) -> Surface? {
         let bw = Tuning.binWidth
         let c0 = max(0, Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)))
@@ -307,9 +307,15 @@ extension SnowField {
             var ceiling = Float.infinity   // lowest underside of a front window above the edge in this column
             for j in 0..<front {
                 let r = rects[j]
-                if r.contains(CGPoint(x: x, y: y)) { hidden = true; hideTop[b] = Float(r.maxY); hideRadius[b] = Float(min(radii[j], r.width / 2, r.height / 2)); break }
+                if r.contains(CGPoint(x: x, y: y)) { hidden = true; break }   // true occlusion: only windows in front hide (freeze) the bin
                 if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radii[j])) }   // the front window's own radius (the Dock bar's is larger)
             }
+            // Walls are geometry: the highest window whose rect holds the edge point acts as the wall (any stacking order; an occluder-only window behind us is no wall).
+            var best = -1
+            for j in rects.indices where j != front && (j < front || !windows[j].occluderOnly) && rects[j].contains(CGPoint(x: x, y: y)) {
+                if best < 0 || rects[j].maxY > rects[best].maxY || (rects[j].maxY == rects[best].maxY && windows[j].number < windows[best].number) { best = j }
+            }
+            if best >= 0 { hideTop[b] = Float(rects[best].maxY); hideRadius[b] = Float(min(radii[best], rects[best].width / 2, rects[best].height / 2)) }
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
         }
@@ -365,7 +371,7 @@ extension SnowField {
                 var kept = prev.pile
                 kept.visible = pile.visible
                 kept.cap = pile.cap
-                kept.base = pile.base; kept.boost = pile.boost; kept.walls = pile.walls; kept.wallInfo = pile.wallInfo
+                kept.base = pile.base; kept.boost = pile.boost; kept.walls = pile.walls; kept.wallInfo = pile.wallInfo; kept.hideTop = pile.hideTop
                 kept.supportL = pile.supportL; kept.supportR = pile.supportR
                 kept.hold = []; kept.held = []
                 if orderOnly {   // stacking order only: no trim, no peel, no shed. Snow that no longer fits the new limit is pinned by `hold` (existing snow only: growth still follows the new limit); a real change drops it

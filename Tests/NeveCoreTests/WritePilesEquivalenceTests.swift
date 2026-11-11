@@ -46,8 +46,8 @@ extension SnowField {
         // The ground slice between the bank column and the Dock end is replaced by the bridge body below (one fill, no doubled halo / crest); held back until we know a bridge exists.
         var held: [(side: Int, seg: PileSeg)] = [], bridged = [false, false]
         for s in surfaces {
-            let h = s.pile.shown, base = s.pile.base
-            var vis = s.pile.visible
+            let h = s.id > 0 && !s.pile.hideTop.isEmpty ? drawHeights(s) : s.pile.shown, base = s.pile.base
+            var vis = s.id > 0 && !s.pile.hideTop.isEmpty ? [Bool](repeating: true, count: h.count) : s.pile.visible
             for r in junc.skip[s.id] ?? [] { for k in r { vis[k] = false } }
             let jd = junc.front[s.id]
             func merged(_ i: Int) -> Bool { jd?.merged[i] ?? false }
@@ -126,8 +126,6 @@ extension SnowField {
                             }
                         }
                         pileEnds.append(PileEnd(id: s.id, first: first, last: prev, drag: drag, segs: seg0..<n))
-                        if hi == e - 1, e < cnt, case let pts = wallTail(s, bin: e - 1, side: 1, from: prev, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = prev; for c in pts { put(q.x, q.t, q.b, c.x, c.t, c.b, drag, inset: drop); q = c } }
-                        if lo == b, b > 0, case let pts = wallTail(s, bin: b, side: -1, from: first, skip: junc.skip[s.id] ?? []), !pts.isEmpty { var q = first; for c in pts { put(c.x, c.t, c.b, q.x, q.t, q.b, drag, inset: drop); q = c } }
                     }
                 }
                 b = e

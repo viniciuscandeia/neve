@@ -7,7 +7,7 @@
 //   `limit(b) = max(min(rawLimit(b) + mound, cap), hold)`; `rawLimit` = (maxes or maxHeight) * wobble + boost, tapered to 0 over `inset` from x0 / x1 unless supportL / supportR (end faces a drift / seam: no taper, dip or spill).
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax moves half the
 //   excess to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
-//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts (limit rises to the front top at the wall for step <= maxDrift, also against the wobble) and records `wallInfo`; fillet(b:h:) = draw-only concave lift beside a wall;
+//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts from the GEOMETRY of the higher windows over the pile (`hideTop`, no stacking order; limit rises to the front top at the wall for step <= maxDrift, also against the wobble) and records `wallInfo`; fillet(b:h:) = draw-only concave lift beside a wall;
 //   visibleRuns() = visible bin ranges.
 // Pile is a struct: avoid copying whole arrays in hot code (mutate surfaces[si].pile in place, see Surfaces.sweep). Callers: Surfaces.swift (build / deposit / shed), SurfaceMap.swift, Render.swift (writePiles reads it), and read or mutated directly by
 //   Avalanche, Frost, Melt, Walk, Snowball, Figures*. Tests: PileLogicTests, SurfaceMapTests, PhysicsTests and others. Changing slope / limit math changes visuals everywhere and many tuned tests.
@@ -31,7 +31,8 @@ public struct Pile {
     var spillR: Float = 0
     var wobble: [Float] = []     // per-bin multiplier on the ceiling (long waves along the pile, see setWobble); empty = 1
     var boost: [Float] = []      // extra height limit per bin: snow banked against a front window (empty = none)
-    var walls: [Float] = []      // x of each wall (visible bin next to a hidden one), global
+    var hideTop: [Float] = []    // per bin: absolute top y of the window that GEOMETRICALLY covers it (a window whose rect holds the bin's edge point, whatever the stacking order), 0 = none; empty = none. Order independent: walls / draw derive from it
+    var walls: [Float] = []      // x of each wall (uncovered bin next to a geometrically covered one), global
     var wallInfo: [WallInfo] = []   // parallel to `walls`: what the drawn fillet / corner tail need (draw only)
     var supportL = false         // the pile end faces a drift (SeamLink): no corner dip, taper or spill there
     var supportR = false
@@ -97,6 +98,7 @@ public struct Pile {
     /// to reach the front top (step <= maxDrift), a capped drift (<= driftFar) or a small ramp, sloping off over >= driftMinWidth.
     mutating func addWalls(hideTop: [Float], hideRadius: [Float], edgeY: Float) {
         let n = heights.count, bw = Tuning.binWidth
+        self.hideTop = hideTop.contains { $0 > 0 } ? hideTop : []
         func wall(_ k0: Int, _ wx: Float, _ self_: inout Pile) {
             let top = hideTop[k0], step = top - edgeY
             let peak = step <= Tuning.maxDrift ? max(step, 0) : step <= Tuning.driftFar ? Tuning.maxDrift : self_.maxHeight + Tuning.driftFarRamp
@@ -113,9 +115,9 @@ public struct Pile {
                 if d < width { self_.boost[k] = max(self_.boost[k], amount * (1 - d / width)) }
             }
         }
-        for b in 0..<n where visible[b] {
-            if b > 0, !visible[b - 1] { wall(b - 1, Float(c0 + b) * bw, &self) }
-            if b + 1 < n, !visible[b + 1] { wall(b + 1, Float(c0 + b + 1) * bw, &self) }
+        for b in 0..<n where hideTop[b] <= 0 {   // geometry only (a higher window's rect over the bin's edge point), never the stacking order
+            if b > 0, hideTop[b - 1] > 0 { wall(b - 1, Float(c0 + b) * bw, &self) }
+            if b + 1 < n, hideTop[b + 1] > 0 { wall(b + 1, Float(c0 + b + 1) * bw, &self) }
         }
     }
 
