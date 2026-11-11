@@ -132,6 +132,9 @@ public struct Pile {
         guard bin >= 0, bin < heights.count, visible[bin], cap[bin] >= Tuning.minRoom else { return false }
         var changed = false
         // Fresh powder barely sticks to a clean surface and lands as a one-bin speck (no wide footprint); the grip grows as snow builds up under it.
+        if !mound.isEmpty {   // self-correcting allowance: snow that left by any path (melt, release, take, slide) must not let snowfall regrow the old heap
+            for i in max(0, bin - 9)...min(heights.count - 1, bin + 9) { mound[i] = min(mound[i], max(0, heights[i] - rawLimit(i))) }
+        }
         let h0 = heights[bin]
         if powder, h0 < Tuning.speckFloor {
             let v = volume * softness(bin) * (Tuning.speckStick + (1 - Tuning.speckStick) * h0 / Tuning.speckFloor)

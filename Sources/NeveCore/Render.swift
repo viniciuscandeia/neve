@@ -264,7 +264,7 @@ extension SnowField {
                     if l.front == 0 { liftSeam(p, &a, &c) }   // a junction is blended below instead
                     let n0 = n
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)   // moves with the drag only when both sides do (else it would detach from the side that stays)
-                    if l.front != 0 { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2) }   // overlap junction: one smooth crest
+                    if l.front != 0, a.drag == c.drag { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2, heap: { moundAt($0, l.left, l.right) }) }   // overlap junction: one smooth crest (not while only one side is dragged: it would detach)
                 }
             }
         }
@@ -380,9 +380,19 @@ extension SnowField {
 
     /// Overlap junction at x `xj`: the crests of both stretches (and the bridge) within `w` of it are replaced by a smoothstep blend between the
     /// crest heights at xj - w and xj + w (a saddle, no step or spike where the two piles meet). The half-width grows with the crest difference
-    /// (`max(16, 6 * |dh|)`, so the slope stays gentle however far apart the crests are). The shading reference (`tint0/tint1`) is blended over the same
+    /// (`min(80, max(16, 6 * |dh|))`, so the slope stays gentle however far apart the crests are). The shading reference (`tint0/tint1`) is blended over the same
     /// window, so the deep-snow tint is continuous across the junction. Draw-only; never below a slice's base.
-    func blendCrest(_ p: UnsafeMutablePointer<PileSeg>, _ rs: [Range<Int>], at xj: Float) {
+    /// Whether a pushed heap (Pile.mound > 0) stands over global x on either surface.
+    func moundAt(_ x: Float, _ a: Int, _ b: Int) -> Bool {
+        for id in [a, b] {
+            guard let si = index[id], !surfaces[si].pile.mound.isEmpty else { continue }
+            let k = column(x) - surfaces[si].c0
+            if k >= 0, k < surfaces[si].pile.mound.count, surfaces[si].pile.mound[k] > 0 { return true }
+        }
+        return false
+    }
+
+    func blendCrest(_ p: UnsafeMutablePointer<PileSeg>, _ rs: [Range<Int>], at xj: Float, heap: (Float) -> Bool = { _ in false }) {
         func ref(_ s: PileSeg, _ u: Float) -> Float { s.dragged & 4 != 0 ? s.tint0 + (s.tint1 - s.tint0) * u : s.base0 + (s.base1 - s.base0) * u }
         func at(_ x: Float) -> (t: Float, r: Float)? {   // crest height (and shading reference) over x (highest covering slice), else the nearest end on that side
             var best: (t: Float, r: Float)?, near: (d: Float, t: Float, r: Float)?
@@ -397,7 +407,7 @@ extension SnowField {
             return best ?? near.map { ($0.t, $0.r) }
         }
         guard let l0 = at(xj - 16), let r0 = at(xj + 16) else { return }
-        let w = max(16, 6 * abs(r0.t - l0.t))
+        let w = min(80, max(16, 6 * abs(r0.t - l0.t)))   // capped: a tall heap near a junction must not be flattened over a long stretch
         guard let l = at(xj - w), let r = at(xj + w) else { return }
         func blend(_ x: Float, _ a: Float, _ c: Float, _ own: Float) -> Float {
             let u = (x - (xj - w)) / (2 * w)
@@ -407,8 +417,8 @@ extension SnowField {
         for r_ in rs { for i in r_ {
             let s = p[i]
             func inside(_ x: Float) -> Bool { x > xj - w && x < xj + w }
-            if inside(s.x0) { p[i].top0 = max(blend(s.x0, l.t, r.t, 0), s.base0) }
-            if inside(s.x1) { p[i].top1 = max(blend(s.x1, l.t, r.t, 0), s.base1) }
+            if inside(s.x0) { p[i].top0 = max(blend(s.x0, l.t, r.t, 0), s.base0, heap(s.x0) ? s.top0 : -.infinity) }   // a pushed heap is never drawn lower than itself
+            if inside(s.x1) { p[i].top1 = max(blend(s.x1, l.t, r.t, 0), s.base1, heap(s.x1) ? s.top1 : -.infinity) }
             p[i].tint0 = blend(s.x0, l.r, r.r, ref(s, 0)); p[i].tint1 = blend(s.x1, l.r, r.r, ref(s, 1)); p[i].dragged |= 4
             p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3); p[i].n0 = p[i].slope; p[i].n1 = p[i].slope
         } }

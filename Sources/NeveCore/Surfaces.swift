@@ -394,7 +394,7 @@ extension SnowField {
             }
         }
         else if id == 0, !dockCarry.isEmpty, time <= dockCarryUntil {   // the Dock pile carried across a screen resize
-            if dockMoundCarry.count == dockCarry.count { pile.mound = (0..<pile.heights.count).map { c0 + $0 >= 0 && c0 + $0 < dockCarry.count ? dockMoundCarry[c0 + $0] : 0 } }
+            if dockMoundCarry.count == dockCarry.count { pile.mound = (0..<pile.heights.count).map { c0 + $0 >= 0 && c0 + $0 < dockCarry.count && dockMoundCarry[c0 + $0] > 0 ? max(0, dockCarry[c0 + $0] - pile.rawLimit($0)) : 0 } }   // heap allowance = carried height over the ceiling
             for b in pile.heights.indices where c0 + b >= 0 && c0 + b < dockCarry.count { pile.heights[b] = pile.visible[b] ? min(dockCarry[c0 + b], pile.limit(b)) : dockCarry[c0 + b] }
             pile.shown = pile.heights
         }
@@ -463,8 +463,8 @@ extension SnowField {
         defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
-            let reach = Tuning.maxPileHeight + (surfaces[si].pile.mound.max() ?? 0)   // a heap can stand far above the usual pile
-            guard hi >= edgeY - Tuning.maxPileHeight, lo <= edgeY + reach else { continue }
+            guard hi >= edgeY - Tuning.maxPileHeight else { continue }
+            if lo > edgeY + Tuning.maxPileHeight, lo > edgeY + Tuning.maxPileHeight + (surfaces[si].pile.mound.max() ?? 0) { continue }   // a heap can stand far above the usual pile (looked up only when the cursor is above the plain pile)
             let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(surfaces[si].pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
             guard b0 <= b1 else { continue }
             var removed: Float = 0, wx: Float = 0, wy: Float = 0

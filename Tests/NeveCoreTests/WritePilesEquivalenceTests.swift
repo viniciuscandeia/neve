@@ -161,7 +161,7 @@ extension SnowField {
                     if l.front == 0 { liftSeam(p, &a, &c) }
                     let n0 = n
                     put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)
-                    if l.front != 0 { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2) }
+                    if l.front != 0, a.drag == c.drag { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2, heap: { moundAt($0, l.left, l.right) }) }
                 }
             }
         }

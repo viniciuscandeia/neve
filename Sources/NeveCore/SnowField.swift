@@ -269,7 +269,7 @@ public final class SnowField {
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         if !balls.isEmpty { balls.removeAll() }
         for i in surfaces.indices { surfaces[i].pile.empty() }
-        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []; dockCarry = []
+        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []; dockCarry = []; dockMoundCarry = []
         windSlow = 0; stashBack.removeAll()
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)

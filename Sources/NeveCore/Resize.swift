@@ -60,11 +60,11 @@ extension SnowField {
         var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: -1e5, x1: 2e5 + newSize.x)
         pile.maxHeight = Tuning.groundMaxHeight
         pile.heights = remapHeights(oldGround, to: numCols)
-        if oldGroundMound.contains(where: { $0 > 0 }) { pile.mound = remapHeights(oldGroundMound, to: numCols) }
+        if oldGroundMound.contains(where: { $0 > 0 }) { pile.mound = (0..<numCols).map { max(0, pile.heights[$0] - pile.rawLimit($0)) } }   // from the remapped heights, not remapped on its own
         surfaces = [Surface(id: Tuning.groundID, frame: CGRect(x: -1e5, y: -1, width: 2e5 + CGFloat(newSize.x), height: 1), edgeY: 0, c0: 0, anchor: 0, pile: pile)]
         index = [Tuning.groundID: 0]
         dockCarryUntil = time + 2; dockCarry = oldDock.contains { $0 > 0 } ? remapHeights(oldDock, to: numCols) : []
-        dockMoundCarry = oldDockMound.contains { $0 > 0 } ? remapHeights(oldDockMound, to: numCols) : []
+        dockMoundCarry = oldDockMound.contains { $0 > 0 } ? remapHeights(oldDockMound, to: numCols) : []   // only says WHERE a heap stood; its allowance is recomputed from the carried heights when the Dock is rebuilt
         seams = []
         lastWindows = []; boundsDirty = true
         buildColumns()

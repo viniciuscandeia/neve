@@ -115,3 +115,15 @@ private func tintAt(_ s: [PileSeg], _ x: Float) -> Float? {
         }
     }
 }
+
+// Review M2/L1: a pushed heap 30 pt from an overlap junction keeps its height in the drawing (the blend window is capped and never lowers a heap).
+@Test func aTallHeapNearAJunctionKeepsItsHeight() {
+    let f = scene(frontTop: 404, frontRounds: 40)
+    let si = f.index[1]!   // heap centre: global x 270 (30 pt left of the junction at 300)
+    let b = Int(270 / Tuning.binWidth) - f.surfaces[si].c0
+    f.surfaces[si].pile.mound = [Float](repeating: 0, count: f.surfaces[si].pile.heights.count)
+    for k in (b - 6)...(b + 6) { f.surfaces[si].pile.heights[k] = 100; f.surfaces[si].pile.mound[k] = 100 }
+    f.pilesDirty = true
+    let top = topAt(pileSegs(f), 270) ?? 0
+    #expect(top - f.surfaces[si].edgeY >= 95, "heap drawn at \(top - f.surfaces[si].edgeY) of 100")
+}
