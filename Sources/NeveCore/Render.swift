@@ -7,7 +7,7 @@
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = `Self.crest`, shared with Contour.swift: neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
 //   pile, joins n0/n1 normals of neighbouring slices. Ground and Dock are drawn here (runs, the bank <-> Dock bridges and filled corners); every WINDOW support is drawn by Contour.swift `writeGroups` (one contour per group of touching windows: walls / seams from frame geometry only,
 //   slice z = the window the snow rests on, base follows the corner arc; no junction merges, crest blends, seam bridges or fillets any more). Draw-only: never changes `heights`.
-// Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
+// Invariants: struct layouts MUST match the MSL text in ShaderStructs.swift (interpolated into the shaders in Sources/Neve; ShaderLayoutTests checks it); y-up screen-local pt.
 // Gotchas: WritePilesBenchTests (NEVE_BENCH=1) times writePiles; GroupContourTests / StackIndependenceTests pin the window drawing. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
 //   stays testable. Hot path: writePiles / writeInstances run every frame the picture changes; writePiles splits time into pileSeconds ease / contour / join when `timer` is set (NEVE_PERF).
 
