@@ -440,7 +440,7 @@ extension SnowField {
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         breakGifts(ax, ay, Float(b.x), Float(b.y), r, v)
         breakIcicles(ax, ay, Float(b.x), Float(b.y), r, v)
-        guard pointerPush else { return }
+        guard pointerPush, !calm, !silent else { return }   // Reduce Motion / silent: piles stay put (no overflow could fly off, so nothing may be cut)
         defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
@@ -462,7 +462,7 @@ extension SnowField {
                     let p0 = min(max(ax - x, -r), r), p1 = min(max(ax + dx - x, -r), r)
                     cover = abs((p1 - p0) - (p1 * p1 * p1 - p0 * p0 * p0) / (3 * r * r)) / (1.3333 * r)
                 } else { cover = (1 - u * u) * share }
-                let keep = min(max(qy - r - bottom, 0), h)   // snow below the cursor's lower edge stays
+                let keep = min(max(qy - r - bottom, Tuning.plowFloor), h)   // snow below the cursor's lower edge stays, and a plow never scrapes the window bare (a thin layer stays)
                 let dh = min(depth * cover, h - keep)   // soft parabolic dent: nothing pops, the edges stay round
                 guard dh > 0.01 else { continue }
                 surfaces[si].pile.heights[k] = h - dh
@@ -483,16 +483,17 @@ extension SnowField {
                 owed += removed - banked; cx += wx; cy += wy; sum += removed
             }
         }
-        guard sum > 0, !calm, !silent else { return }
+        guard sum > 0 else { return }
         if speed > 600, Float.random(in: 0..<1, using: &rng) < 0.3 { addPuff(x: cx / sum, y: cy / sum + 3) }   // fast swipe: a light powder puff as feedback
         guard owed > 0.01 else { return }
         sweepOwed = min(sweepOwed + owed, 600)
-        launchSweepDebris(x: ox / owed, y: oy / owed, v: v, speed: speed, r: r)
+        launchSweepDebris(x: ox / owed, y: oy / owed, v: v, speed: speed, r: r, dir: horizontal ? (v.x >= 0 ? 1 : -1) : (ox / owed >= ax ? 1 : -1))   // a parting spills outward at each end
     }
 
     /// Banks `area` (pt^2) ahead of global x in direction `dir`: a rounded berm (taper over nine bins) that may heap up to 25% over the pile limit
     /// (never over a window's `cap`), then whatever is left fills bins further along the run. Returns the area banked; the rest hit the run end at global
     /// (`end`, `endY`). `lo`/`hi` grow to the touched bins. Overfill is bounded by the 1.25 ceiling however many passes pile onto it.
+    static let bermWeights: [Float] = [0.07, 0.13, 0.17, 0.17, 0.15, 0.12, 0.09, 0.06, 0.04]   // taper over nine bins, sums to 1
     func berm(_ si: Int, atX x: Float, dir: Int, area: Float, lo: inout Int, hi: inout Int, end: inout Float, endY: inout Float) -> Float {
         let n = surfaces[si].pile.heights.count, c = surfaces[si].c0, start = Int(x * invBin) - c + dir
         var banked: Float = 0, last = min(max(start - dir, 0), n - 1)
@@ -500,13 +501,14 @@ extension SnowField {
             guard k >= 0, k < n, surfaces[si].pile.visible[k] else { return false }
             let h = surfaces[si].pile.heights[k]
             let nh = min(h + want / Tuning.binWidth, max(min(surfaces[si].pile.limit(k) * Tuning.heapFactor, surfaces[si].pile.cap[k]), h))
+            last = k
+            guard nh > h else { return true }   // already at the heap ceiling: walk on without touching it
             surfaces[si].pile.heights[k] = nh; banked += (nh - h) * Tuning.binWidth
-            lo = min(lo, k); hi = max(hi, k); pilesDirty = true; last = k
+            lo = min(lo, k); hi = max(hi, k); pilesDirty = true
             return true
         }
-        let w: [Float] = [0.07, 0.13, 0.17, 0.17, 0.15, 0.12, 0.09, 0.06, 0.04]
         var open = true
-        for (i, wi) in w.enumerated() where !add(start + dir * i, wi * area) { open = false; break }
+        for (i, wi) in Self.bermWeights.enumerated() where !add(start + dir * i, wi * area) { open = false; break }
         var m = 9
         while open, banked < area - 0.01 { if add(start + dir * m, area - banked) { m += 1 } else { open = false } }
         end = binCenter(c + last); endY = surfaces[si].edgeY + surfaces[si].pile.base[last] + surfaces[si].pile.heights[last]
@@ -515,8 +517,8 @@ extension SnowField {
 
     /// Turns the owed volume into debris launched along the cursor: fine powder plus a few clumps (fast), or a gentle sift (slow hover).
     /// Each carries its own volume (`vol`), so what leaves the pile lands again.
-    func launchSweepDebris(x: Float, y: Float, v: SIMD2<Float>, speed: Float, r: Float) {
-        let fast = speed > 120, dir: Float = v.x >= 0 ? 1 : -1
+    func launchSweepDebris(x: Float, y: Float, v: SIMD2<Float>, speed: Float, r: Float, dir: Float) {
+        let fast = speed > 120
         var spawned = 0
         while sweepOwed >= 1.5, spawned < 8 {
             let grow = max(1, sweepOwed / 40)   // a big backlog goes out in bigger pieces: volume is carried, not dropped

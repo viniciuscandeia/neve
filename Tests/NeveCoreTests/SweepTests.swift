@@ -240,3 +240,11 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
     }
     print("SWEEP µs/call:", total / 20000)
 }
+
+@Test func plowLeavesAThinLayerOnTheWindow() {
+    let f = pileField()
+    let before = f.pile(id: 1)!.heights
+    for _ in 0..<40 { f.sweep(from: CGPoint(x: 300, y: 501), to: CGPoint(x: 400, y: 501), radius: 10, dt: 1 / 30) }
+    let after = f.pile(id: 1)!.heights
+    for i in 55...95 { #expect(after[i] >= min(before[i], Tuning.plowFloor) - 0.01) }   // never scraped bare: a bare edge between lumps reads as dark dashes
+}

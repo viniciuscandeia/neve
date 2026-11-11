@@ -72,6 +72,7 @@ public enum Tuning {
     static let calmFloorEconomyFPS: Float = 20      // same, Economy mode
     /// Option, default OFF: at the calm floor step the sim at the floor rate but let the renderer interpolate positions every display refresh
     /// (FrameRate.interpAlpha). Needs renderer wiring (prev/cur flake buffers); CPU = sim at floor + draw at display rate.
+    public static let plowFloor: Float = 2   // pt of snow a cursor pass leaves on a window (a bare edge between lumps reads as dark dashes)
     public static let interpolateCalm = ProcessInfo.processInfo.environment["NEVE_INTERP"] == "1"   // off: measured 2026-11-11, render at display rate costs +3.3..3.7% CPU and +8% WindowServer (fixed per-frame present cost); NEVE_INTERP=1 to re-measure
     // Wind-blown accumulation
     static let windBiasMax: Float = 0.3     // chance a landing flake slides one bin leeward when that bin is lower (at the sustained-wind cap)
