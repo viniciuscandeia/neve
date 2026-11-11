@@ -329,7 +329,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
         for i in 0..<16 { occ[i] = .zero }
-        if !prefs.behind { for (i, w) in windows.filter({ $0.occluderOnly && $0.frame.intersects(frame) && $0.frame.width >= 4 && $0.frame.height >= 4 }).sorted(by: { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }).prefix(8).enumerated() { occ[8 + i] = box(w.frame) } }
+        if !prefs.behind {
+            // Largest first, window id breaks ties: equal areas keep the same slots between polls (no flicker).
+            let hard = windows.filter { $0.occluderOnly && $0.frame.intersects(frame) && $0.frame.width >= 4 && $0.frame.height >= 4 }
+                .sorted { (x: WindowInfo, y: WindowInfo) -> Bool in let a = x.frame.width * x.frame.height, b = y.frame.width * y.frame.height; return a != b ? a > b : x.number < y.number }
+            for (i, w) in hard.prefix(8).enumerated() { occ[8 + i] = box(w.frame) }
+        }
         for (i, r) in rects.prefix(4).enumerated() { occ[i] = box(r) }
         if prefs.behindLarge {
             let big = rects.filter { $0.width * $0.height >= 0.35 * vis.width * vis.height }

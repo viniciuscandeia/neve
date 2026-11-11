@@ -797,12 +797,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ssTimer?.invalidate()
         ssTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in   // didstop can be missed; the engine process is the truth
             MainActor.assumeIsolated {
-                if !NSWorkspace.shared.runningApplications.contains(where: { isScreensaverEngine($0.bundleIdentifier) }) { self?.screensaverStopped() }
+                if self?.saverRunning == false { self?.screensaverStopped() }
             }
         }
         refreshRunState()
     }
     /// Back from the screen saver: the snow starts gently again (like after the idle pause), piles kept.
+    private var saverRunning: Bool { NSWorkspace.shared.runningApplications.contains { isScreensaverEngine($0.bundleIdentifier) } }
     @objc private func screensaverStopped() {
         ssTimer?.invalidate(); ssTimer = nil
         guard screensaver else { return }
@@ -811,9 +812,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshRunState()
     }
     @objc private func screensSlept() { screensAsleep = true; refreshRunState() }
-    @objc private func screensWoke() { screensAsleep = false; screensaverStopped(); refreshRunState() }
+    @objc private func screensWoke() { screensAsleep = false; if !saverRunning { screensaverStopped() }; refreshRunState() }
     @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
-    @objc private func sessionBecameActive() { sessionInactive = false; screensaverStopped(); refreshRunState() }
+    @objc private func sessionBecameActive() { sessionInactive = false; if !saverRunning { screensaverStopped() }; refreshRunState() }
     @objc private func accessibilityChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.reduceMotion = reduceMotion
