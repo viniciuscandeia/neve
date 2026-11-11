@@ -7,7 +7,7 @@ public enum Tuning {
     public static let flakes = 400                 // per 1440x900 screen (scaled by area)
     static let backgroundFraction: Float = 0.35
     static let maxPileHeight: Float = 18
-    static let heapFactor: Float = 1.25     // a cursor-plowed berm may stand this much over the pile limit (never over a window's cap)
+    static let moundMax: Float = 600        // pt: sanity bound on a cursor-pushed heap (it has no other limit but a window's cap)
     static let pileEase: Float = 0.25               // time constant of the drawn pile height rising toward the real one
     static let groundMaxHeight: Float = 24  // screen-bottom pile (lower-traffic, wide open, can sit deeper)
     static let groundID = -1

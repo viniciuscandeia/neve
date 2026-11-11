@@ -52,12 +52,13 @@ extension SnowField {
         let b0 = max(0, lo.isFinite ? Int(lo * invBin) - c0 : 0), b1 = min(n - 1, hi.isFinite ? Int(hi * invBin) - c0 : n - 1)
         guard b0 <= b1 else { return nil }
         var sum: Float = 0, cap: Float = 0, best: Float = 0, bestAt = b0
-        func lim(_ b: Int) -> Float { p.visible[b] ? max(p.limit(b), 0) : 0 }
+        func heap(_ b: Int) -> Bool { !p.mound.isEmpty && p.mound[b] > 0 }   // a pushed heap is the user's: it never counts toward a slide
+        func lim(_ b: Int) -> Float { p.visible[b] && !heap(b) ? max(p.limit(b), 0) : 0 }
         for b in b0...b1 {
-            let h = p.visible[b] ? p.heights[b] : 0
+            let h = p.visible[b] && !heap(b) ? p.heights[b] : 0
             if !p.boost.isEmpty, p.visible[b], p.boost[b] >= 0.5 * Tuning.maxDrift, h >= p.limit(b) - (1 - Tuning.avaDriftFraction) * p.boost[b] { return binCenter(c0 + b) }
             sum += h; cap += lim(b)
-            if b - b0 >= win { sum -= p.visible[b - win] ? p.heights[b - win] : 0; cap -= lim(b - win) }
+            if b - b0 >= win { sum -= p.visible[b - win] && !heap(b - win) ? p.heights[b - win] : 0; cap -= lim(b - win) }
             if b - b0 >= win - 1, cap > 0, sum / cap > best { best = sum / cap; bestAt = b - win / 2 }
         }
         return best >= Tuning.avaFullFraction ? binCenter(c0 + bestAt) : nil

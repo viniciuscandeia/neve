@@ -211,7 +211,7 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
     for k in 0..<30 { f.sweep(from: CGPoint(x: 260 + CGFloat(k) * 4, y: 505), to: CGPoint(x: 280 + CGFloat(k) * 4, y: 505), radius: 10, dt: 1 / 30) }
     let p = f.pile(id: 1)!
     #expect(abs(v0 - volume(f) - carried(f)) < 0.01 * v0)
-    #expect(p.heights.indices.allSatisfy { p.heights[$0] <= max(before[$0], p.limit($0) * Tuning.heapFactor) + 0.01 })   // heap is capped
+    #expect((p.heights.max() ?? 0) > (before.max() ?? 0) + 2)   // the pushed snow heaps above the usual pile: no height limit
     #expect(f.debris[d0...].allSatisfy { $0.pos.x > 430 })   // anything that flies off does so at the run end, not at the cursor
 }
 
@@ -247,4 +247,20 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
     for _ in 0..<40 { f.sweep(from: CGPoint(x: 300, y: 501), to: CGPoint(x: 400, y: 501), radius: 10, dt: 1 / 30) }
     let after = f.pile(id: 1)!.heights
     for i in 55...95 { #expect(after[i] >= min(before[i], Tuning.plowFloor) - 0.01) }   // never scraped bare: a bare edge between lumps reads as dark dashes
+}
+
+@Test func pushingMoreGrowsTheHeapAndSnowfallDoesNotTrimIt() {
+    let f = pileField()
+    func push(_ n: Int) { for k in 0..<n { f.sweep(from: CGPoint(x: 230 + CGFloat(k % 40) * 3, y: 505), to: CGPoint(x: 250 + CGFloat(k % 40) * 3, y: 505), radius: 10, dt: 1 / 30) } }
+    push(20); let h1 = f.pile(id: 1)!.heights.max() ?? 0
+    push(60); let h2 = f.pile(id: 1)!.heights.max() ?? 0
+    #expect(h2 > h1 + 1)   // more pushing, bigger heap
+    let v = f.pile(id: 1)!.heights.reduce(0, +)
+    let peak = f.pile(id: 1)!.heights.firstIndex(of: h2)!
+    for _ in 0..<20 { f.deposit(surface: f.index[1]!, bin: peak, volume: 1) }   // snow landing on and around the heap
+    #expect((f.pile(id: 1)!.heights.max() ?? 0) >= h2 - 0.5)
+    #expect(f.pile(id: 1)!.heights.reduce(0, +) >= v - 1)
+    let p = f.pile(id: 1)!
+    for i in 1..<p.heights.count where p.visible[i] && p.visible[i - 1] && abs(p.base[i] - p.base[i - 1]) < 0.5 {   // rounded corners drop the base: not the heap's slope
+        #expect(abs(p.base[i] + p.heights[i] - p.base[i - 1] - p.heights[i - 1]) <= Tuning.slope * 2 + Tuning.dustSlope + 1) }   // a mound, not a spike (surface step within the snow's angle of repose)
 }

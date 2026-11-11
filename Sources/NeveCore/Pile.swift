@@ -20,6 +20,7 @@ public struct Pile {
     var walls: [Float] = []      // x of each wall (visible bin next to a hidden one), global
     var supportL = false         // the pile end faces a drift (SeamLink): no corner dip, taper or spill there
     var supportR = false
+    var mound: [Float] = []      // per bin: extra height allowed by snow the cursor pushed into a heap (only `cap` bounds it); empty = none
     var peel: [Float] = []       // per bin: seconds until its excess over `limit` lets go as debris (-1 = none); empty = nothing pending
     var peeling: Bool { !peel.isEmpty }
 
@@ -44,7 +45,7 @@ public struct Pile {
         return r
     }
 
-    mutating func empty() { for b in heights.indices { heights[b] = 0 } }
+    mutating func empty() { for b in heights.indices { heights[b] = 0 }; mound = [] }
 
     /// Baseline follows the corner arcs within `radius` of each end.
     mutating func round(radius: Float, c0: Int, minX: Float, maxX: Float) {
@@ -96,13 +97,22 @@ public struct Pile {
         return max(0.15, 1 - t * t)
     }
 
-    func limit(_ bin: Int) -> Float {
+    func limit(_ bin: Int) -> Float { min(rawLimit(bin) + (mound.isEmpty ? 0 : mound[bin]), cap[bin]) }
+
+    /// The ceiling snowfall builds to (wavy, tapered, drift-raised), before any pushed heap allowance and the front-window cap.
+    func rawLimit(_ bin: Int) -> Float {
         var l = (maxes.isEmpty ? maxHeight : maxes[bin]) * (wobble.isEmpty ? 1 : wobble[bin]) + (boost.isEmpty ? 0 : boost[bin])
         if inset > 0 {
             let x = binCenter(c0 + bin)
             l *= min(1, max(min(supportL ? .infinity : x - x0, supportR ? .infinity : x1 - x), 0) / inset)
         }
-        return min(l, cap[bin])
+        return l
+    }
+
+    /// Keeps bin k's heap allowance equal to its pushed excess: it grows as a heap forms and spreads, and shrinks as the heap is pushed on.
+    mutating func trackMound(_ k: Int) {
+        if mound.isEmpty { mound = [Float](repeating: 0, count: heights.count) }
+        mound[k] = max(0, heights[k] - rawLimit(k))
     }
 
     /// Adds snow around `bin` (spread 1/4-1/2-1/4 so no single-bin spikes), then relaxes locally.
@@ -203,7 +213,13 @@ public struct Pile {
     /// Light relaxation of bins lo...hi (a few passes): rounds what a push left steep.
     mutating func settle(_ lo: Int, _ hi: Int) {
         guard lo <= hi else { return }
-        for _ in 0..<3 { for i in lo...hi where visible[i] { _ = relax(i, i - 1); _ = relax(i, i + 1) } }
+        let tall = mound.isEmpty ? 0 : (mound[lo...hi].max() ?? 0)   // a tall heap needs more passes (and room) to reach its slope: a mound, never a spike
+        let a = max(0, lo - Int(tall / Tuning.slope) - 2), b = min(heights.count - 1, hi + Int(tall / Tuning.slope) + 2)
+        for _ in 0..<(3 + min(Int(tall / Tuning.slope), 30)) {
+            var moved = false
+            for i in a...b where visible[i] { if relax(i, i - 1) { moved = true }; if relax(i, i + 1) { moved = true } }
+            if !moved { break }
+        }
     }
 
     /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.
@@ -227,6 +243,7 @@ public struct Pile {
         guard m > 0 else { return false }
         heights[i] -= m
         if ok { heights[j] += m } else if !inRange { if j < 0 { spillL += m } else { spillR += m } }
+        if !mound.isEmpty, mound[i] > 0 || (ok && mound[j] > 0) { trackMound(i); if ok { trackMound(j) } }   // heap snow keeps its allowance as it spreads
         return true
     }
 }

@@ -213,6 +213,7 @@ extension SnowField {
             let nd = docks.first, pd = dockPrev
             var push: (l: Float, r: Float) = (0, 0)
             if prev.pile.shown.count == numCols { pile.shown = prev.pile.shown }   // the eased drawn heights ride along: the bank does not jump mid-ease
+            if prev.pile.mound.count == numCols { pile.mound = prev.pile.mound }   // and so does a pushed heap
             for b in 0..<numCols {   // a lowered limit (Dock shrank / moved) sheds the excess as debris; hidden columns keep their snow
                 let keep = pile.visible[b] ? min(prev.pile.heights[b], pile.limit(b)) : prev.pile.heights[b], over = prev.pile.heights[b] - keep   // hidden snow stays as it was
                 pile.heights[b] = keep
@@ -293,7 +294,10 @@ extension SnowField {
                 for b in pile.heights.indices {
                     let pc = c0 + b - shift, k = pc - prev.c0   // the column in the previous surface's coordinates
                     var h: Float, wasVisible = true
-                    if k >= 0, k < prev.pile.heights.count { h = prev.pile.heights[k]; wasVisible = prev.pile.visible[k]; shown[b] = eased ? prev.pile.shown[k] : h }
+                    if k >= 0, k < prev.pile.heights.count {
+                        h = prev.pile.heights[k]; wasVisible = prev.pile.visible[k]; shown[b] = eased ? prev.pile.shown[k] : h
+                        if !prev.pile.mound.isEmpty, prev.pile.mound[k] > 0 { if pile.mound.isEmpty { pile.mound = [Float](repeating: 0, count: pile.heights.count) }; pile.mound[b] = prev.pile.mound[k] }   // a pushed heap rides with its window
+                    }
                     else if let o = oh[pc] { h = o; shown[b] = o }   // came back from past the screen edge
                     else { continue }
                     guard pile.visible[b] else { pile.heights[b] = h; continue }
@@ -444,7 +448,8 @@ extension SnowField {
         defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
-            guard hi >= edgeY - Tuning.maxPileHeight, lo <= edgeY + Tuning.maxPileHeight else { continue }
+            let reach = Tuning.maxPileHeight + (surfaces[si].pile.mound.max() ?? 0)   // a heap can stand far above the usual pile
+            guard hi >= edgeY - Tuning.maxPileHeight, lo <= edgeY + reach else { continue }
             let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(surfaces[si].pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
             guard b0 <= b1 else { continue }
             var removed: Float = 0, wx: Float = 0, wy: Float = 0
@@ -466,6 +471,7 @@ extension SnowField {
                 let dh = min(depth * cover, h - keep)   // soft parabolic dent: nothing pops, the edges stay round
                 guard dh > 0.01 else { continue }
                 surfaces[si].pile.heights[k] = h - dh
+                if !surfaces[si].pile.mound.isEmpty { surfaces[si].pile.trackMound(k) }   // pushing a heap on: its allowance moves with the snow
                 pilesDirty = true
                 let a = dh * Tuning.binWidth
                 removed += a; wx += x * a; wy += (bottom + h) * a
@@ -500,10 +506,11 @@ extension SnowField {
         func add(_ k: Int, _ want: Float) -> Bool {   // false: ran into the end of the run
             guard k >= 0, k < n, surfaces[si].pile.visible[k] else { return false }
             let h = surfaces[si].pile.heights[k]
-            let nh = min(h + want / Tuning.binWidth, max(min(surfaces[si].pile.limit(k) * Tuning.heapFactor, surfaces[si].pile.cap[k]), h))
+            let nh = min(h + want / Tuning.binWidth, max(min(surfaces[si].pile.cap[k], Tuning.moundMax), h))   // the pushed heap has no height limit but a window's cap
             last = k
             guard nh > h else { return true }   // already at the heap ceiling: walk on without touching it
             surfaces[si].pile.heights[k] = nh; banked += (nh - h) * Tuning.binWidth
+            surfaces[si].pile.trackMound(k)
             lo = min(lo, k); hi = max(hi, k); pilesDirty = true
             return true
         }
