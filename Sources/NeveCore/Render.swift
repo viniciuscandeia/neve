@@ -1,14 +1,14 @@
 // AGENT HEADER - Sources/NeveCore/Render.swift  (CPU side of the GPU buffers: Instance, Prim, PrimWriter, PileSeg, writeInstances, writePiles)
 // Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
 //   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
-//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (56 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `JunctionDraw`, `PileEnd`.
+//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (56 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
-//   pile, joins n0/n1 normals of neighbouring slices, and handles overlapping windows (`junctions` / `blendCrest` / `liftSeam` / `tintRefs` for seams between windows; draw-only, never changes `heights`). Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall, `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. Order independence: walls / seams / junctions come from frame geometry only (the HIGHER window is the wall: `Pile.hideTop`, `SeamLink.front`); a window pile under a higher one is drawn in full (`drawHeights`: beside a wall it continues the snow next to the wall flat into the corner cut-out, elsewhere clamped under the higher top, never without snow beside it) and only the shader's z clip hides what a window in front really covers. `Pile.fillet` lifts the crest beside a wall: no vertical cut. Slice z: every piece carries the z of the window whose top edge its snow rests on: back snow merged into a higher window's slices (`JunctionDraw.z`) and overlap seam bridges (the farther window's z) keep the BACK z, so the higher window's occluder clips what lies inside its body (SliceZTests).
-//   `blendCrest` smoothsteps the crest over half-width min(80, max(16, 6 * |crest difference|)) pt (the cap keeps a tall heap from being flattened), never draws a bin that holds a pushed heap (`moundAt`) lower than itself, and is skipped while only one side of the junction is being dragged.
+//   pile, joins n0/n1 normals of neighbouring slices. Ground and Dock are drawn here (runs, the bank <-> Dock bridges and filled corners); every WINDOW support is drawn by Contour.swift `writeGroups` (one contour per group of touching windows: walls / seams from frame geometry only,
+//   slice z = the window the snow rests on, base follows the corner arc; no junction merges, crest blends, seam bridges or fillets any more). Draw-only: never changes `heights`.
 // Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
-// Gotchas: WritePilesEquivalenceTests (and WritePilesCompareTests) mirror / compare writePiles - when you change its output, update them in the SAME change. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
+// Gotchas: WritePilesBenchTests (NEVE_BENCH=1) times writePiles; GroupContourTests / StackIndependenceTests pin the window drawing. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
 //   stays testable. Hot path: writePiles / writeInstances run every frame the picture changes; writePiles splits time into pileSeconds ease / contour / join when `timer` is set (NEVE_PERF).
 
 import CoreGraphics
@@ -109,7 +109,7 @@ extension SnowField {
     // MARK: Piles
 
     /// Upper bound of the segments `writePiles` can emit for the current surfaces (one per bin pair, plus bridges): size the buffer from it when the window list changes.
-    public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count } + 2 * seams.count + 16 }
+    public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count } + 4 * seams.count + 16 }
 
     /// Writes one `PileSeg` per bin pair of every snowy stretch of every run (top edge: neighbour blur, stable per-column noise and the
     /// front-window ceiling clamp; the ground bank and the Dock pile are bridged where they meet). Heights come from the eased `shown`
@@ -135,7 +135,6 @@ extension SnowField {
             }
         }
         pileEasing = active
-        let junc = junctions()
         let tp1 = timer?() ?? 0
         pileEnds.removeAll(keepingCapacity: true)
         let bw = Tuning.binWidth
@@ -155,13 +154,12 @@ extension SnowField {
         }
         // The ground slice between the bank column and the Dock end is replaced by the bridge body below (one fill, no doubled halo / crest); held back until we know a bridge exists.
         var heldL: PileSeg?, heldR: PileSeg?, bridgedL = false, bridgedR = false   // at most one ground slice per side
-        for s in surfaces {
-            var h = s.pile.shown
+        for s in surfaces where s.id <= 0 {   // ground and Dock; window supports are drawn per group (Contour.swift)
+            let h = s.pile.shown
             let base = s.pile.base
             curZ = zOf[s.id] ?? groundZ
             let cnt = h.count, edge = s.edgeY, drag = s.id == draggingID
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
-            if s.id > 0, !s.pile.hideTop.isEmpty { h = drawHeights(s) }   // see drawHeights
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
             func ceiling(_ i: Int) -> Float { edge + base[i] + s.pile.cap[i] }   // infinite where no window is in front
             // Stable irregularity keyed on the window-relative column (travels with the pile), interpolated between every 3rd column.
@@ -189,38 +187,28 @@ extension SnowField {
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
                 // Packed up to a window's underside: drawn exactly at it (no smoothing / noise pulling it down), so the snow hugs the window's rounded corner.
                 // Blended over the last 1.5pt (no pop when a column fills up to the window).
-                let smf = s.pile.fillet(i, sm)   // draw-only concave lift toward a wall's bank crest (no vertical cut against a higher front window)
-                let plain = min(max(edge + base[i] + smf + jitter(i, smf), fill(i) ?? -.infinity), ceiling(i))
+                let plain = min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
                 guard s.pile.cap[i].isFinite else { return plain }
                 let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
                 return plain + (ceiling(i) - plain) * k
             }
-            // Overlap junction: this pile's columns behind a front window are drawn by the front pile (see `junctions`); the front pile there carries both.
-            let jd = junc.front[s.id]
-            func merged(_ i: Int) -> Bool { jd?.merged[i] ?? false }
-            func point(_ i: Int, _ b: Int, _ e: Int) -> (x: Float, t: Float, b: Float) {
-                guard let jd, jd.merged[i] else { return (x(i), top(i, b, e), edge + base[i] - drop) }
-                return (x(i), max(top(i, b, e), jd.top[i]), jd.base[i])
-            }
-            let allRuns = s.id > 0 && !s.pile.hideTop.isEmpty ? [0..<cnt] : s.runs   // windows under a higher window: every bin (draw is geometry; the shader hides what is occluded)
-            for run in junc.skip[s.id].map({ Self.cut(allRuns, $0) }) ?? allRuns {
+            for run in s.runs {
                 let b = run.lowerBound, e = run.upperBound
                 // Snowy stretches only: 3+ bare bins split the run, so two specks far apart stay two specks (no 1pt film drawn between them).
                 var k = b
                 while k < e {
                     var lo = k
-                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil && !merged(lo) { lo += 1 }
+                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
                     var hi = lo, j = lo + 1, gap = 0
-                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil && !merged(j) { gap += 1 } else { gap = 0; hi = j }; j += 1 }
+                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
                     k = max(hi + 1, j)
                     if lo < e {
                         lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
-                        var prev = point(lo, b, e)
+                        var prev = (x: x(lo), t: top(lo, b, e), b: edge + base[lo] - drop)
                         let first = prev, seg0 = n
                         if lo < hi {
                             for i in (lo + 1)...hi {
-                                let cur = point(i, b, e)
-                                curZ = merged(i) ? jd!.z[i] : merged(i - 1) ? jd!.z[i - 1] : (zOf[s.id] ?? groundZ)   // back snow merged into a higher window's slices keeps the BACK window's z: the higher window's occluder clips what lies inside its body   // back snow merged into a higher window's slices keeps the BACK window's z: the higher window's occluder clips what lies inside its body
+                                let cur = (x: x(i), t: top(i, b, e), b: edge + base[i] - drop)
                                 let side = s.id != Tuning.groundID ? -1 : fillL > 0 && i - 1 == bankL ? 0 : fillR > 0 && i == bankR ? 1 : -1
                                 if side >= 0 {
                                     let seg = PileSeg(x0: prev.x, x1: cur.x, top0: prev.t, top1: cur.t, base0: prev.b, base1: cur.b, slope: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), dragged: drag ? 1 : 0, n0: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), n1: (cur.t - prev.t) / max(cur.x - prev.x, 1e-3), inset: drop, z: curZ)
@@ -236,6 +224,7 @@ extension SnowField {
                 }
             }
         }
+        writeGroups(p, capacity: capacity, n: &n, dropped: dropped)
         let bridgeStart = n
         curZ = zOf[0] ?? groundZ   // ground<->Dock bridges and the Dock's filled corners belong to the Dock (the Dock bar never hides them)
         // A ground bank that meets the Dock pile (ends within ~2.5pt in y (the top has up to 1.5pt of noise), close in x) reads as one snowbank.
@@ -264,22 +253,6 @@ extension SnowField {
             p[n] = seg; n += 1
         }
         keep(heldL, bridgedL); keep(heldR, bridgedR)
-        tintRefs(p, junc)
-        // Seam links (a drift reaching a front window's top, windows side by side): bridge the run ends so the contour is one chain.
-        for l in seams {
-            for a in pileEnds where a.id == l.left {
-                for c in pileEnds where c.id == l.right && c.first.x >= a.last.x && c.first.x - a.last.x < 8 {
-                    // The lower side rises to the other's top over a gentle ramp (the drift reaches the front pile's surface, no cliff).
-                    var a = a, c = c
-                    if l.front == 0 { liftSeam(p, &a, &c) }   // a junction is blended below instead
-                    let n0 = n
-                    let zl = zOf[l.left] ?? groundZ, zr = zOf[l.right] ?? groundZ
-                    curZ = l.front == 0 ? min(zl, zr) : max(zl, zr)   // overlap: the bridge rests on the lower window's top edge, so the farther window's z (the higher window's occluder clips what is inside its body); side by side: neither covers the other
-                    put(a.last.x, a.last.t, a.last.b, c.first.x, c.first.t, c.first.b, a.drag && c.drag, inset: 1)   // moves with the drag only when both sides do (else it would detach from the side that stays)
-                    if l.front != 0, a.drag == c.drag { blendCrest(p, [a.segs, c.segs, n0..<n], at: (a.last.x + c.first.x) / 2, heap: { moundAt($0, l.left, l.right) }) }   // overlap junction: one smooth crest (not while only one side is dragged: it would detach)
-                }
-            }
-        }
         // Smoothed end slopes: where two segments meet (same x, same height within tolerance) both ends take the average of the two slopes, so the
         // lighting normal is continuous. Run neighbours are adjacent in the buffer; bridges / held slices (appended after) are matched against the run slices
         // (x strictly increases inside a run: a binary search per run finds the only slice whose end can meet the bridge's start, and the only one whose start can meet its end).
@@ -309,32 +282,6 @@ extension SnowField {
         return n
     }
 
-    /// Order-independent walls: the heights a window pile is DRAWN with. Bins GEOMETRICALLY under a higher window (`Pile.hideTop`, whatever the stacking) are drawn whether or not that window is in front (the shader clips what is
-    /// really hidden). Within the corner radius of a wall they continue the snow of the bin next to the wall flat (never above the higher top), filling the corner's cut-out; elsewhere they keep their own snow clamped under the higher
-    /// top. Snow with no snow beside it is not drawn in the corner zone: no floating specks.
-    func drawHeights(_ s: Surface) -> [Float] {
-        var h = s.pile.shown
-        let cnt = h.count, edge = s.edgeY, base = s.pile.base, bw = Tuning.binWidth
-        guard !s.pile.hideTop.isEmpty else { return h }
-        let ht = s.pile.hideTop
-        var zone = [Float](repeating: -1, count: cnt)
-        for (wi, wx) in s.pile.walls.enumerated() where wi < s.pile.wallInfo.count {
-            let wb = Int((wx / bw).rounded()) - s.c0
-            let lc = wb - 1 >= 0 && wb - 1 < cnt && ht[wb - 1] > 0, rc = wb >= 0 && wb < cnt && ht[wb] > 0
-            guard lc != rc else { continue }
-            let e = rc ? wb - 1 : wb, dir = rc ? 1 : -1
-            guard e >= 0, e < cnt, h[e] > 0.15 else { continue }
-            let tail = max(min(h[e], s.pile.wallInfo[wi].top - edge - base[e]), 0)
-            for j in 1...(Int((s.pile.wallInfo[wi].radius / bw).rounded(.up)) + 1) {
-                let k = e + dir * j
-                guard k >= 0, k < cnt, ht[k] > 0 else { break }
-                zone[k] = max(zone[k], tail)
-            }
-        }
-        for i in 0..<cnt where ht[i] > 0 { h[i] = zone[i] >= 0 ? zone[i] : min(h[i], max(ht[i] - edge - base[i], 0)) }
-        return h
-    }
-
     /// Stable irregularity of a pile top keyed on the window-relative column (travels with the pile), interpolated between every 4th column.
     static func jitter(_ s: Surface, _ i: Int, _ sm: Float) -> Float {
         let rel = s.c0 + i - s.anchor, r = ((rel % 4) + 4) % 4, g = rel - r
@@ -343,172 +290,6 @@ extension SnowField {
         let r2 = ((rel % 2) + 2) % 2, g2 = rel - r2, w2: Float = r2 == 0 ? 0 : 0.5   // finer octave, interpolated between knots: rounded, never a per-column sawtooth
         let fine = 0.3 * (Float(noise(g2 &* 7 &+ 1013)) * (1 - w2) + Float(noise((g2 + 2) &* 7 &+ 1013)) * w2) * min(sm / 4, 1)
         return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5) + fine   // the Dock bank is bigger: a little more texture
-    }
-
-    /// Top edge of a window at x, dropping along its rounded top corners (-inf outside it).
-    static func roundedTop(x: Float, _ r: CGRect, radius: Float) -> Float {
-        let d = min(x - Float(r.minX), Float(r.maxX) - x), rad = min(radius, Float(r.width) / 2, Float(r.height) / 2)
-        guard d >= 0 else { return -.infinity }
-        guard d < rad else { return Float(r.maxY) }
-        let k = rad - d
-        return Float(r.maxY) - (rad - (rad * rad - k * k).squareRoot())
-    }
-
-    /// `runs` without the bins of `cut`.
-    static func cut(_ runs: [Range<Int>], _ cut: [Range<Int>]) -> [Range<Int>] {
-        var out = runs
-        for c in cut {
-            out = out.flatMap { r -> [Range<Int>] in
-                guard r.overlaps(c) else { return [r] }
-                return [r.lowerBound..<max(r.lowerBound, c.lowerBound), min(r.upperBound, c.upperBound)..<r.upperBound].filter { !$0.isEmpty }
-            }
-        }
-        return out
-    }
-
-    /// Overlapping windows whose tops are close (`SeamLink.front`) read as one snow mass. The back pile's columns under the front window are not
-    /// drawn by the back pile; the front pile's slices there take the back snow's top wherever it shows above the front window's rounded top edge
-    /// (`merged`: top = the higher of both, base = the visible floor), so the higher crest is the only crest and the front corner's shoulder sinks into
-    /// the back snow. Back bins hidden by the front window hold frozen snow only: drawn, they continue the nearest visible back snow (never above the
-    /// bin's limit). Draw-only; the two run ends meet through the seam bridge (`liftSeam` ramps the lower crest). `front` keyed by surface id;
-    /// `skip`: back bins (local) left to the front pile.
-    func junctions() -> (front: [Int: JunctionDraw], skip: [Int: [Range<Int>]]) {
-        var front: [Int: JunctionDraw] = [:], skip: [Int: [Range<Int>]] = [:]
-        var done: Set<[Int]> = []
-        for l in seams where l.front != 0 {
-            let bid = l.front == l.left ? l.right : l.left
-            guard done.insert([bid, l.front]).inserted, let fi = index[l.front], let bi = index[bid] else { continue }
-            let F = surfaces[fi], B = surfaces[bi]
-            let hb = B.pile.shown, nb = hb.count, nf = F.pile.shown.count
-            let lo = max(F.c0, B.c0), hi = min(F.c0 + nf, B.c0 + nb)   // global columns under both windows
-            guard lo < hi, nb == B.pile.heights.count, nf == F.pile.heights.count else { continue }
-            let ka = lo - B.c0, kb = hi - B.c0
-            // Nearest visible back bin on each side of every hidden one (one pass each way).
-            let r0 = max(ka - 1, 0), r1 = min(kb + 1, nb)
-            var left = [Int](repeating: -1, count: r1 - r0), right = left, last = -1
-            func cov(_ k: Int) -> Bool { !B.pile.hideTop.isEmpty && B.pile.hideTop[k] > 0 }   // geometry, not the stacking order
-            for k in 0..<r1 { if !cov(k) { last = k }; if k >= r0 { left[k - r0] = last } }
-            last = -1
-            for k in stride(from: nb - 1, through: r0, by: -1) { if !cov(k) { last = k }; if k < r1 { right[k - r0] = last } }
-            func hv(_ k: Int) -> Float {
-                if !cov(k) || k < r0 || k >= r1 { return hb[k] }
-                let a = left[k - r0], c = right[k - r0]
-                let v: Float = a >= 0 && c >= 0 ? hb[a] + (hb[c] - hb[a]) * Float(k - a) / Float(c - a) : a >= 0 ? hb[a] : c >= 0 ? hb[c] : 0
-                return max(hb[k], min(v, max(B.pile.limit(k), 0)))
-            }
-            var j = front[l.front] ?? JunctionDraw(top: [Float](repeating: 0, count: nf), base: [Float](repeating: 0, count: nf), merged: [Bool](repeating: false, count: nf), ref: [Float](repeating: 0, count: nf), z: [UInt32](repeating: 0, count: nf))
-            for k in ka..<kb {
-                let i = B.c0 + k - F.c0, h = hv(k)
-                guard h > 0.15, F.pile.visible[i] else { continue }
-                let l0 = k > 0 ? hv(k - 1) : (B.pile.supportL ? h : 0), r = k < nb - 1 ? hv(k + 1) : (B.pile.supportR ? h : 0)
-                let sm = (l0 + 2 * h + r) / 4, foot = B.edgeY + B.pile.base[k]
-                let t = min(foot + sm + Self.jitter(B, k, sm), foot + B.pile.cap[k])
-                let floor = max(foot, Self.roundedTop(x: binCenter(B.c0 + k), F.frame, radius: F.radius))
-                let fb = F.edgeY + F.pile.base[i], fh = F.pile.shown[i]
-                // Only where the back snow shows and the two bodies touch (a lower front pile that does not reach the back snow stays its own body;
-                // on the front's rounded corner the shoulder always sinks into the back snow).
-                guard t > floor + 0.15, fh <= 0.15 || fb + fh >= floor - 1 || F.pile.base[i] < -0.01 else { continue }
-                j.merged[i] = true; j.z[i] = zOf[bid] ?? groundZ; j.top[i] = t; j.ref[i] = B.edgeY + B.pile.base[k] - (B.id == Tuning.groundID ? 0 : 1)
-                j.base[i] = min(foot - 1, fh > 0.15 ? fb - 1 : .infinity)   // from the lower window's own top edge: visible when it is in front, clipped by the shader when it is not
-                if let r = skip[bid]?.last, r.upperBound == k { skip[bid]![skip[bid]!.count - 1] = r.lowerBound..<(k + 1) } else { skip[bid, default: []].append(k..<(k + 1)) }
-            }
-            front[l.front] = j
-        }
-        return (front, skip)
-    }
-
-    /// Overlap junction at x `xj`: the crests of both stretches (and the bridge) within `w` of it are replaced by a smoothstep blend between the
-    /// crest heights at xj - w and xj + w (a saddle, no step or spike where the two piles meet). The half-width grows with the crest difference
-    /// (`min(80, max(16, 6 * |dh|))`, so the slope stays gentle however far apart the crests are). The shading reference (`tint0/tint1`) is blended over the same
-    /// window, so the deep-snow tint is continuous across the junction. Draw-only; never below a slice's base.
-    /// Whether a pushed heap (Pile.mound > 0) stands over global x on either surface.
-    func moundAt(_ x: Float, _ a: Int, _ b: Int) -> Bool {
-        for id in [a, b] {
-            guard let si = index[id], !surfaces[si].pile.mound.isEmpty else { continue }
-            let k = column(x) - surfaces[si].c0
-            if k >= 0, k < surfaces[si].pile.mound.count, surfaces[si].pile.mound[k] > 0 { return true }
-        }
-        return false
-    }
-
-    func blendCrest(_ p: UnsafeMutablePointer<PileSeg>, _ rs: [Range<Int>], at xj: Float, heap: (Float) -> Bool = { _ in false }) {
-        func ref(_ s: PileSeg, _ u: Float) -> Float { s.dragged & 4 != 0 ? s.tint0 + (s.tint1 - s.tint0) * u : s.base0 + (s.base1 - s.base0) * u }
-        func at(_ x: Float) -> (t: Float, r: Float)? {   // crest height (and shading reference) over x (highest covering slice), else the nearest end on that side
-            var best: (t: Float, r: Float)?, near: (d: Float, t: Float, r: Float)?
-            for r in rs { for i in r {
-                let s = p[i]
-                if s.x0 <= x && x <= s.x1 {
-                    let u = (x - s.x0) / max(s.x1 - s.x0, 1e-3), t = s.top0 + (s.top1 - s.top0) * u
-                    if t > best?.t ?? -.infinity { best = (t, ref(s, u)) }
-                }
-                for (ex, et, eu) in [(s.x0, s.top0, Float(0)), (s.x1, s.top1, 1)] where (ex - xj) * (x - xj) > 0 { let d = abs(ex - x); if d < near?.d ?? .infinity { near = (d, et, ref(s, eu)) } }
-            } }
-            return best ?? near.map { ($0.t, $0.r) }
-        }
-        guard let l0 = at(xj - 16), let r0 = at(xj + 16) else { return }
-        let w = min(80, max(16, 6 * abs(r0.t - l0.t)))   // capped: a tall heap near a junction must not be flattened over a long stretch
-        guard let l = at(xj - w), let r = at(xj + w) else { return }
-        func blend(_ x: Float, _ a: Float, _ c: Float, _ own: Float) -> Float {
-            let u = (x - (xj - w)) / (2 * w)
-            guard u > 0, u < 1 else { return own }
-            return a + (c - a) * u * u * (3 - 2 * u)
-        }
-        for r_ in rs { for i in r_ {
-            let s = p[i]
-            func inside(_ x: Float) -> Bool { x > xj - w && x < xj + w }
-            if inside(s.x0) { p[i].top0 = max(blend(s.x0, l.t, r.t, 0), s.base0, heap(s.x0) ? s.top0 : -.infinity) }   // a pushed heap is never drawn lower than itself
-            if inside(s.x1) { p[i].top1 = max(blend(s.x1, l.t, r.t, 0), s.base1, heap(s.x1) ? s.top1 : -.infinity) }
-            p[i].tint0 = blend(s.x0, l.r, r.r, ref(s, 0)); p[i].tint1 = blend(s.x1, l.r, r.r, ref(s, 1)); p[i].dragged |= 4
-            p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3); p[i].n0 = p[i].slope; p[i].n1 = p[i].slope
-        } }
-    }
-
-    /// Shading reference of the front pile's merged slices: the back pile's base (see `JunctionDraw.ref`), so the deep-snow tint does not jump where
-    /// the back pile hands over to the front pile. Sets `tint0/tint1` (flag 4 in `dragged`) on slices with a merged end.
-    func tintRefs(_ p: UnsafeMutablePointer<PileSeg>, _ junc: (front: [Int: JunctionDraw], skip: [Int: [Range<Int>]])) {
-        for e in pileEnds {
-            guard let jd = junc.front[e.id], let si = index[e.id] else { continue }
-            let c0 = surfaces[si].c0
-            func ref(_ x: Float, _ own: Float) -> Float { let i = column(x) - c0; return i >= 0 && i < jd.merged.count && jd.merged[i] ? jd.ref[i] : own }
-            for k in e.segs {
-                let a = ref(p[k].x0, p[k].base0), c = ref(p[k].x1, p[k].base1)
-                if a != p[k].base0 || c != p[k].base1 { p[k].tint0 = a; p[k].tint1 = c; p[k].dragged |= 4 }
-            }
-        }
-    }
-
-    /// The lower side of a seam rises toward the other's top (no cliff), but only by what the physics backs: at most 6pt (a drift's usual
-    /// boost), over a ramp that stays inside the stretch (slope <= 0.3), and not at all on a thin stretch (a speck must not grow a ramp).
-    func liftSeam(_ p: UnsafeMutablePointer<PileSeg>, _ a: inout PileEnd, _ c: inout PileEnd) {
-        let d = c.first.t - a.last.t
-        guard abs(d) > 0.05 else { return }
-        let lowIsA = d > 0
-        let low = lowIsA ? a : c, end = lowIsA ? a.last : c.first
-        guard end.t - end.b - 1 >= 1 else { return }
-        let w = min(20, low.last.x - low.first.x)
-        let lift = min(abs(d), 6, 0.3 * w)
-        guard lift > 0.01 else { return }
-        // Never above the lower pile's own ceiling (a third window in front caps it): same formula as writePiles' `ceiling`.
-        var ceil: (Float) -> Float = { _ in .infinity }
-        if let si = index[low.id] {
-            let s = surfaces[si]
-            ceil = { x in
-                let i = min(max(Int((x * self.invBin).rounded(.down)) - s.c0, 0), s.pile.cap.count - 1)
-                return s.pile.cap.isEmpty ? .infinity : s.edgeY + s.pile.base[i] + s.pile.cap[i]
-            }
-        }
-        liftRun(p, low.segs, lift, atEnd: lowIsA, edge: end.x, width: w, ceiling: ceil)
-        if lowIsA { a.last.t = min(a.last.t + lift, max(a.last.t, ceil(a.last.x))) } else { c.first.t = min(c.first.t + lift, max(c.first.t, ceil(c.first.x))) }
-    }
-
-    /// Adds up to `d` to the tops of the segments within `width` of one end of a run (full at the end, 0 at the far
-    /// side of the ramp), so the bridge to the neighbouring window's pile has no step.
-    func liftRun(_ p: UnsafeMutablePointer<PileSeg>, _ r: Range<Int>, _ d: Float, atEnd: Bool, edge: Float, width w: Float, ceiling: (Float) -> Float = { _ in .infinity }) {
-        func f(_ x: Float) -> Float { d * max(0, 1 - abs(edge - x) / w) }
-        for i in r {
-            p[i].top0 = min(p[i].top0 + f(p[i].x0), max(p[i].top0, ceiling(p[i].x0))); p[i].top1 = min(p[i].top1 + f(p[i].x1), max(p[i].top1, ceiling(p[i].x1)))
-            p[i].slope = (p[i].top1 - p[i].top0) / max(p[i].x1 - p[i].x0, 1e-3)
-        }
     }
 }
 
@@ -520,12 +301,6 @@ public struct PileSeg {
     public var inset: Float = 0   // how far base0 / base1 sit under the real window edge (the overlap hides the seam): the shader measures snow depth as top - base - inset
     public var z: UInt32 = 0   // z of the window this slice belongs to (index in the front-to-back list = SnowField.occluders): the shader hides it inside every occluder with a smaller index
     public var tint0: Float = 0, tint1: Float = 0   // shading reference (where the deep-snow tint starts) at each end, used when `dragged` has bit 4 (else the base): junction slices share the back pile's base so the tint is continuous
-}
-
-/// Front pile slices over a back pile (see `junctions`): per front bin, the shared top / base where the back snow shows.
-struct JunctionDraw {
-    var top: [Float], base: [Float], merged: [Bool], ref: [Float]   // ref: the back pile's base (shading reference)
-    var z: [UInt32]   // per merged bin: z of the BACK window whose top edge that snow rests on (the higher window's occluder then clips what lies inside its body)
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.

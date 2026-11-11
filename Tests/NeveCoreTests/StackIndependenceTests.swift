@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/StackIndependenceTests.swift  (snow is ONE mass: the drawing never depends on the window stacking order)
 // Four geometries (narrow higher window over a wide lower one at step 6 / 13 / 20, and a Finder-like partial overlap), grown snow, both stackings (higher in front / lower in front, switched through update = Cmd-Tab): writePiles output is
-//   identical except the per-slice z (walls, banks, fillets, seams, junction merges derive from frames only); the drawn crest within 40 pt of a wall is bounded in slope (<= 2.2 pt per 2 pt); no drawn slice floats without snow
-//   under / beside it (stored heights over its x-range +- the corner radius). Related: StackOrderTests (physics), WallBankTests, JunctionTests, Pile.addWalls, SurfaceMap.computeSeams, Render.drawHeights / junctions.
+//   identical except the per-slice z (walls, banks, seams, the group contour derive from frames only); the drawn crest within 40 pt of a wall is bounded in slope (<= 2.2 pt per 2 pt); no drawn slice floats without snow
+//   under / beside it (stored heights over its x-range +- the corner radius). Related: StackOrderTests (physics), WallBankTests, JunctionTests, Pile.addWalls, SurfaceMap.computeSeams, Contour.swift.
 
 import CoreGraphics
 import Testing

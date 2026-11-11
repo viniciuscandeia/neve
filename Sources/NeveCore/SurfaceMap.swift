@@ -3,7 +3,7 @@
 //   The per-column index is CSR: `offsets[col]..<offsets[col+1]` into `entries` (surface index + edgeY, ordered front to back per column), rebuilt by buildColumns() whenever surfaces change; flakes use it to find what they land on.
 //   Helpers: column(x), edgeVisible, surface(id:), pile(id:), meanHeight(si:col:span:), visibleRun(si:bin:) (binary search).
 //   `SeamLink` + computeSeams(rects:windows:): windows whose piles read as ONE snowbank (side by side gap <= 6 pt with tops within 4, or overlapped with the front top 1...maxDrift above / up to maxPileHeight/2 below). `*Supported` ends
-//   hold snow against the neighbour (no dip, taper or spill); `front` = id of the HIGHER window of an overlap junction (stacking order never matters; 0 = side by side). Render.writePiles `junctions()` / `blendCrest` draw the merged crest (smoothstep saddle, half-width min(80, max(16, 6 * crest difference)) pt; heap-guarded, skipped while one side is dragged).
+//   hold snow against the neighbour (no dip, taper or spill); `front` = id of the HIGHER window of an overlap junction (stacking order never matters; 0 = side by side). Contour.swift draws every group (seams + walls) as one contour (slope-limited crest, owner = the open bin with the highest top).
 // Rects are front to back; coordinates local AppKit y-up pt. Callers: Surfaces.swift (rebuild), Render.swift, Flakes.swift (landing), Walk/Figures (standing surfaces). Snow exchange across the links (relax, berm, hop, walk, avalanche): Seams.swift. Tests: SurfaceMapTests, JunctionTests, LowSeamTests, SeamExchangeTests.
 
 import CoreGraphics
@@ -94,7 +94,7 @@ struct SeamLink {
 extension SnowField {
     /// Order independent (frames only; the list index only enumerates pairs): of two windows the one with the HIGHER top (`H`; equal tops: the narrower, then the lower window number) is the wall / `front` of the link, the other one the lower window `L`.
     /// Overlap: H's top 1...maxDrift above L's, its side edge(s) inside L's span: L's snow drifts up to H's top and H's end holds snow against it (`*Supported`). Overlap with tops within 1 pt: a junction without support. Side by side:
-    /// gap 0...6 and tops within 4 join both ends. The draw merges L's crest into H's slices (see `junctions`).
+    /// gap 0...6 and tops within 4 join both ends. The draw is one contour over the group (see Contour.swift).
     func computeSeams(rects: [CGRect], windows: [WindowInfo]) -> [SeamLink] {
         var out: [SeamLink] = []
         for i in rects.indices where windows[i].number != 0 && !windows[i].occluderOnly {

@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/JunctionTests.swift  (overlapping windows with close tops read as ONE snow mass)
 // Back window 1 x 100...400 top 400, front window 2 overlapping it (also `mirrored`: front on the left). Checks on the Render.writePiles output (`pileSegs`): the back pile continues behind a lower front top and nothing is drawn under the front top, equal
-//   tops join without the front shoulder, the junction survives a drag, the crest crosses it smoothly (<= 1 pt per 2 pt step within 24 pt), the blend window adapts to the crest difference (half-width max(16, 6 |dh|)), and the shading reference
-//   (`tint0/tint1`, flag 4 in `dragged`) never jumps (<= 0.5 pt per pt). Related: SurfaceMap.computeSeams, Render.junctions / blendCrest.
+//   tops join without the front shoulder, the junction survives a drag, the crest crosses it smoothly (<= 1 pt per 2 pt step within 24 pt and over the whole region where the crests differ: Contour.swift's slope limit). Phase 4 removed the
+//   back snow continuing behind a lower front top and the tint-reference test (no more merged slices / flag 4). Related: SurfaceMap.computeSeams, Contour.swift.
 
 import CoreGraphics
 import Testing
@@ -35,17 +35,20 @@ private func continuous(_ s: [PileSeg], _ a: Float, _ b: Float) -> String? {
     return nil
 }
 
-@Test func backPileContinuesBehindALowerFrontTop() {
-    // Case 1: the front top is 4pt above the back one, the front pile is almost bare, the back one full.
+// Front top 4pt above the back one, the front pile almost bare, the back one full. Phase 4: the back snow is NOT drawn over the front window's span any more (that span belongs to the front pile; before, `junctions` merged the back crest
+// into the front slices and drew it continuing behind the lower front top). The back crest meets the front snow: where the front has snow the contour crosses the wall in a ramp (<= 1pt per 2pt), where it is bare the back snow ends at the wall.
+@Test func backCrestMeetsAYoungFrontPileAtTheWall() {
     for (rounds, mirrored) in [(1, false), (0, false), (1, true)] {
-        let s = pileSegs(scene(frontTop: 404, frontRounds: rounds, mirrored: mirrored))
+        let f = scene(frontTop: 404, frontRounds: rounds, mirrored: mirrored), s = pileSegs(f)
         let m = { (x: Float) in mirrored ? 700 - x : x }   // the same spots seen from the other side
-        let c = continuous(s, min(m(270), m(380)), max(m(270), m(380)))
-        #expect(c == nil, "rounds \(rounds) mirrored \(mirrored): \(c ?? "")")
-        for x in stride(from: Float(300), through: 380, by: 4) { #expect((topAt(s, m(x)) ?? 0) > 410, "back snow above the front top at \(m(x))") }
-        // What the front window covers stays hidden: every slice point inside its straight part is clipped by the front occluder (z 0).
-        let f = scene(frontTop: 404, frontRounds: rounds, mirrored: mirrored), o = f.occluders[0]
-        for g in pileSegs(f) where g.z == 1 {
+        if rounds > 0 {
+            let c = continuous(s, min(m(270), m(330)), max(m(270), m(330)))
+            #expect(c == nil, "rounds \(rounds) mirrored \(mirrored): \(c ?? "")")
+        }
+        #expect((topAt(s, m(285)) ?? 0) > 410, "back snow beside the wall")
+        // What the front window covers stays hidden: every slice point inside its straight part is clipped by the front occluder (z 0) (the back snow only lies beside it).
+        let o = f.occluders[0]
+        for g in s where g.z == 1 {
             for u in stride(from: Float(0), through: 1, by: 0.5) {
                 let x = g.x0 + (g.x1 - g.x0) * u, top = g.top0 + (g.top1 - g.top0) * u, base = g.base0 + (g.base1 - g.base0) * u
                 guard x > o.rect.x + 0.5, x < o.rect.z - 0.5 else { continue }
@@ -89,31 +92,6 @@ private func continuous(_ s: [PileSeg], _ a: Float, _ b: Float) -> String? {
         for x in stride(from: xj - 24, through: xj + 24, by: 2) {
             guard let t = topAt(s, x) else { Issue.record("top \(top) rounds \(rounds) mirrored \(mirrored): gap at \(x)"); break }
             if let p = prev { #expect(abs(t - p) <= 1, "top \(top) rounds \(rounds) mirrored \(mirrored): crest step \(t - p) at \(x)") }
-            prev = t
-        }
-    }
-}
-
-// The blend window adapts to the crest difference: the crest slope stays <= 1pt per 2pt across the whole region where the two crests differ
-// (front 4pt above ... 6pt below the back top), never ending in a step.
-/// Shading reference (where the deep-snow tint starts) of the highest drawn slice over x.
-private func tintAt(_ s: [PileSeg], _ x: Float) -> Float? {
-    s.filter { $0.x0 <= x && x <= $0.x1 }.map { g -> (Float, Float) in
-        let u = (x - g.x0) / max(g.x1 - g.x0, 1e-3)
-        return (g.top0 + (g.top1 - g.top0) * u, g.dragged & 4 != 0 ? g.tint0 + (g.tint1 - g.tint0) * u : g.base0 + (g.base1 - g.base0) * u)
-    }.max { $0.0 < $1.0 }?.1
-}
-
-// On-screen report: a vertical shading boundary at the front window's edge (each pile tinted from its own base). The merged slices share the back
-// pile's base as shading reference, blended over the junction window: the reference never jumps (<= 0.5pt per pt).
-@Test func tintReferenceIsContinuousAcrossTheJunction() {
-    for (top, rounds, mirrored) in [(CGFloat(404), 40, false), (402, 8, false), (399, 40, false), (399, 8, false), (397, 40, false), (394, 8, false), (399, 8, true), (394, 40, true)] {
-        let s = pileSegs(scene(frontTop: top, frontRounds: rounds, mirrored: mirrored))
-        let xj = junctionX(frontTop: top, mirrored: mirrored)
-        var prev: Float?
-        for x in stride(from: xj - 60, through: xj + 60, by: 1) {
-            guard let t = tintAt(s, x) else { continue }
-            if let p = prev { #expect(abs(t - p) <= 0.5, "top \(top) rounds \(rounds) mirrored \(mirrored): tint reference jumps \(t - p) at \(x - xj)") }
             prev = t
         }
     }

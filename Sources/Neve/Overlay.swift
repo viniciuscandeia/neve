@@ -14,7 +14,7 @@
 //   completions no-ops; teardown completes pending melt/outro so the controller's Countdown ends), apply(OverlayPrefs), clear, stage, beginScene.
 // Dependencies: NeveCore (SnowField, Tuning, FrameRate, Palette, Rig, PrimWriter, WindowInfo, coversScreen...), Perf.swift (NEVE_PERF meter, signposts), MusicTap, Gpu from Renderer.swift. Env: NEVE_REDUCE_MOTION=1 (force), NEVE_SLOWMO=<f>.
 // Perf: tick is the per-frame hot path (~60/s per screen): no allocation, no locks; buffers grow only in update() (poll rate); writePrims/writePiles/writeInstances mirror data the shaders read.
-// Gotchas: Rig/Prim/PileSeg/Instance layouts must match the Metal source strings in the shader files; Render.writePiles is mirrored by Tests WritePilesEquivalenceTests (keep in sync); do not re-set window.level/sharingType unless
+// Gotchas: Rig/Prim/PileSeg/Instance layouts must match the Metal source strings in the shader files; Render.writePiles output is checked by GroupContourTests / StackIndependenceTests; do not re-set window.level/sharingType unless
 //   changed (WindowServer recomposite hitch); screen tests/captures must be idle-gated and run under scripts/agent-run.sh --screen.
 
 import NeveCore

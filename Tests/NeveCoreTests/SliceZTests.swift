@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/SliceZTests.swift  (back-window snow is never drawn over a front window's body)
 // A narrower window F and a wider window B with a similar top (steps -6...13 pt), both stackings, young and grown snow. Every drawn slice carries the z of the window whose top edge its snow rests on (junction-merged slices and seam bridges of
 //   back snow keep the BACK window's z), so the front window's Occluder clips what lies inside its body: a slice with F's own z never has a point inside F's outline (below its top edge). Regression: phase 2 drew merged back snow with the
-//   front window's z (a white comb over the front window's top band). Related: WallBankTests, JunctionTests, Render.junctions.
+//   front window's z (a white comb over the front window's top band). Related: WallBankTests, JunctionTests, GroupContourTests, Contour.swift.
 
 import CoreGraphics
 import Testing
