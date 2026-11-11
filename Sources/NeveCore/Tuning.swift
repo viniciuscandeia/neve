@@ -1,9 +1,9 @@
 // AGENT HEADER - Sources/NeveCore/Tuning.swift  (every simulation constant, Intensity, SimConfig)
 // Role: `Tuning` = static knobs, all in points (pt), seconds, pt/s, or pt^2 for areas, y-up. Groups: snow field (flakes per 1440x900 screen, backgroundFraction, binWidth = 2 pt per pile bin, slope = max step between neighbouring
 //   bins, dustSlope/dustDepth/speck* = how thin snow stays in mounds, cornerInset), pile caps (maxPileHeight = window tops, groundMaxHeight, moundMax = sanity bound on cursor-pushed heaps), Dock bank (bankSlope/bankShelf/bankLimit/
-//   Drawn contour knobs (crestSlope, crestMaxStep, snowyMin, stretchGap, ownerGapMax, capBlend*, bridge*) and the Pile relax window (relaxReach, relaxPasses, moundReach) are here too.
 //   bankLevelMax, dockGlassOffset: the visible glass is 5 pt BELOW the AX list frame on macOS >= 26 (CG y-down), windowRadius 22 pt on macOS >= 26 else 10, dock* plow constants), drift/peel against front windows, wind, debris/puffs/glints/
 //   drops caps, shed (a moved window sheds snow from shedStart to shedFull pt/s), snowman/ball sizes, pointer push radius, frame-rate floors (calmFloorFPS 30, economy 20), `interpolateCalm` (env NEVE_INTERP=1, default off: measured costlier).
+//   Drawn contour knobs (crestSlope, crestMaxStep, snowyMin, stretchGap, ownerGapMax, capBlend*, bridge*) and the Pile relax window (relaxReach, relaxPasses, moundReach) are here too.
 // `Intensity` (leve, media, forte, nevasca; UserDefaults key "intensity", Int raw value; multiplier on flake count, windGain; titles via tr()). `SimConfig` (Sendable): knobs the APP injects (snowman/ice/director speed, demo flags) so NeveCore never reads env.
 // Rules: constants only; behaviour lives elsewhere. Many are `static let` internal (tests use @testable import). Changing binWidth / slope / maxPileHeight shifts pile behaviour everywhere and invalidates tuned tests (PileLogicTests, SurfaceMapTests, WritePiles*).
 // Public surface used by the app target: flakes, plowFloor, interpolateCalm, dockGlass(fromAX:), windowRadius(for:), defaultWindowRadius, maxBalls, snowmanDepth, shedRefDt, Intensity, SimConfig.
