@@ -4,7 +4,7 @@
 //   pause/run state, timers, window polling, idle melt, Mission Control / screen saver / lock / sleep handling, login item (SMAppService), Accessibility prompt.
 // Globals: `neveInstance` = Info.plist `NeveInstance` or env NEVE_INSTANCE (dev bundle; no single-instance lock, no login item, prefs in suite io.github.viniciuscandeia.neve.dev.<name>); `ud` = the only UserDefaults store.
 // Threading: everything is @MainActor; notifications that may arrive off-main are delivered with queue:.main + MainActor.assumeIsolated. Timers are added to RunLoop .common so menus do not stall them.
-// Run state: running = (enabled||outroing) && !screensAsleep && !sessionInactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !userIdle.
+// Run state: `run` (RunState, NeveCore/RunState.swift: outroing/screensAsleep/sessionInactive/screensaver): running = (enabled||outroing) && !asleep && !inactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !userIdle.
 //   userIdle = no input for NEVE_IDLE_SECS (default 300 s) unless Modo ambiente: first startIdleMelt (snow melts, meltGen guards stale completions) then rendering pauses; input -> wakeFromIdle.
 //   refreshRunState() is the single re-evaluation point (status icon, overlay setRun, timers, Dock + poll kick). Prefs: syncPrefs diffs Pref snapshot (NeveCore/Prefs.swift) -> prefChanged(pref) is the only reaction path.
 // Window polling: every read goes through `sched` (PollScheduler, NeveCore/WindowInfo.swift: coalesced, <=30/s, bursts bounded). Sources: WindowWatcher AX events (transitionPoll / settlePoll),
@@ -35,9 +35,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var overlays: [Overlay] = []
     private var timer: Timer?
     private var idleWatch = false   // the timer is the 1 Hz fullscreen watch
-    private var screensAsleep = false
-    private var sessionInactive = false
-    private var screensaver = false   // the screen saver covers the displays: nothing to draw under it
+    private var run = RunState()   // pause flags: run.outroing, run.screensAsleep, run.sessionInactive, run.screensaver (the screen saver covers the displays: nothing to draw under it)
     private var missionControl = false, mcTimer: Timer?, mcGate = MissionControlGate(), mcMonitor: Any?, mcProbe: Timer?, mcIDs = WindowIDWatch(), mcStrong = false
     private var ssTimer: Timer?   // screen saver on: polling is off, so this slow timer notices it ended without a didstop
     private let panel = PanelState()
@@ -263,7 +261,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch pref {
         case .enabled:
             outroGen += 1; meltGen += 1; idleMelting = false
-            if on { outroing = false; overlays.forEach { $0.intro() }; refreshRunState() }
+            if on { run.outroing = false; overlays.forEach { $0.intro() }; refreshRunState() }
             else { updateStatus(); runOutro { [weak self] in self?.refreshRunState() } }
         case .economy: syncOverlays(); syncMusic()
         case .music: applyPrefs(); syncMusic()
@@ -447,30 +445,29 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.async { [weak self] in self?.requestPoll() }
     }
 
-    private var outroing = false   // an outro is playing: the overlays stay up until it ends
     private var outroGen = 0       // bumped to cancel the previous outro's completion
 
     /// Plays the outro on every overlay on screen, then `done`.
     private func runOutro(_ done: @escaping @MainActor () -> Void) {
         let shown = overlays.filter(\.showing)
         guard !shown.isEmpty else { return done() }
-        outroing = true
+        run.outroing = true
         let gen = outroGen
         var left = Countdown(shown.count)
         for o in shown {
             o.outro { [weak self] in
                 guard left.hit(), let self, self.outroGen == gen else { return }
-                self.outroing = false
+                self.run.outroing = false
                 done()
             }
         }
     }
 
-    private var running: Bool { (enabled || outroing) && !screensAsleep && !sessionInactive && !screensaver }
+    private var running: Bool { run.running(enabled: enabled) }
     /// The one source of truth for thermal throttling.
     private var hot: Bool { ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue }
     /// Polling timers only run while snow is actually shown (not disabled / asleep / locked / hot).
-    private var polling: Bool { running && !hot }
+    private var polling: Bool { run.polling(enabled: enabled, hot: hot) }
     private var fullscreenIdle: Bool { !overlays.isEmpty && overlays.allSatisfy(\.isFullscreen) }
 
     private static func symbol(_ name: String, _ description: String? = nil) -> NSImage? {
@@ -483,7 +480,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusText: String {
         let level = Intensity.saved(ud)
         if !enabled { return tr("Desligado") }
-        if screensAsleep || sessionInactive || userIdle { return tr("Pausado: sem atividade") }
+        if run.screensAsleep || run.sessionInactive || userIdle { return tr("Pausado: sem atividade") }
         if hot { return tr("Pausado: Mac esquentou") }
         if fullscreenIdle { return tr("Pausado: app em tela cheia") }
         if NSScreen.screens.isEmpty { return tr("Pausado: sem tela") }
@@ -510,8 +507,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshRunState() {
         updateStatus()
-        let run = running && !hot && !userIdle
-        for o in overlays { o.setRun(run) }
+        let go = run.rendering(enabled: enabled, hot: hot, userIdle: userIdle)
+        for o in overlays { o.setRun(go) }
         scheduleTimers()
         if polling {
             refreshDock()
@@ -816,7 +813,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func clearSnow() { for o in overlays { o.clear() } }
     @objc private func screensaverStarted() {
-        screensaver = true
+        run.screensaver = true
         ssTimer?.invalidate()
         ssTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in   // didstop can be missed; the engine process is the truth
             MainActor.assumeIsolated {
@@ -829,15 +826,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var saverRunning: Bool { NSWorkspace.shared.runningApplications.contains { isScreensaverEngine($0.bundleIdentifier) } }
     @objc private func screensaverStopped() {
         ssTimer?.invalidate(); ssTimer = nil
-        guard screensaver else { return }
-        screensaver = false
+        guard run.screensaver else { return }
+        run.screensaver = false
         for o in overlays { o.resume() }
         refreshRunState()
     }
-    @objc private func screensSlept() { screensAsleep = true; refreshRunState() }
-    @objc private func screensWoke() { screensAsleep = false; if !saverRunning { screensaverStopped() }; refreshRunState() }
-    @objc private func sessionResigned() { sessionInactive = true; refreshRunState() }
-    @objc private func sessionBecameActive() { sessionInactive = false; if !saverRunning { screensaverStopped() }; refreshRunState() }
+    @objc private func screensSlept() { run.screensAsleep = true; refreshRunState() }
+    @objc private func screensWoke() { run.screensAsleep = false; if !saverRunning { screensaverStopped() }; refreshRunState() }
+    @objc private func sessionResigned() { run.sessionInactive = true; refreshRunState() }
+    @objc private func sessionBecameActive() { run.sessionInactive = false; if !saverRunning { screensaverStopped() }; refreshRunState() }
     @objc private func accessibilityChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.reduceMotion = reduceMotion
