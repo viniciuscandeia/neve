@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Seams.swift  (snow groups: touching supports exchange snow across their seams)
 // Role: supports that touch (`SeamLink`s from SurfaceSet.computeSeams: side by side within 6 pt, or a higher window's end over a lower window's top edge) form a GROUP: one mass of snow. `SurfaceSet.joints` (computed once per rebuild) turns the links into end bin pairs (A = the left pile, B = the right one,
 //   `ab` / `bb` the bins facing each other: the pile end for side by side and for the HIGHER window of an overlap, the bin next to the wall for the lower one), from frames only (never the stacking order). `stepSeams()` (SnowField.step, after stepSlump)
-//   relaxes every joint with the same slope rule as Pile.relax (excess over Tuning.slope on absolute tops moves half to the lower side, bounded by the receiver's limit / cap, volume conserved) and settles both sides around it; it is O(joints) per frame
+//   relaxes every joint with THE rule of Pile.relax (Pile.transfer: excess over Tuning.slope + the dustSlope allowance onto a thin bin, on absolute tops, moves half to the lower side, bounded by the receiver's limit / cap, volume conserved) and settles both sides around it; it is O(joints) per frame
 //   (nothing happens while the joint is within the slope), skips the window being dragged and `open` rules apply (covered / hidden bins are walls). `neighbor(si:dir:)` = the surface touching si's END in direction dir and the bin where snow enters it
 //   (cursor berm continuation in Surfaces.berm: at a pile end, or against a higher window's side mid-pile (bank up its side to its top, the rest on its pile), wind-leeward hop in Flakes.tryLand, avalanche continuation in Avalanche); `touching(id:dir:)` = ids of windows whose wall / seam meets id's walkable stretch (Walk.transfer).
 // Tests: SeamExchangeTests.
@@ -37,10 +37,8 @@ extension SnowField {
             let ta = surfaces[j.a].edgeY + surfaces[j.a].pile.base[j.ab] + surfaces[j.a].pile.heights[j.ab]
             let tb = surfaces[j.b].edgeY + surfaces[j.b].pile.base[j.bb] + surfaces[j.b].pile.heights[j.bb]
             let (from, fb, to, tbn) = ta > tb ? (j.a, j.ab, j.b, j.bb) : (j.b, j.bb, j.a, j.ab)
-            let excess = abs(ta - tb) - Tuning.slope
-            guard excess > 0, surfaces[from].pile.heights[fb] > Tuning.speckFloor else { continue }
             let hf = surfaces[from].pile.heights[fb], ht = surfaces[to].pile.heights[tbn]
-            let m = min(excess * 0.5, hf, max(surfaces[to].pile.limit(tbn) - ht, 0), max(surfaces[to].pile.cap[tbn] - ht, 0))
+            let m = min(Pile.transfer(drop: abs(ta - tb), from: hf, to: ht, toCap: surfaces[to].pile.cap[tbn]), max(surfaces[to].pile.limit(tbn) - ht, 0))   // the shared rule, and never past the receiver's limit
             guard m > 0.001 else { continue }
             surfaces[from].pile.heights[fb] = hf - m
             surfaces[to].pile.heights[tbn] = ht + m
