@@ -6,7 +6,7 @@
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
 //   gifts; cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
-//   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (dent depth per pass: Tuning.plowHoverDepth 0.6 pt below plowSlowSpeed 40 pt/s, else speed/150 clamped to plowSlowDepth 2 ... plowMaxDepth 6 pt; Tuning.plowFloor stays on the window)
+//   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
 //   (cursor `berm`, not DockPush.berm); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
@@ -445,7 +445,7 @@ extension SnowField {
     /// Cursor plow: snow within `radius` of the segment a->b (local coords) above the cursor's lower edge is lifted off the pile and carried to a rounded berm just
     /// ahead of the motion (horizontal pass) or split to both sides (|dy| > |dx|); only what no longer fits (pile limit, run end) flies off as debris along the
     /// cursor (`dt` = time the move took). Needs `pointerPush`; figures, balls, gifts and icicles react regardless. The dragged window's pile is left alone.
-    public func sweep(from a: CGPoint, to b: CGPoint, radius: Float = 10, dt: Float = 1.0 / 60) {
+    public func sweep(from a: CGPoint, to b: CGPoint, radius: Float = Tuning.plowRadius, dt: Float = 1.0 / 60) {
         let ax = Float(a.x), ay = Float(a.y), dx = Float(b.x) - ax, dy = Float(b.y) - ay
         let len2 = dx * dx + dy * dy, r = radius
         guard len2 > 0, dt > 0 else { return }
@@ -453,7 +453,7 @@ extension SnowField {
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
         let speed = len2.squareRoot() / dt, share = min(len2.squareRoot() / (1.33 * r), 1)
-        let depth = speed < Tuning.plowSlowSpeed ? Tuning.plowHoverDepth : min(max(speed / 150, Tuning.plowSlowDepth), Tuning.plowMaxDepth)   // total dent depth of a pass (pt): a hover barely marks, a slow deliberate push still moves ~2pt, a fast swipe cuts up to 6
+        let hover = speed < Tuning.plowSlowSpeed   // a hover barely marks (parabolic dent of plowHoverDepth); a push scoops everything under the blade down to the keep level
         let horizontal = abs(dx) >= abs(dy)
         var owed: Float = 0, ox: Float = 0, oy: Float = 0, cx: Float = 0, cy: Float = 0, sum: Float = 0
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
@@ -477,14 +477,21 @@ extension SnowField {
                 let qx = ax + t * dx, qy = ay + t * dy
                 guard abs(qx - x) <= r, abs(qy - my) <= r + h / 2 else { continue }
                 let u = (x - qx) / r
-                // Mostly horizontal path: integrate the parabola along it, so a bin's total over a pass is the same however the frames sample it (smooth dent).
-                let cover: Float
-                if horizontal {
-                    let p0 = min(max(ax - x, -r), r), p1 = min(max(ax + dx - x, -r), r)
-                    cover = abs((p1 - p0) - (p1 * p1 * p1 - p0 * p0 * p0) / (3 * r * r)) / (1.3333 * r)
-                } else { cover = (1 - u * u) * share }
                 let keep = min(max(qy - r - bottom, Tuning.plowFloor), h)   // snow below the cursor's lower edge stays, and a plow never scrapes the window bare (a thin layer stays)
-                let dh = min(depth * cover, h - keep)   // soft parabolic dent: nothing pops, the edges stay round
+                let dh: Float
+                if hover {
+                    // Integrate the parabola along a horizontal path, so a bin's total over a pass is the same however the frames sample it (smooth dent).
+                    let cover: Float
+                    if horizontal {
+                        let p0 = min(max(ax - x, -r), r), p1 = min(max(ax + dx - x, -r), r)
+                        cover = abs((p1 - p0) - (p1 * p1 * p1 - p0 * p0 * p0) / (3 * r * r)) / (1.3333 * r)
+                    } else { cover = (1 - u * u) * share }
+                    dh = min(Tuning.plowHoverDepth * cover, h - keep)
+                } else {
+                    // Blade: full-depth scoop, soft rounded edge. `qx` is the closest point of the whole segment, so the weight is a swept envelope: same result at any frame rate.
+                    let t = min(max((1 - abs(u)) / 0.45, 0), 1)
+                    dh = (h - keep) * t * t * (3 - 2 * t)
+                }
                 guard dh > 0.01 else { continue }
                 surfaces[si].pile.heights[k] = h - dh
                 if !surfaces[si].pile.mound.isEmpty { surfaces[si].pile.trackMound(k) }   // pushing a heap on: its allowance moves with the snow
