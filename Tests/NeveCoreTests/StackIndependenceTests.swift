@@ -20,7 +20,7 @@ private func grown(_ s: [WindowInfo]) -> SnowField {
     return f
 }
 private func same(_ a: PileSeg, _ b: PileSeg) -> Bool {
-    [a.x0 - b.x0, a.x1 - b.x1, a.top0 - b.top0, a.top1 - b.top1, a.base0 - b.base0, a.base1 - b.base1, a.slope - b.slope, a.n0 - b.n0, a.n1 - b.n1, a.inset - b.inset, a.tint0 - b.tint0, a.tint1 - b.tint1].allSatisfy { abs($0) < 1e-4 } && a.dragged == b.dragged
+    [a.x0 - b.x0, a.x1 - b.x1, a.top0 - b.top0, a.top1 - b.top1, a.base0 - b.base0, a.base1 - b.base1, a.slope - b.slope, a.n0 - b.n0, a.n1 - b.n1, a.inset - b.inset].allSatisfy { abs($0) < 1e-4 } && a.dragged == b.dragged
 }
 /// Buffer order follows the window list; the picture does not: compare in x order.
 private func sorted(_ s: [PileSeg]) -> [PileSeg] { s.sorted { ($0.x0, $0.x1, $0.top0, $0.base0, $0.z) < ($1.x0, $1.x1, $1.top0, $1.base0, $1.z) } }

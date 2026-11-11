@@ -2,7 +2,7 @@
 // Role: `pileShaderSource`, one instanced quad per `PileSeg` (NeveCore/Render.swift `PileSeg`: x0/x1 in screen-local pt, top/base heights at both ends, slope, dragged flags bit0 = rides the drag offset,
 //   bit1 = bank-flagged (corner fill / bridge, no skirt), n0/n1 = continuous surface normals, inset = pt hidden under a window edge, z = its window's index in the front-to-back list). Vertex stage pads the quad (1 pt overlap in x, 8 pt below base, 4 pt above top).
 // Fragment draws body, lifted band, ~6 pt crest gradient, cool AO tint for deep snow, soft downward shadow skirt + faint halo, one-light shading (Palette.light), +-1 % dither, then multiplied by 0 inside every window in front of the slice's own (`PileOcc` list from SnowField.occluders, buffer 2/3; z < occN). `tone` = (increase contrast, Palette.dark blend).
-// Invariants: `struct PileSeg` here MUST match the Swift one byte for byte (14 x 4-byte fields = 56 B); colours come from NeveCore Palette via \(Palette.msl(...)). Used with Gpu.piles in Renderer.swift, drawn by Overlay.render BEFORE prims and flakes.
+// Invariants: `struct PileSeg` here MUST match the Swift one byte for byte (12 x 4-byte fields = 48 B); colours come from NeveCore Palette via \(Palette.msl(...)). Used with Gpu.piles in Renderer.swift, drawn by Overlay.render BEFORE prims and flakes.
 // Gotcha: edge cases (cliffs steeper than 2.5:1, overlap strips) are handled explicitly in the fragment; changing the quad padding changes overdraw cost on every pile bin (hot at 60 fps on full-screen).
 
 import NeveCore
@@ -10,7 +10,7 @@ import NeveCore
 /// The fragment shader draws: near-white body, a lighter band lifted 1.5pt, a ~6pt smooth crest gradient, a cool tint only in the lower part of deep snow,
 /// a neutral soft shadow straight down under the base and a faint neutral (darkening only) halo above the top. `tone` = (increase contrast, dark blend 0...1).
 let pileShaderSource = """
-struct PileSeg { float x0; float x1; float top0; float top1; float base0; float base1; float slope; uint dragged; float n0; float n1; float inset; uint z; float tint0; float tint1; };
+struct PileSeg { float x0; float x1; float top0; float top1; float base0; float base1; float slope; uint dragged; float n0; float n1; float inset; uint z; };
 struct SVOut { float4 position [[position]]; float2 p; float2 w; uint id [[flat]]; };
 struct PileOcc { float4 rect; float4 r; };   // window silhouette (minX, minY, maxX, maxY; r.x = corner radius), list order = z, drag offset already applied
 vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant PileSeg *segs [[buffer(0)]],
@@ -59,9 +59,8 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float lk = clamp(ndl * 3.0, -1.0, 1.0) * (1.0 - 0.6 * contrast) * steep * (1.0 - smoothstep(0.0, 6.0, -dTop));
     float3 rgb = mix(\(Palette.msl(Palette.snow)), \(Palette.msl(Palette.lift)), smoothstep(1.0, 2.0, -dBase));
     // Deep snow (banks): a cool ambient-occlusion tint in the lower ~40% of the snow (at most 40pt, at least 4pt), full from ~10pt of snow; thin piles are untouched.
-    // Junction slices (bit 4) measure it from the back pile's base, so the tint does not jump where the back pile hands over to the front one.
-    float tref = (s.dragged & 2) != 0 ? 0.0 : (s.dragged & 4) != 0 ? mix(s.tint0, s.tint1, clamp(t, 0.0, 1.0)) : base;
-    float depth = in.p.y - tref, tall = smoothstep(4.0, 10.0, (s.dragged & 4) != 0 ? top - tref - s.inset : snow);
+    float tref = (s.dragged & 2) != 0 ? 0.0 : base;
+    float depth = in.p.y - tref, tall = smoothstep(4.0, 10.0, snow);
     float tintLen = clamp(0.4 * max(top - tref, 1.0), 4.0, 40.0);
     rgb = mix(rgb, rgb * \(Palette.msl(Palette.deep)), 0.6 * tall * (1.0 - smoothstep(0.0, tintLen, depth)));
     rgb = lk < 0.0 ? mix(rgb, rgb * \(Palette.msl(Palette.shade)), -lk * 0.7) : rgb + 0.04 * lk;

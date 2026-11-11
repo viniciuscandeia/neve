@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Render.swift  (CPU side of the GPU buffers: Instance, Prim, PrimWriter, PileSeg, writeInstances, writePiles)
 // Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
 //   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
-//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (56 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
+//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (48 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = `Self.crest`, shared with Contour.swift: neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
@@ -295,14 +295,13 @@ extension SnowField {
     }
 }
 
-/// One bin-pair slice of a pile contour for the Metal pile pass, 56 bytes; layout mirrors the Metal struct.
+/// One bin-pair slice of a pile contour for the Metal pile pass, 48 bytes; layout mirrors the Metal struct.
 public struct PileSeg {
     public var x0: Float, x1: Float, top0: Float, top1: Float, base0: Float, base1: Float, slope: Float
     public var dragged: UInt32   // 1 = on the window being dragged (the app shifts it with the mouse)
     public var n0: Float = 0, n1: Float = 0   // smoothed slope at each end (average with the neighbour across the junction): continuous lighting normal, no facets
     public var inset: Float = 0   // how far base0 / base1 sit under the real window edge (the overlap hides the seam): the shader measures snow depth as top - base - inset
     public var z: UInt32 = 0   // z of the window this slice belongs to (index in the front-to-back list = SnowField.occluders): the shader hides it inside every occluder with a smaller index
-    public var tint0: Float = 0, tint1: Float = 0   // shading reference (where the deep-snow tint starts) at each end, used when `dragged` has bit 4 (else the base): junction slices share the back pile's base so the tint is continuous
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.
