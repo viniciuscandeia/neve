@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Contour.swift  (the drawn snow of window supports: ONE contour per connected group)
-// Role: `windowGroups()` = connected sets of window surfaces (seams + walls, from frames only: side by side within 6 pt, or a higher window's end over a lower window's top edge, any step), `writeGroups` = the PileSeg slices of every group.
+// Role: `windowGroups` (SurfaceSet, computed once per rebuild) = connected sets of window surfaces (seams + walls, from frames only: side by side within 6 pt, or a higher window's end over a lower window's top edge, any step), `writeGroups` = the PileSeg slices of every group.
 //   Each group is drawn as ONE column function over its x range: every global column is owned by the OPEN bin (visible, not under a higher window: Pile.open) with the highest top (ties: lower window id), so a lower window's covered span belongs
-//   to the higher window's pile. A column's top is the old per-pile crest (1-2-1 blur of `shown`, stable jitter, cap blend, held full height at supported / covered ends); its base follows the owner's edge AND the rounded-corner arc of
+//   to the higher window's pile. A column's top is `SnowField.crest` (Render.swift, the same function the ground / Dock use: 1-2-1 blur of `shown`, stable jitter, cap blend, held full height at supported / covered ends); its base follows the owner's edge AND the rounded-corner arc of
 //   its frame (also at supported ends: the snow fills the corner cut-out, arc - 1 pt); columns without an owner between two owners (<= 4, the 0...6 pt gap of side-by-side windows) are interpolated. A slope limit over the group
 //   (`slope`, 0.95 pt per bin (a gentle ramp: <= 1 pt per 2 pt step)) LIFTS the lower side toward the other crest (forward + backward pass, only into snowy columns, at most `Tuning.maxDrift`, never above the lower pile's own ceiling, and not at all on the corner arc of a bare (unsupported) end: there the crest follows the arc down instead of floating above the closing column): the bank climbs the wall, the crest has no
 //   step, it replaces the old per-pile runs stitched with junction merges, blendCrest, liftSeam, seam bridges, tintRefs, drawHeights and the fillet. A pair of owners further apart than `maxStep` after the lift is not joined (the stretch just ends). Draw only: never changes `heights`.
@@ -13,34 +13,10 @@ import CoreGraphics
 import Foundation
 
 extension SnowField {
-    /// Window surfaces (indices) that touch: linked by a seam, or one is a HIGHER window whose end lies over the other's top edge (frames only). Ordered by first member.
-    func windowGroups() -> [[Int]] {
-        var parent = Array(surfaces.indices)
-        func find(_ i: Int) -> Int { var r = i; while parent[r] != r { r = parent[r] }; var k = i; while parent[k] != r { let n = parent[k]; parent[k] = r; k = n }; return r }
-        func union(_ a: Int, _ b: Int) { let x = find(a), y = find(b); if x != y { parent[max(x, y)] = min(x, y) } }
-        for l in seams { if let a = index[l.left], let b = index[l.right] { union(a, b) } }
-        let ws = surfaces.indices.filter { surfaces[$0].id > 0 }
-        for (k, i) in ws.enumerated() {
-            let a = surfaces[i].frame
-            for j in ws[(k + 1)...] {
-                let b = surfaces[j].frame
-                guard a.minX < b.maxX - 2, b.minX < a.maxX - 2 else { continue }
-                let hi = a.maxY >= b.maxY ? a : b, lo = a.maxY >= b.maxY ? b : a
-                if hi.maxY - lo.maxY > 1, hi.minY <= lo.maxY + 1 { union(i, j) }
-            }
-        }
-        var out: [[Int]] = [], at: [Int: Int] = [:]
-        for i in ws {
-            let r = find(i)
-            if let g = at[r] { out[g].append(i) } else { at[r] = out.count; out.append([i]) }
-        }
-        return out
-    }
-
     /// Appends the slices of every window group to `p` (see the header). `n` counts what is written, `dropped` the slices that did not fit.
     func writeGroups(_ p: UnsafeMutablePointer<PileSeg>, capacity: Int, n: inout Int, dropped: UnsafeMutablePointer<Int>?) {
-        let bw = Tuning.binWidth, slope: Float = 0.95, maxStep: Float = 2.0
-        for group in windowGroups() {
+        let bw = Tuning.binWidth, slope = Tuning.crestSlope, maxStep = Tuning.crestMaxStep
+        for group in sset.windowGroups {
             var lo = Int.max, hi = Int.min
             for si in group { lo = min(lo, surfaces[si].c0); hi = max(hi, surfaces[si].c0 + surfaces[si].pile.heights.count) }
             let m = hi - lo
@@ -57,14 +33,8 @@ extension SnowField {
                     // Crest: blur of the shown heights; supported / covered neighbours hold the full height (no taper there), the bare window ends taper to 0.
                     let l = i > 0 ? (pile.open(i - 1) ? h[i - 1] : h[i]) : (pile.supportL ? h[i] : 0)
                     let r = i < cnt - 1 ? (pile.open(i + 1) ? h[i + 1] : h[i]) : (pile.supportR ? h[i] : 0)
-                    let sm = (l + 2 * h[i] + r) / 4
                     let ceiling = edge + base[i] + pile.cap[i]   // infinite where no window is in front
-                    let plain = min(edge + base[i] + sm + Self.jitter(s, i, sm), ceiling)
-                    var t = plain
-                    if pile.cap[i].isFinite {   // packed up to a window's underside: drawn exactly at it, blended over the last 1.5 pt
-                        let u = min(max((h[i] - (pile.cap[i] - 1.5)) / 1.45, 0), 1)
-                        t = plain + (ceiling - plain) * (u * u * (3 - 2 * u))
-                    }
+                    let t = Self.crest(s, i, h: h[i], l: l, r: r)
                     if own[c] >= 0 && (t < top[c] || (t == top[c] && s.id > surfaces[Int(own[c])].id)) { continue }
                     var b = base[i]   // the base follows the frame's corner arc too (a supported end has no arc in `base`: the snow fills the cut-out)
                     let d = min(x - s.pile.x0, s.pile.x1 - x)
@@ -79,7 +49,7 @@ extension SnowField {
                 guard own[c] == -1, c > 0, own[c - 1] != -1 else { c += 1; continue }
                 var e = c
                 while e < m && own[e] == -1 { e += 1 }
-                if e < m, e - c <= 4 {
+                if e < m, e - c <= Tuning.ownerGapMax {
                     let a = c - 1
                     for k in c..<e {
                         let u = Float(k - a) / Float(e - a)
@@ -89,7 +59,7 @@ extension SnowField {
                 }
                 c = e
             }
-            func snow(_ c: Int) -> Bool { own[c] != -1 && hs[c] > 0.15 }
+            func snow(_ c: Int) -> Bool { own[c] != -1 && hs[c] > Tuning.snowyMin }
             // Slope limit over the whole group (one smooth function): a snowy column climbs toward a higher snowy neighbour (forward, then backward pass) by at most maxDrift, under its own pile's ceiling.
             // Within one pile the crest already is that gentle, so it only acts at owner changes (walls, seams) and on the odd jittery column.
             for c in 1..<m where snow(c) && snow(c - 1) {
@@ -106,7 +76,7 @@ extension SnowField {
                 while c < m && !snow(c) { c += 1 }
                 guard c < m else { break }
                 var a = c, b = c, j = c + 1, gap = 0
-                while j < m && gap < 3 { if !snow(j) { gap += 1 } else { gap = 0; b = j }; j += 1 }
+                while j < m && gap < Tuning.stretchGap { if !snow(j) { gap += 1 } else { gap = 0; b = j }; j += 1 }
                 c = max(b + 1, j)
                 if a > 0, own[a - 1] >= 0, own[a - 1] == own[a] { a -= 1 }
                 if b + 1 < m, own[b + 1] >= 0, own[b + 1] == own[b] { b += 1 }

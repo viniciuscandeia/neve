@@ -1,13 +1,13 @@
 // AGENT HEADER - Sources/NeveCore/Render.swift  (CPU side of the GPU buffers: Instance, Prim, PrimWriter, PileSeg, writeInstances, writePiles)
 // Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
 //   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
-//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (56 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
+//   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (48 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
-//   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
+//   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = `Self.crest`, shared with Contour.swift: neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
 //   pile, joins n0/n1 normals of neighbouring slices. Ground and Dock are drawn here (runs, the bank <-> Dock bridges and filled corners); every WINDOW support is drawn by Contour.swift `writeGroups` (one contour per group of touching windows: walls / seams from frame geometry only,
 //   slice z = the window the snow rests on, base follows the corner arc; no junction merges, crest blends, seam bridges or fillets any more). Draw-only: never changes `heights`.
-// Invariants: struct layouts MUST match the MSL structs in Sources/Neve/Renderer.swift (Instance), PileShader.swift (PileSeg), PrimShader.swift (Prim); y-up screen-local pt.
+// Invariants: struct layouts MUST match the MSL text in ShaderStructs.swift (interpolated into the shaders in Sources/Neve; ShaderLayoutTests checks it); y-up screen-local pt.
 // Gotchas: WritePilesBenchTests (NEVE_BENCH=1) times writePiles; GroupContourTests / StackIndependenceTests pin the window drawing. `shown`, `pileWritten`, `pileEasing` are presentation state kept in the core so the output
 //   stays testable. Hot path: writePiles / writeInstances run every frame the picture changes; writePiles splits time into pileSeconds ease / contour / join when `timer` is set (NEVE_PERF).
 
@@ -162,8 +162,6 @@ extension SnowField {
             let drop: Float = s.id == Tuning.groundID ? 0 : 1
             func x(_ i: Int) -> Float { (Float(s.c0 + i) + 0.5) * bw }
             func ceiling(_ i: Int) -> Float { edge + base[i] + s.pile.cap[i] }   // infinite where no window is in front
-            // Stable irregularity keyed on the window-relative column (travels with the pile), interpolated between every 3rd column.
-            func jitter(_ i: Int, _ sm: Float) -> Float { Self.jitter(s, i, sm) }
             // Dock pile, on its rounded corner: the bank's height beside the bar end eases (smoothstep) into the Dock snow level over the corner's width,
             // a rounded shoulder instead of a flat block; wherever the arc is higher than that curve the plain pile on the arc shows.
             var cornL = 0, cornR = 0
@@ -182,15 +180,9 @@ extension SnowField {
                 // A ground column beside a Dock bar end ignores the (much lower) under-bar neighbour: the bank keeps its full height up to the bar.
                 func nb(_ j: Int) -> Float { s.id == Tuning.groundID && s.pile.cap[j] < h[i] ? h[i] : h[j] }
                 let l = i > b ? nb(i - 1) : (b > 0 || s.pile.supportL ? h[i] : 0), r = i < e - 1 ? nb(i + 1) : (e < cnt || s.pile.supportR ? h[i] : 0)
-                let sm = (l + 2 * h[i] + r) / 4
                 // The bank column beside a Dock bar end sits exactly at the filled corner's height (no smoothing / noise): bank and Dock pile share one contour point.
                 if s.id == Tuning.groundID && (i == bankL || i == bankR) { return min(edge + base[i] + h[i], ceiling(i)) }
-                // Packed up to a window's underside: drawn exactly at it (no smoothing / noise pulling it down), so the snow hugs the window's rounded corner.
-                // Blended over the last 1.5pt (no pop when a column fills up to the window).
-                let plain = min(max(edge + base[i] + sm + jitter(i, sm), fill(i) ?? -.infinity), ceiling(i))
-                guard s.pile.cap[i].isFinite else { return plain }
-                let u = min(max((h[i] - (s.pile.cap[i] - 1.5)) / 1.45, 0), 1), k = u * u * (3 - 2 * u)
-                return plain + (ceiling(i) - plain) * k
+                return Self.crest(s, i, h: h[i], l: l, r: r, floor: fill(i) ?? -.infinity)
             }
             for run in s.runs {
                 let b = run.lowerBound, e = run.upperBound
@@ -198,9 +190,9 @@ extension SnowField {
                 var k = b
                 while k < e {
                     var lo = k
-                    while lo < e && h[lo] <= 0.15 && fill(lo) == nil { lo += 1 }
+                    while lo < e && h[lo] <= Tuning.snowyMin && fill(lo) == nil { lo += 1 }
                     var hi = lo, j = lo + 1, gap = 0
-                    while j < e && gap < 3 { if h[j] <= 0.15 && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
+                    while j < e && gap < Tuning.stretchGap { if h[j] <= Tuning.snowyMin && fill(j) == nil { gap += 1 } else { gap = 0; hi = j }; j += 1 }
                     k = max(hi + 1, j)
                     if lo < e {
                         lo = max(b, lo - 1); hi = min(e - 1, hi + 1)
@@ -231,10 +223,10 @@ extension SnowField {
         for g in pileEnds where g.id == Tuning.groundID {
             for d in pileEnds where d.id == 0 {
                 // Only the ground stretch nearest the Dock end bridges (the ground run can be split into several snowy stretches).
-                if g.last.x <= d.first.x, d.first.x - g.last.x < 60, abs(d.first.t - g.last.t) <= 2.5,
+                if g.last.x <= d.first.x, d.first.x - g.last.x < Tuning.bridgeReach, abs(d.first.t - g.last.t) <= Tuning.bridgeTol,
                    !pileEnds.contains(where: { ($0.id == Tuning.groundID && $0.last.x > g.last.x && $0.last.x <= d.first.x) || ($0.id == 0 && $0.first.x < d.first.x) }) {
                     put(g.last.x, g.last.t, g.last.b, d.first.x, d.first.t, d.first.b, d.drag)
-                } else if d.last.x <= g.first.x, g.first.x - d.last.x < 60, abs(g.first.t - d.last.t) <= 2.5,
+                } else if d.last.x <= g.first.x, g.first.x - d.last.x < Tuning.bridgeReach, abs(g.first.t - d.last.t) <= Tuning.bridgeTol,
                           !pileEnds.contains(where: { ($0.id == Tuning.groundID && $0.first.x < g.first.x && $0.first.x >= d.last.x) || ($0.id == 0 && $0.last.x > d.last.x) }) {
                     put(d.last.x, d.last.t, d.last.b, g.first.x, g.first.t, g.first.b, d.drag)
                 }
@@ -291,16 +283,25 @@ extension SnowField {
         let fine = 0.3 * (Float(noise(g2 &* 7 &+ 1013)) * (1 - w2) + Float(noise((g2 + 2) &* 7 &+ 1013)) * w2) * min(sm / 4, 1)
         return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5) + fine   // the Dock bank is bigger: a little more texture
     }
+
+    /// THE drawn crest of bin `i` of `s` (ground / Dock runs in writePiles and window groups in Contour.swift): the 1-2-1 blur of the shown heights (`l`, `h`, `r`: the neighbours already resolved for walls / ends) plus the stable jitter,
+    /// at least `floor` (the Dock's filled corner), at most the ceiling of the window in front, and blended onto that ceiling over the last 1.5 pt of room (packed up to a window's underside: drawn exactly at it, no pop when a column fills up).
+    static func crest(_ s: Surface, _ i: Int, h: Float, l: Float, r: Float, floor: Float = -.infinity) -> Float {
+        let sm = (l + 2 * h + r) / 4, cap = s.pile.cap[i], ceiling = s.edgeY + s.pile.base[i] + cap   // infinite where no window is in front
+        let plain = min(max(s.edgeY + s.pile.base[i] + sm + jitter(s, i, sm), floor), ceiling)
+        guard cap.isFinite else { return plain }
+        let u = min(max((h - (cap - Tuning.capBlendRoom)) / Tuning.capBlendSpan, 0), 1), k = u * u * (3 - 2 * u)
+        return plain + (ceiling - plain) * k
+    }
 }
 
-/// One bin-pair slice of a pile contour for the Metal pile pass, 56 bytes; layout mirrors the Metal struct.
+/// One bin-pair slice of a pile contour for the Metal pile pass, 48 bytes; layout mirrors the Metal struct.
 public struct PileSeg {
     public var x0: Float, x1: Float, top0: Float, top1: Float, base0: Float, base1: Float, slope: Float
     public var dragged: UInt32   // 1 = on the window being dragged (the app shifts it with the mouse)
     public var n0: Float = 0, n1: Float = 0   // smoothed slope at each end (average with the neighbour across the junction): continuous lighting normal, no facets
     public var inset: Float = 0   // how far base0 / base1 sit under the real window edge (the overlap hides the seam): the shader measures snow depth as top - base - inset
     public var z: UInt32 = 0   // z of the window this slice belongs to (index in the front-to-back list = SnowField.occluders): the shader hides it inside every occluder with a smaller index
-    public var tint0: Float = 0, tint1: Float = 0   // shading reference (where the deep-snow tint starts) at each end, used when `dragged` has bit 4 (else the base): junction slices share the back pile's base so the tint is continuous
 }
 
 /// Ends of a ground / Dock run, for bridging where they meet.

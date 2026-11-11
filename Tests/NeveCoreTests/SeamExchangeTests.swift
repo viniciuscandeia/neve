@@ -53,6 +53,15 @@ private func volume(_ f: SnowField) -> Float { f.surfaces.filter { $0.id > 0 }.r
     #expect(abs(ta - tb) <= Tuning.slope + 0.5, "joint not levelled: \(ta) vs \(tb)")
 }
 
+/// Pile.relax lets fresh snow stay in a small mound beside a thin bin (Tuning.dustSlope); the seam used to ignore that and levelled a 2 pt end bin onto an empty neighbour at once.
+@Test func seamTransferObeysTheDustSlopeLikePileRelax() {
+    let f = touchingField()
+    let a = f.index[1]!, b = f.index[2]!, n = f.surfaces[a].pile.heights.count
+    f.surfaces[a].pile.heights[n - 1] = 2.0   // above speckFloor, step 2.0 > slope 0.7 but < slope + dustSlope onto an empty bin
+    for _ in 0..<60 { f.stepSeams() }
+    #expect(f.surfaces[a].pile.heights[n - 1] == 2.0 && f.surfaces[b].pile.heights[0] == 0, "a step within slope + dustSlope onto a thin bin moved: \(f.surfaces[a].pile.heights[n - 1]) / \(f.surfaces[b].pile.heights[0])")
+}
+
 @Test func aHeapPushedIntoATouchingNeighbourContinuesThereWithoutDebris() {
     let f = touchingField()
     let a = f.index[1]!, b = f.index[2]!

@@ -8,7 +8,7 @@
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
-//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
+//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
 //   scene mode (NEVE_DEMO_VANISH) filters a window out here. Tests: SurfaceMapTests, DragOnlyRebuildTests, SpaceCarryTests, DockGapTests, SweepTests.
@@ -115,10 +115,7 @@ extension SnowField {
         rects.reserveCapacity(windows.count)
         for w in windows { rects.append(w.frame.offsetBy(dx: -ox, dy: -oy)) }
 
-        seams = computeSeams(rects: rects, windows: windows)
-        occluders = Occluder.list(rects: rects, ids: windows.map(\.number), radii: windows.map(\.radius), limit: Self.maxOccluders)
-        zOf = Dictionary(windows.indices.map { (windows[$0].number, UInt32($0)) }, uniquingKeysWith: { a, _ in a })
-        groundZ = UInt32(windows.count)
+        sset.beginRebuild(rects: rects, windows: windows, maxOccluders: Self.maxOccluders)
         let before = surfaces
         dockPrev = before.first { $0.id == 0 }?.frame
         var old = before
@@ -161,10 +158,7 @@ extension SnowField {
         pendingGone = pendingGone.filter { k, _ in !built.contains { $0.id == k } }   // back: buildSurface restored it from the stash
         overhang = overhang.filter { k, _ in built.contains { $0.id == k } }
         for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns(); built[i].aliveRuns = built[i].pile.held.isEmpty ? built[i].runs : built[i].pile.visibleRuns(alive: true) }
-        surfaces = built
-        index.removeAll(keepingCapacity: true)
-        for (i, s) in surfaces.enumerated() { index[s.id] = i }
-        buildColumns()
+        sset.install(built)
         transportBalls(before: before)
         transportGifts(before: before)
         transportFigures(before: before)
@@ -594,6 +588,22 @@ extension SnowField {
         let f = surfaces[di].frame, lo = Float(f.minX), hi = Float(f.maxX)
         return (lo, hi, surfaces[di].edgeY, { $0 >= lo && $0 < hi })
     }
+    /// Banks snow against a side as a repose wedge: from bin `k0` walking by `step` (away from the wall), each bin takes up to `top - slope * j` (j = bins from the wall) until `area` (pt^2, `banked` counts what is already in) is placed or the pile / run ends.
+    /// `underWindows` (the wall is a higher window's side): the walk stays on open bins, `top` is relative to this surface's edge (the bin's base is subtracted) and a window's cap bounds it; else (the Dock's side on the ground) visible bins, `top` is absolute and no cap.
+    func bankWedge(_ si: Int, from k0: Int, step: Int, top: Float, area: Float, banked: inout Float, last: inout Int, lo: inout Int, hi: inout Int, underWindows: Bool) {
+        let n = surfaces[si].pile.heights.count
+        var k = k0, j = 0
+        while banked < area - 0.01, k >= 0, k < n, underWindows ? surfaces[si].pile.open(k) : surfaces[si].pile.visible[k], j < 400 {
+            let h = surfaces[si].pile.heights[k]
+            let room = underWindows ? max(min(top - surfaces[si].pile.base[k] - Tuning.slope * Float(j), surfaces[si].pile.cap[k]) - h, 0) : max(top - Tuning.slope * Float(j) - h, 0)
+            let put = min(room, (area - banked) / Tuning.binWidth)
+            if put > 0 {
+                surfaces[si].pile.heights[k] = h + put; banked += put * Tuning.binWidth; surfaces[si].pile.trackMound(k)
+                lo = min(lo, k); hi = max(hi, k); pilesDirty = true
+            }
+            last = k; k += step; j += 1
+        }
+    }
     func berm(_ si: Int, atX x: Float, dir: Int, area: Float, lo: inout Int, hi: inout Int, end: inout Float, endY: inout Float) -> Float {
         let n = surfaces[si].pile.heights.count, c = surfaces[si].c0, start = Int(x * invBin) - c + dir
         var banked: Float = 0, last = min(max(start - dir, 0), n - 1)
@@ -627,16 +637,7 @@ extension SnowField {
             if let nx = neighbor(si: si, dir: dir, bin: atEnd ? nil : k - dir), surfaces[nx.si].id != draggingID, landable(nx.si) {
                 if !atEnd {   // like the Dock: bank against the side as a repose wedge up to the higher window's top, the rest goes on top of its pile
                     let top = surfaces[nx.si].edgeY + surfaces[nx.si].pile.base[nx.bin] - surfaces[si].edgeY
-                    var kk = k - dir, j = 0
-                    while banked < area - 0.01, kk >= 0, kk < n, surfaces[si].pile.open(kk), j < 400 {
-                        let h = surfaces[si].pile.heights[kk], room = max(min(top - surfaces[si].pile.base[kk] - Tuning.slope * Float(j), surfaces[si].pile.cap[kk]) - h, 0)
-                        let put = min(room, (area - banked) / Tuning.binWidth)
-                        if put > 0 {
-                            surfaces[si].pile.heights[kk] = h + put; banked += put * Tuning.binWidth; surfaces[si].pile.trackMound(kk)
-                            lo = min(lo, kk); hi = max(hi, kk); pilesDirty = true
-                        }
-                        last = kk; kk -= dir; j += 1
-                    }
+                    bankWedge(si, from: k - dir, step: -dir, top: top, area: area, banked: &banked, last: &last, lo: &lo, hi: &hi, underWindows: true)
                 }
                 if banked < area - 0.01 {
                     var dlo = Int.max, dhi = Int.min, e: Float = 0, ey: Float = 0
@@ -648,17 +649,9 @@ extension SnowField {
         }
         if hit, let bar, banked < area - 0.01 {   // bank the rest against the bar's side as a repose wedge up to the Dock top; what rises above goes onto the Dock's own pile
             let top = bar.top
-            var k = start + dir * m, j = 0
+            var k = start + dir * m
             while wall(k) { k -= dir }
-            while banked < area - 0.01, k >= 0, k < n, surfaces[si].pile.visible[k], j < 400 {
-                let h = surfaces[si].pile.heights[k], room = max(top - Tuning.slope * Float(j) - h, 0)
-                let put = min(room, (area - banked) / Tuning.binWidth)
-                if put > 0 {
-                    surfaces[si].pile.heights[k] = h + put; banked += put * Tuning.binWidth; surfaces[si].pile.trackMound(k)
-                    lo = min(lo, k); hi = max(hi, k); pilesDirty = true
-                }
-                last = k; k -= dir; j += 1
-            }
+            bankWedge(si, from: k, step: -dir, top: top, area: area, banked: &banked, last: &last, lo: &lo, hi: &hi, underWindows: false)
             if banked < area - 0.01, let di = index[0] {   // "throw it on top of the Dock": heap it on the Dock pile from the near end inward
                 var dlo = Int.max, dhi = Int.min, e: Float = 0, ey: Float = 0
                 banked += berm(di, atX: dir > 0 ? bar.lower - 2 : bar.upper + 2, dir: dir, area: area - banked, lo: &dlo, hi: &dhi, end: &e, endY: &ey)

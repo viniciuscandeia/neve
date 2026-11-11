@@ -6,7 +6,7 @@
 //   (kind: 0 flake, 1 clump, 2 slab/falling chunk (packed profile in kind>>8), 3 puff, 4 glint, 5 meltwater drop, 6 out-of-focus disc). Motion-streak stretch uses frameDt (set from the SIM frame, keeps slowmo consistent);
 //   `Occ` buffer = the 17 float4 occluder rects (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
 // `AppearanceWatcher` (@MainActor): mirrors the system light/dark appearance into Palette.darkTarget (fade ~0.5 s eased by Palette.tick per frame) and posts `changed` so paused (still) overlays wake.
-// Invariants: the MSL `struct Instance` here MUST match NeveCore/Render.swift `Instance` (field order, 4-byte types); changing one without the other renders garbage silently. Y is up, units are screen-local points.
+// Invariants: the MSL `struct Instance` is NeveCore ShaderStructs.instance, checked against NeveCore/Render.swift `Instance` by ShaderLayoutTests (field order, offsets, size); changing one without the other renders garbage silently. Y is up, units are screen-local points.
 // Perf: flake fragment shader runs for every flake pixel at up to 60 fps on full-screen drawables: keep branches cheap. Callers: Overlay.swift (pipeline use), AppController (indirectly).
 
 import AppKit
@@ -80,7 +80,7 @@ struct Gpu {
 let flakeShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
-struct Instance { float2 pos; float size; float alpha; float seed; float rot; uint kind; float2 vel; };   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc
+\(ShaderStructs.instance)   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc
 struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; float2 tail; };
 struct Occ { float4 r[16]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); r[8..15] HARD occluders (floating panels: always hide every flake); s.x = strength of the first four, s.y = 1 when any of r[0..7] is set (0: the fragment skips the mask loop), s.z = 1 when any hard rect is set, s.w = dark blend 0...1
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],

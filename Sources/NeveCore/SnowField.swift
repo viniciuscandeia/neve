@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/SnowField.swift  (the per-screen simulation: state + lifecycle + the step() order)
-// Role: `SnowField` (final class, one per screen, owned by an Overlay) holds ALL simulation state and `step(dt:)`; behaviour is split into `extension SnowField` across many files (Surfaces, SurfaceMap, Render, Flakes, Effects,
+// Role: `SnowField` (final class, one per screen, owned by an Overlay) holds ALL simulation state and `step(dt:)`; behaviour is split into `extension SnowField` across many files (Surfaces, SurfaceMap, SurfaceSet (the surface list and its derived structures live in the `sset` struct), Render, Flakes, Effects,
 //   Avalanche, Frost, Icicles, Drips, Melt, DockPush, DockSpill, Coverage, Resize, Figures*, Fights, Walk, Snowball, Snowman, Gifts, CursorThrow, EventDirector wiring, Scene). Also `BusyReasons` (why the frame rate must be 60) and `Stashed`.
 //   Pure data/logic: no AppKit, no I/O, no wall clock; time = sum of dt (`time`) plus a monotonic `clock` the app feeds through update(now:); randomness = SplitMix64 `rng`/`fxRng` seeded in init => deterministic tests (DeterminismTests).
 // Coordinates/units: LOCAL to the screen, AppKit y-up, points. `origin` = screen.frame.origin (global AppKit); `groundY` = Dock-/visibleFrame-bottom height, `visibleTop` = under the menu bar. Pile columns are BINS of
@@ -68,11 +68,13 @@ public final class SnowField {
     var sweptAt = -1.0           // `time` of the last cursor push (Surfaces.sweep): pushed heaps slump toward their repose slope once the blade has moved on
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints
-    var surfaces: [Surface] = []
+    var sset: SurfaceSet   // surfaces, index, column index, seams, occluders, joints, groups (SurfaceSet.swift); forwarded below
+    var surfaces: [Surface] { get { sset.surfaces } _modify { yield &sset.surfaces } }
+    var index: [Int: Int] { get { sset.index } _modify { yield &sset.index } }
+    var offsets: [Int32] { get { sset.offsets } _modify { yield &sset.offsets } }
+    var entries: [Entry] { get { sset.entries } _modify { yield &sset.entries } }
+    var seams: [SeamLink] { get { sset.seams } _modify { yield &sset.seams } }   // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
     var dockTrickle = DockTrickle()   // DockSpill.swift
-    var index: [Int: Int] = [:]   // surface id -> index into `surfaces`, rebuilt with them in updateSurfaces
-    var offsets: [Int32]       // CSR: per column range into entries
-    var entries: [Entry] = []
     var lastWindows: [WindowInfo] = []
     var pendingGone: [Int: (s: Surface, since: Double)] = [:]   // windows missing from the latest poll: snow stashed, knocked off only after Tuning.goneGrace (Mission Control / minimise flicker)
     var goneGrace = Tuning.goneGrace   // s a window may be missing before its pile is knocked off (tests set 0 for the old immediate knock-off)
@@ -116,9 +118,9 @@ public final class SnowField {
     var pileEnds: [PileEnd] = []
     /// Every window (and the Dock bar), front to back, local pt: a pile slice with `z` is hidden inside each entry whose index is < z (the overlay window sits above all windows, so the GPU clips what physics cannot).
     /// Rebuilt with the surfaces; capped at `maxOccluders` (the frontmost ones). `zOf`: surface id -> z; `groundZ` = behind all.
-    public internal(set) var occluders: [Occluder] = []
-    var zOf: [Int: UInt32] = [:]
-    var groundZ: UInt32 = 0
+    public var occluders: [Occluder] { sset.occluders }
+    var zOf: [Int: UInt32] { sset.zOf }
+    var groundZ: UInt32 { sset.groundZ }
     public static let maxOccluders = 32
     /// Everyone standing on a surface (at most `Tuning.maxFigures`): the auto snowman, snowmen made of user balls; see Figures.swift.
     public internal(set) var figures: [Figure] = []
@@ -180,7 +182,7 @@ public final class SnowField {
         self.visibleTop = Float(visibleTop)
         liveX1 = self.size.x; liveTop = self.size.y
         numCols = max(1, Int((Float(size.width) / Tuning.binWidth).rounded(.up)))
-        offsets = [Int32](repeating: 0, count: numCols + 1)
+        sset = SurfaceSet(numCols: numCols)
         let pool = Int(Float(flakeCount) * Intensity.nevasca.multiplier)   // allocated once for the max level
         skyCount = Int(Float(pool) * (1 - Tuning.backgroundFraction))
         debris.reserveCapacity(Tuning.maxDebris)
@@ -193,7 +195,6 @@ public final class SnowField {
         setIntensity(.media, immediate: true)
         updateSurfaces(windows: [])
     }
-    var seams: [SeamLink] = []    // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
     var peeledVolume: Float = 0   // drift snow let go so far (tests)
 
     /// Extra flakes retire when they next respawn; missing ones fade in from above (see `step`).

@@ -1,9 +1,9 @@
-// AGENT HEADER - Tests/NeveCoreTests/PaletteTests.swift  (Palette: every colour has light and dark, blend takes 0.5 s, tick step capped at 1/30 s so the blend never pops, light vector is unit and from above, glints stay below 3 Hz, flake sizes bias small. Adding a colour: give it BOTH variants or this fails.)
+// AGENT HEADER - Tests/NeveCoreTests/PaletteTests.swift  (Palette: every colour has light and dark, blend takes 0.5 s, tick step capped at 1/30 s so the blend never pops, light vector is unit and from above, glints stay below 3 Hz, flake sizes bias small. Adding a colour: give it BOTH variants or this fails.) Serialized: the suite mutates Palette.dark.
 
 import Testing
 @testable import NeveCore
 
-@Suite struct PaletteTests {
+@Suite(.serialized) struct PaletteTests {   // extrasHaveBothAppearancesAndFollowTheBlend mutates Palette.dark (process-wide): the suite runs one test at a time
     @Test func everyColorHasBothAppearances() {
         #expect(Palette.all.count >= 14)
         for (name, t) in Palette.all {

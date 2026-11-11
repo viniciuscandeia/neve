@@ -101,7 +101,7 @@ private func sameButZ(_ a: PileSeg, _ b: PileSeg) -> Bool {
 @Test func windowGroupsAreConnectedComponents() {
     let f = makeField()
     f.update(windows: [win(1, 100, 200, 300, 200), win(2, 404, 200, 300, 200), win(3, 300, 380, 200, 100), win(4, 100, 600, 100, 100), win(5, 800, 200, 150, 150)])   // 1 | 2 side by side, 3 over both (its bottom 380 < their top 400), 4 floats above 1, 5 alone
-    let ids = f.windowGroups().map { Set($0.map { f.surfaces[$0].id }) }
+    let ids = f.sset.windowGroups.map { Set($0.map { f.surfaces[$0].id }) }
     #expect(Set(ids) == [[1, 2, 3], [4], [5]])
 }
 
