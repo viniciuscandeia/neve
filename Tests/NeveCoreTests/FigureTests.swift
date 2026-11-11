@@ -1,5 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/FigureTests.swift  (Figures.swift lifecycle)
-// promote (3-ball stack -> Figure) needs a formed stack, demote back to balls (falling drops the whole stack, headless -> two balls), shatter -> debris, figure count never exceeds the cap, a figure on a hidden spot does not walk / fight, travels with its window and falls apart when knocked off, closing the window drops it as balls.
+// AGENT HEADER - Tests/NeveCoreTests/FigureTests.swift  (Figures.swift lifecycle and picking)
+// promote (a formed, decreasing 3-ball stack -> one Figure; anchors follow c(n+1) = c(n) + r(n) + r(n+1) - 1.5), demote back to balls (falling drops the whole stack, headless -> two balls), shatter -> debris, figure count never exceeds Tuning.maxFigures,
+//   a figure under a covering window goes hidden, does not walk or fight and returns when uncovered, travels with its window (slow move) and falls apart when knocked off (fast), closing the window drops it as balls, the auto snowman collapses only when
+//   knocked off, a Space switch removes figures on vanished windows but not on the ground, picking a stacked snowman's head demotes it (the body / the auto one are not pickable), standing figures leave balls alone and loose balls bounce off them,
+//   `look(of:)` data for the renderer, and `stage(.heavy)` is deterministic per seed.
 
 import CoreGraphics
 import Testing

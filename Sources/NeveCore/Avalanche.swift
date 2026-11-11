@@ -1,8 +1,11 @@
 // AGENT HEADER - Sources/NeveCore/Avalanche.swift  (avalanches: a front sliding along a full window pile)
-// Role: `Tuning` avalanche constants (avaFrontSpeed 150 pt/s, avaSpan 60, avaGroup 16 = one slab per 8 columns, avaCooldown 60 s, avaSpontaneous 300 s full, cascades <= 3 at 50 % chance, jolt thresholds), `AvaFront` (one front moving toward a
-//   drop-off end; every group of 8 columns it passes lets go 60-80 % as one slab through shedBin/flushRuns) and `AvaChain` (at most ONE chain at a time: first front + cascades onto lower full piles, depth <= 3, then a cooldown). Stepped by
-//   `SnowField.stepAvalanche(dt:)` (called in step order after ice). Triggered by an impact within avaImpactRange (80 pt) of a full pile spot, by a window moved at avaJoltLow..High (150..400 pt/s) over a full spot, spontaneously on a pile full > 300 s (mean 600 s), or by `avalancheDemo` (NEVE_DEMO_AVALANCHE). Uses `fxRng` (never `rng`).
-// Volume is conserved (released snow becomes debris slabs). Reset by SnowField.clear(). Tests: IceAvalancheTests. Units: pt, pt/s, simulation seconds.
+// Role: `Tuning` avalanche constants, `AvaFront` (one front on one window: slides toward a drop-off end at avaFrontSpeed 150 pt/s; every avaGroup 16 pt = 8 bins it passes calls `releaseGroup`, which strips 60-80 % of each visible bin in
+//   the group and sheds it through shedBin/flushRuns as debris slabs) and `AvaChain` (SnowField.chain: at most ONE chain at a time, <= 4 fronts, cascades <= avaMaxCascades 3 onto other windows at p 0.5, then avaCooldown 60 s; also the
+//   per-window "full for N s" table and test counters started/released).
+// Full = `fullSpot`: mean height over a 60 pt span >= 85 % of the mean pile limit there (pushed heaps never count), or a drift near its limit. Triggers: `avalancheImpact` (heavy landing, called from Effects.impact; within 80 pt of a
+//   full spot), `triggerAvalanche(near:)` (public; Robin in Figures+Robin.swift, demo), a window moving 150..400 pt/s over a full spot, spontaneous after a pile stays full > 300 s (p = dt/600 per 1 s scan), NEVE_DEMO_AVALANCHE.
+// `stepAvalanche(dt:)` runs in SnowField.step after stepIce, before stepDebris; does nothing (and drops fronts) in calm (Reduce Motion). Uses `fxRng`, never `rng`. Volume is conserved (removed from pile == released as debris).
+// Reset: SnowField.clear(), Scene reset, Resize rebuild replace `chain`. Tests: IceAvalancheTests. Units: pt, pt/s, simulation seconds, y up.
 
 import CoreGraphics
 import Foundation

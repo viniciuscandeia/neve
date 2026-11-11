@@ -1,9 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/DockPush.swift  (Dock bar resize pushes the ground snow)
-// Role: the Dock bar's read frame (`dockTarget`) is approached by the animated `dockCur` at Tuning.dockSpeed 800 pt/s so a jump or the Dock's own animation reads as a gradual push. `effective(_:)` substitutes the animated Dock rect into the window list
-//   (new / vertically moved / disjoint Docks snap), `stepDock` advances it, `dockIsolated` lets only Dock + ground rebuild when no window overlaps its reach, `berm(_:from:dir:volume:)` banks plowed ground snow ahead of a growing end (what does
-//   not fit is thrown as debris, dropped in calm), `bankMaxes`/`stepBank` maintain the repose-slope ground bank beside the bar (`bankLevel` per side rises 1 pt every 0.25 s once filled, up to a shelf flush with the Dock top).
-//   A shrinking end drops its Dock-top snow as clumps (buildSurface) and the bank slumps (dockSlump, Tuning.dockSlumpTime). Dock frame arrives from Sources/Neve/Dock.swift as WindowInfo number 0 (already glass-offset).
-// Tests: DockGapTests, DockPushTests, DockPerfTests, DockSpillTests. Units: pt, pt/s.
+// Role: the Dock's frame read by Sources/Neve (`dockTarget`, arrives in the window list as WindowInfo number 0) is approached by the animated `dockCur` (minX/maxX move at Tuning.dockSpeed 800 pt/s) so a jump reads as a gradual push.
+//   `effective(_:)` (called from Surfaces.swift's window update) swaps the animated Dock rect into the window list; a new, vertically moved, disjoint or `frozen` Dock snaps. `stepDock` (in SnowField.step) advances dockCur, rebuilds surfaces
+//   (`dockIsolated`: only Dock + ground when no later window overlaps its reach) and, for Tuning.dockSlumpTime, relaxes the bank around both ends via zero-volume deposits. `berm` banks plowed ground snow ahead of a growing end through
+//   Pile.deposit (what does not fit is shed as debris via shedBin, dropped in calm). `bankMaxes`/`stepBank`: the ground's per-column limit is a repose ramp beside the bar (Tuning.bankLimit); every 0.25 s, once the snow at the bar end has
+//   filled the ramp, `bankLevel` (per side) rises 1 pt up to Tuning.bankLevelMax (a shelf flush with the Dock top).
+// Side effects: sets pilesDirty; mutates pollDt temporarily inside stepDock. Tests: DockGapTests, DockPushTests, DockPerfTests, DockSpillTests. Units: pt, pt/s, y up.
 
 import CoreGraphics
 import Foundation

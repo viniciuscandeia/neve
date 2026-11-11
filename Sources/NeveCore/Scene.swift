@@ -1,7 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Scene.swift  (deterministic showcase scenes NEVE_SCENE=demo|fight)
-// Role: `SceneKind` (demo, fight), `FightScene` timing (hits at 3.0/3.3/3.6 s, head restack at 7 s, loop 14 s), `DemoScene` (30 s loop; `windows(in:t:)` gives the three scene windows Terminal, Fotos, Notas for the visible area at scene time t - Notas high with its right end over Fotos
-//   (avalanche cascade), Terminal overlapping Fotos and 12 pt taller (drift seam); at 25 s Fotos slides 14 % of its width in 0.3 s), `SceneState` and SnowField `beginScene` / `sceneTime` / `stepScene` (scripted events keyed by `fired`, user snowmen, rabbit, head carry-back) driven purely by simulation time + seed, so the
-//   same frames replay the same story. The app side (Sources/Neve/SceneStage.swift, main.swift) creates the real windows; scene mode ignores the real cursor and fixes the options. Tests: SceneTests, ScenarioTests.
+// Role: `SceneKind` (demo, fight), `FightScene` timing (head hits at 3.0 / 3.3 / 3.6 s, head carried back at 7 s, loop 14 s), `DemoScene` (30 s loop; `windows(in:t:)` gives the three scene windows, front to back Terminal, Fotos, Notas, for the
+//   visible area at scene time t: Notas high with its right end over Fotos (avalanche cascade), Terminal overlapping Fotos and 12 pt taller (drift seam); at 25 s Fotos slides 14 % of its width left in 0.3 s), `SceneState` and SnowField
+//   `beginScene` / `sceneTime` / `stepScene` (step order: first thing in SnowField.step while `scene != nil`). stepScene fires scripted events once each (`fired` ids): demo = setup at 0.4 s, user snowman at 6, story robin request at 6.5, head hits
+//   12.4-13.0, rabbit at 14, head carried back 16, fill under the robin 17.9, a shot lands beside it 19.8, sleigh 22 (+ NEVE_DEMO_VANISH time `config.demoVanishAt`); fight = two user snowmen, hits, carry. Everything is driven by simulation time and
+//   the seeded RNG, so the same frames replay the same story; at the loop end `resetWorld` (clear() + director / gift / avalanche state) restarts it. The EventDirector's Poisson roll is off while a scene runs (`scene == nil` required).
+// The app side (Sources/Neve/SceneStage.swift, main.swift, Overlay.beginScene) creates the real windows. Tests: SceneTests, ScenarioTests.
 
 import CoreGraphics
 import Foundation

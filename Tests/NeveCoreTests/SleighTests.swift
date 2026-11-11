@@ -1,5 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/SleighTests.swift  (Figures+Sleigh.swift + Gifts.swift)
-// Cadence via a director-only clock (sleighInterval/chance follow the calendar: Dec 24 ~10 min, rare outside December, off with the pref / compact mode / economy, cooldown and big-event cap), then 1/60 s integration of the crossing, gift drops (giftTravel must match stepGifts), landing sunk in piles, opening with Option-click (confetti), fades.
+// AGENT HEADER - Tests/NeveCoreTests/SleighTests.swift  (Figures+Sleigh.swift + Gifts.swift + CursorThrow.swift)
+// Cadence via a director-only clock (`starts(...)`: sleighInterval / sleighChance follow the calendar: Dec 24-25 ~10 min, rest of December 45 min, otherwise 3 h; off with the pref / compact mode / economy / Reduce Motion; cooldown and the one-big-event cap),
+//   then 1/60 s integration of the crossing (140 pt/s, top of the screen, bobbing, direction follows the wind), gift drops (<= 3, land sunk 30 % in piles, fade after 90 s; giftTravel must match stepGifts), a cursor sweep pops a gift into confetti,
+//   Option-click opens a gift once (glints, flying lid), gifts on a closed window fall or travel, prim budget of the team. "Cursor snowball" section: with Option held and the cursor still, a complete snowman within 300 pt throws 3 balls 2 s apart per hold
+//   (0.3 s arm raise, ~70 % aimed hits that leave a 14 pt splat lasting 1.5 s), none over snow, out of range, while the cursor moves, after release, in calm, outside the live strip in compact mode, or for an incomplete snowman.
 
 import CoreGraphics
 import Testing

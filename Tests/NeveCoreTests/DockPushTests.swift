@@ -1,6 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/DockPushTests.swift  (growing / shrinking Dock pushes the ground snow)
-// Ground snow 20 deep outside the Dock span [400,1000): growing end builds a berm and CONSERVES volume, kicks debris unless calm, berm moves monotonically outward, shrinking end drops its Dock-top snow, bank outline stays connected; second half: the bank beside the Dock grows up to the Dock top (stepBank).
-// Related: DockPush.swift, Tuning.dockSpeed/dockKick/bank*.
+// AGENT HEADER - Tests/NeveCoreTests/DockPushTests.swift  (growing / shrinking Dock pushes the ground snow; bank grows to the Dock top)
+// Part 1 (1440x900 field, ground snow 20 deep outside the Dock span [400,1000)): a growing end builds a berm and CONSERVES volume in calm (no debris), kicks debris when not calm, the berm moves monotonically outward, a shrinking end drops its Dock-top snow
+//   while the end travels (not teleports), the bank outline stays connected. Part 2: `Tuning.bankLimit` ramp (floored at ground, capped at the Dock top, shelf flush within bankShelf), long snowfall fills a 171 pt gap to a flush shelf (stepBank / bankLevel),
+//   a half-filled bank is a monotone ramp, a growing bank keeps a connected outline, and a frozen field (`frozen`) applies a Dock resize without stepping. Helpers `pileSegs`, `fillBankLevel` live in other test files.
+// Related: DockPush.swift, Tuning.dockSpeed / dockKick / bank*.
 
 import Testing
 import CoreGraphics

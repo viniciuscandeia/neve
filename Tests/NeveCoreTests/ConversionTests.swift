@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/ConversionTests.swift  (coordinate conversion + window filter)
-// Covers appKitFrame(fromCG:primaryHeight:) on a 1440x900 primary (CG top-left y-down <-> AppKit bottom-left y-up; screens left of / above / below the primary) and filterWindows (keeps normal windows in order, drops non-zero layers, alpha ~0, own pid, tiny sizes, entries missing number or bounds).
+// Covers appKitFrame(fromCG:primaryHeight:) on a 1440x900 primary (CG top-left y-down <-> AppKit bottom-left y-up; screens left of / above / below the primary) filterWindows (keeps normal windows in order, converts frames; drops layers other than 0 or missing, alpha <= 0.3, numbers in `exclude` (pid does NOT matter), sizes under 40x20, entries missing number or bounds) and mostlyOffscreen (< 30 % on any screen = gone).
 // Related: Sources/NeveCore/WindowInfo.swift, Sources/Neve/WindowList.swift.
 
 import CoreGraphics

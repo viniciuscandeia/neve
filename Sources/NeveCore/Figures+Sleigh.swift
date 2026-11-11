@@ -1,7 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Figures+Sleigh.swift  (Santa's sleigh crossing + gift drops)
-// Role: Tuning.sleigh* constants (140 pt/s, bob 8 pt / 3 s), `SleighState` (dir, endX, y0, scale, t, 2-4 deer, up to 3 gift drop x's computed with the same integrator as stepGifts via `giftTravel`) and SnowField code: `sleighInterval` (start-to-start
-//   mean: Dec 24-25 every 10 min, rest of December 45 min, otherwise 3 h; cooldown <= 20 min), `sleighAllowed` (option on, areaScale >= 1, not economy / low power), `sleighChance()` (per-second Poisson chance, called by the director), crossing step and
-//   `sleighLook(of:)` for Rig.sleigh. Date comes from `calendarDay` (injected by the app, Overlay.refreshDay re-reads every 10 min). NEVE_DEMO_SLEIGH (SimConfig.sleighDemo) crosses soon after launch. Tests: SleighTests.
+// Role: Tuning.sleigh* constants (140 pt/s, bob 8 pt / 3 s, release point 33 pt behind the team centre), `SleighState` (dir, endX, y0, scale, t, 2-4 deer, up to 3 precomputed gift release x's) and SnowField code. `sleighInterval`
+//   (start-to-start mean: Dec 24-25 600 s, rest of December 45 min, otherwise 3 h; cooldown = min(20 min, 20 % of it); demo = 1 s / 25 s), `sleighAllowed` (option on, areaScale >= 1, not economy / low power), `sleighChance()` (per-second
+//   Poisson chance, called by EventDirector; also stores director.sleighCooldown), `startSleigh` (needs at least one visible pile spot with mean >= 4 pt / min >= 3 pt over 11 columns and free gift slots, gifts alive + new <= Tuning.maxGifts;
+//   flies 15-25 % below the visible top, direction follows wind when |wind| > 2; each release x is back-computed with `giftTravel`, the same integrator as stepGifts), `stepSleigh` (flies across, bobs, calls `dropGift` (Gifts.swift) at each release
+//   point, 3 glints/s from the tail, removed past endX; dies off when walking / sleigh disabled or calm) and `sleighLook(of:)` for Rig.sleigh.
+// `calendarDay` (month, day) is injected by Sources/Neve/Overlay.swift (refreshDay). NEVE_DEMO_SLEIGH = config.sleighDemo. The sleigh is a Figure with radii .zero, built 0. Tests: SleighTests.
 
 import CoreGraphics
 import Foundation

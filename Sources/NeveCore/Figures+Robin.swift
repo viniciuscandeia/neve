@@ -1,7 +1,10 @@
-// AGENT HEADER - Sources/NeveCore/Figures+Robin.swift  (robin visitor)
-// Role: Tuning.robin* constants and `RobinState` (Stage fly -> hop -> perch -> shake -> leave) with the stepping/look code for `.robin` figures: flies a sine path (amp 12, wave 80, 60 pt/s) to a window top with a visible run >= robinRun, hops, perches, shakes
-//   at robinShakeAt, and is startled (flies off) by shots within robinShot, a fast cursor within robinCursor (> robinCursorSpeed), an impact within robinImpact, or its window moving > robinSurfaceSpeed. The rabbit may wait robinStoryWait s for a
-//   "story robin" (EventDirector follow-up request). `robinLook(of:)` feeds Rig.robin. Uses SnowField.shotLand / impactAt (last landings). Tests: RobinTests.
+// AGENT HEADER - Sources/NeveCore/Figures+Robin.swift  (robin visitor + story state)
+// Role: Tuning.robin* constants, `RobinState` (Stage fly -> hop -> perch -> shake -> leave; stay 8-20 s) with the stepping code for `.robin` figures, and `StoryState` (EventDirector.story). `startRobin` (not in ground-only mode, one at a time)
+//   picks `robinSpot`: the fullest pile on a window top with a visible run >= robinRun 80 pt, and flies in from the nearer screen edge on a sine path (amp 12, wave 80, 60 pt/s). It hops 2-3 times, perches, shakes at robinShakeAt 2 s (carves
+//   a 10 pt wide, 1.5 pt deep dent, 3 clumps fall). `startled` (shot landing within robinShot, a cursor > 300 pt/s within robinCursor, an impact within robinImpact, or its window moving > robinSurfaceSpeed) triggers `knock` + a fast
+//   `launch`: ~40 % of the pile within +-20 pt falls as slabs and a full pile loosens an avalanche (`triggerAvalanche`). Story: `storyStarted` (EventDirector.storyBias default) makes 1 in 3 rabbit visits request a robin first;
+//   `storyWaiting` keeps the rabbit sniffing for it (<= robinStoryWait 25 s); `storyMiss` aims the snowman's missed throws toward the perched robin. Reads shotLand / impactAt / pointer / pointerVel. `robinLook(of:)` feeds Rig.robin.
+// Window moves shift a flying robin's target in Figures.swift transportFigures. Uses `director.rng` for visit choices, `rng` for effects. Tests: RobinTests.
 
 import CoreGraphics
 import Foundation

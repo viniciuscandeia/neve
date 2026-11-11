@@ -1,7 +1,9 @@
 // AGENT HEADER - Sources/NeveCore/Music.swift  (beat detection + how music moves the snow)
-// Role: `MusicInput` (level, bass, beat 0...1; beat jumps to 1 on an onset and decays in ~150 ms), `BeatDetector` (runs ON THE AUDIO THREAD: no allocation, no locks; per block RMS envelope, bass RMS through a ~150 Hz one-pole low-pass, onset = bass energy vs a ~1 s running mean with a 0.25 s
-//   refractory) and SnowField.stepMusic: beats kick the wind (musicGust 30 pt/s, alternating sides, decays ~0.3 s), level adds sway and up to +40 % flakes (musicBoost), bass quickens the crest glints. Silence / Reduce Motion / economy / Low Power leave every factor at exactly 1 / 0.
-// Data path: Sources/Neve/MusicTap.swift feeds the detector and publishes one 64-bit word; Overlay.tick reads `MusicTap.shared.read()` into `field.music` when Pref.music is on. Tests: MusicTests.
+// Role: `MusicInput` (level, bass, beat 0...1; beat jumps to 1 on an onset and decays with a ~150 ms time constant), `BeatDetector` (runs ON THE AUDIO THREAD: no allocation, no locks; per block: channel-averaged RMS envelope, bass RMS through a 150 Hz
+//   one-pole low-pass, onset when bass RMS > 0.01 and > 1.5x a ~1 s running mean with a 0.25 s refractory; level / bass attack 50 ms, release 400 ms; `process` returns true on an onset block) and SnowField.stepMusic: beats kick the wind
+//   (musicGust 30 pt/s, alternating sides, decays ~0.3 s, re-armed when beat < 0.3), level adds sway (musicSway 1...1.5) and up to +40 % flakes (musicBoost, re-applies intensity when it changes), bass quickens the crest glints (musicGlint 1...4).
+//   Silence / Reduce Motion / economy / Low Power / quiet use MusicInput.silent: factors return to 1 (the kick decays to 0).
+// Data path: Sources/Neve/MusicTap.swift feeds the detector and publishes one 64-bit word; Overlay (per frame) reads `MusicTap.shared.read()` into `field.music` when Pref.music is on. Tests: MusicTests.
 
 import Foundation
 

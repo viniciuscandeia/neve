@@ -1,7 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Figures+Rabbit.swift  (rabbit visitor + carrot theft, carrots on the snow)
-// Role: Tuning.rabbit*/carrot* constants, `Critter` (stage hopIn -> sniff -> snatch -> flee; also the snowman's way back to a dropped carrot), `Carrot` (a stolen nose lying on a pile or falling, in `SnowField.carrots`), and stepping/look code for
-//   `.rabbit` figures: hops to a complete snowman (>= minStretch of visible surface), sniffs, snatches the nose (the snowman loses `carrot` until it regrows after carrotRegrow 60 s of snowfall or fetches it back at fetchSpeed x walk), flees
-//   (faster when hit; the snowman throws at it, hit chance x rabbitHitScale; `rabbitHitScale` is test-overridable on SnowField). `rabbitLook(of:)` feeds Rig.rabbit; `writeCarrotPrims` draws carrots (Overlay.writePrims, with the drag `shift`). Tests: RabbitTests.
+// Role: Tuning.rabbit*/carrot* constants, `Critter` (rabbit Stage hopIn -> sniff -> snatch -> flee; on a snowman it also holds `fetchX` / `regrow` for its way back to a dropped carrot), `Carrot` (a stolen nose falling / lying on a pile, in
+//   `SnowField.carrots`; owner = snowman id) and the stepping/look code for `.rabbit` figures. `startRabbit`: first active, complete, idle snowman that still has its carrot on a visible stretch >= minStretch 160 pt with >= 30 pt of room
+//   (enters from the nearer end; ground / Dock only in ground-only mode). The rabbit hops (22 pt, 0.35 s, footprints carved into the pile), sniffs 1 s (may wait up to robinStoryWait for a story robin), snatches the nose (snowman loses `carrot`),
+//   flees; meanwhile the snowman throws 2-3 balls at it (`throwAtRabbit`, hit chance x `rabbitHitScale` 0.6). A hit (`rabbitHit`) makes it drop the carrot and flee faster; the owner then runs (`fetchStep`, 3x walk) to the carrot and `stepCarrots`
+//   re-attaches it, else the nose regrows after carrotRegrow 60 s of snowfall (`stepCarrot`). `clearCritters` / `clearCarrots` (Reduce Motion / walking off) restore noses. Also `standY` (pile top under a foot, shared by other visitors).
+// `rabbitLook(of:)` feeds Rig.rabbit; `writeCarrotPrims` draws carrots (Overlay.writePrims, with the drag `shift`). Uses `director.rng` for visit choices. Tests: RabbitTests.
 
 import CoreGraphics
 import Foundation

@@ -1,5 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/PileLogicTests.swift  (pile carry-over + drawn contour invariants)
-// Pile travels exactly as far as the window however the move is split (1 s per update so nothing sheds), pile centre follows the window within one column, the drawn contour (all segment ends of writePiles, fully eased) never enters a front window, contour irregularity is stable and travels with the pile, and more pile-shape properties.
+// AGENT HEADER - Tests/NeveCoreTests/PileLogicTests.swift  (pile carry-over, drawn contour and presentation-state invariants; defines the shared helpers `pileSegs` / `pilePoints`)
+// A pile travels exactly as far as its window however the move is split (1 s per update so nothing sheds) and its centre follows within one column; the drawn contour (all segment ends of writePiles, fully eased) never enters a front window; contour
+//   irregularity is stable and travels with the pile; Tuning.windowRadius by macOS version; Reduce Motion cuts sway and makes debris fall without clumps; the ground pile is drawn on screen; `shown` eases up (tau 0.25 s) and down and writePiles returns nil
+//   when settled; pileVersion bumps only on change; `pilesSettled` / `isBusy` / `busyReasons` (small shedding and gusts are not busy, bursts and intact slabs are); PileSeg stride 52 and smoothed n0/n1 normals (run ends keep their own slope);
+//   per-window ceiling modulation, deposit softness near the limit, long snowfall fills the ceiling and `fullSpot` triggers; far-apart specks draw no film between them.
 // Related: Surfaces.buildSurface carry, Render.writePiles.
 
 import CoreGraphics

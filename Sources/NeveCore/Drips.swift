@@ -1,7 +1,8 @@
 // AGENT HEADER - Sources/NeveCore/Drips.swift  (meltwater drops during the idle melt)
-// Role: `Drop` (forming 0.3 s swell -> falling with gravity 900 pt/s^2 -> splash 0.3 s into 2-3 micro-droplets or leaves the screen) in `SnowField.drops` (<= Tuning.maxDrops 16, ~dripRate 5/s); hangs from a random pile end (window / Dock bar) or a
-//   sagging snowman; never lands on its own source surface. Only while `dripsAllowed` = melting && !meltDone && !calm && !economy && !lowPower. `writeDrops` appends Instances (kind 5, teardrop shader) inside writeInstances. Uses `fxRng`.
-// Callers: Melt.swift (melting flag), Render.writeInstances. Cleared by SnowField.clear()/resize. Tests: MeltTests.
+// Role: `Drop` (forming 0.3 s swell in place -> falling at gravity 900 pt/s^2 -> on landing a 0.3 s splash of 2-3 micro-droplets, or removed below the screen) in `SnowField.drops` (<= Tuning.maxDrops 16, new ones at dripRate/s while
+//   meltT/meltDur < 0.85). A drop hangs from a random pile end (first bin with >= 1.5 pt within 24 bins of an end; any surface incl. the Dock) or, 35 % of the time, a snowman that is not collapsing; it never lands on its own source surface (`src`).
+//   `stepDrips` is in SnowField.step; `dripsAllowed` = melting && !meltDone && !calm && !economy && !lowPower, otherwise `drops` is emptied. `writeDrops` appends Instances (kind 5, teardrop shader), called from Render.writeInstances.
+// Uses `fxRng` (not `rng`). Removal is swap-with-last. Melt.swift also clears `drops` when the melt ends. Tests: MeltTests.
 
 import CoreGraphics
 import Foundation

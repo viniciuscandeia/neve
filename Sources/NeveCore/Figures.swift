@@ -1,10 +1,13 @@
 // AGENT HEADER - Sources/NeveCore/Figures.swift  (actors: Figure data model + snowman stepping core)
-// Role: `FigureKind` (snowman, rabbit, penguin, sleigh, robin), `Phase` (building, idle, walking, fighting, cheering, collapsing, hidden), `Attachment` (on a surface id at x, or air), `Motion` (walk / fight bookkeeping), `Xfer` (hop between adjacent
-//   surfaces, ground <-> Dock), `Anchors` (ball centres, throwing hand, ground height) and `Figure` (ONE struct for every actor: `kind` selects behaviour in a `switch`; per-kind state structs RobinState / Critter / PenguinState / SleighState live in
-//   the Figures+<Kind>.swift files). SnowField extension: stepFigures/stepFigure dispatch, standing height (`meanHeight` over the DRAWN eased `shown` heights), look(of:) -> SnowmanLook for Rig, stacking/shatter helpers, stackOverlap 1.5 / sink 0.8.
-// Caps: Tuning.maxFigures = 3 snowmen per screen (auto + user stacks); visitors have EventDirector.maxAmbient 3 / maxBig 1. `active` = takes part in walking / fights (complete, not building / hidden / collapsing / headless).
-// Coordinates: foot position local AppKit pt, y up; `scale` = radii.x / 11.5 (screen-size dependent, Snowman.snowmanScale 1...1.5).
-// Adding a visitor: FigureKind case + EventDirector.spec row + SnowField.startVisitor case + Figures+<Kind>.swift step + Rig+<Kind>.swift look/draw + Overlay.writePrims branch. Tests: FigureTests, FigureHelpers, ActorFixesTests.
+// Role: `FigureKind` (snowman, rabbit, penguin, sleigh, robin), `Phase` (building, idle, walking, fighting, cheering, collapsing, hidden), `Attachment` (on surface id at x, or air), `Motion` (walk / fight bookkeeping), `Xfer` (hop between adjacent
+//   surfaces, ground <-> Dock), `Anchors` (ball centres, throwing hand, ground height) and `Figure` (ONE struct for every actor: `kind` selects behaviour; per-kind state RobinState / Critter / PenguinState / SleighState lives in the
+//   Figures+<Kind>.swift files). SnowField extension: `stepFigures` (visitors fade with melt/outro/dying, dispatch to stepRabbit/Robin/Penguin/Sleigh or the snowman body of `stepFigure`; then, only when walking and not calm/melting:
+//   startFights, stepFights, stepShots, stepCarrots, stepCursorThrow), `look(of:)` -> SnowmanLook for Rig, `anchors`, `addFigure`, `promote(bottomBall:)` / `demote` (stack of 3 balls <-> snowman), `shatter` (debris; the auto snowman collapses
+//   and starts snowmanCooldown), `removeFigure` (ends its fight, tells EventDirector.ended for visitors), `lose`/`knockOff`/`transportFigures` (window moved: x shift, or knocked off when shed speed > 0.5), `dropWindowFigures` (Space switch).
+// Snowmen stand on the DRAWN snow (`meanShown`, eased `shown` heights; physics stays on `heights`) and fade out (`hide`, 0.2 s) while a window / the Dock covers the body. `snowmanCount < Tuning.maxFigures` gates spawning (`canSpawnFigure`);
+//   visitors are capped by EventDirector. `active` = snowman, not hidden / collapsing / building / headless, stageAge >= 0.3 s. Auto snowman (`fromBalls == false`) builds itself; user stacks (`fromBalls`) are pickable.
+// Coordinates: foot = local AppKit pt, y up, y = pile top under it; `scale` = radii.x / 11.5 (SnowField.snowmanScale 1...1.5 by screen width). Tests: FigureTests, FigureHelpers, ActorFixesTests.
+// Adding a visitor: FigureKind case + EventDirector.spec row + SnowField.startVisitor case + Figures+<Kind>.swift step + Rig+<Kind>.swift look + a draw branch in Sources/Neve/Overlay.swift (calls field.look(of:) / penguinLook(of:) ...).
 
 import CoreGraphics
 import Foundation

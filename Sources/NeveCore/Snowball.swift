@@ -1,9 +1,12 @@
 // AGENT HEADER - Sources/NeveCore/Snowball.swift  (user snowballs: scoop, roll, drop, stack into snowmen)
-// Role: `Snowball` (id, state held/falling/resting, pos, radius, parent link for stacks, vel, spin, melting, surfaceID) in `SnowField.balls` (cap Tuning.maxBalls 6) and the interaction API the overlay calls while Option is held:
-//   `hitTest(point:)` (over a ball or on visible snow => the panel becomes interactive), `pickSnowball(at:)` (nearest free ball; the head of a stacked/headless snowman turns back into balls), `scoop(at:)` (takes up to the area from the pile, at most half
-//   per column; ballStart radius 5), `drag(_:to:dt:)` (rolling grows the ball by ballGrowth 0.1 per pt up to ballMax 20 as it picks up snow), `drop(_:throwing:)` (a pause before release is not a throw), `openGift(at:)` is in Gifts.swift.
-//   Three decreasing balls stacked promote to a user `Figure` (Figures.swift, fromBalls true). `supportTop` finds the surface under a ball. Balls on a dragged window ride with `shift` (Overlay.writePrims).
-// Coordinates: local AppKit pt, y up. Tests: SnowballTests, SnowmanTests, SpaceCarryTests.
+// Role: `Snowball` (id, state held / falling / resting, pos, radius, parent link for stacks, vel, spin, face for a loose head, melting, fade, surfaceID) in `SnowField.balls`, and the interaction API the overlay calls while Option is held:
+//   `hitTest(point:)` (over a ball, figure, gift or visible snow => the panel becomes interactive), `pickSnowball(at:)` (nearest ball with nothing on top; also the top of a stacked / headless snowman, which `demote`s into balls),
+//   `scoop(at:)` (needs half a ballStart-radius disc of snow within +-8 columns, takes at most half of each column; radius Tuning.ballStart 5; above Tuning.maxBalls 6 the oldest free ball melts away), `drag(_:to:dt:)` (on a surface the ball
+//   rides on top, rolls, and grows by ballGrowth 0.1 per pt up to ballMax 20 by carving a groove with Pile.carve; velocity smoothed over 60 ms), `drop(_:throwing:)` (throw velocity capped at 600 pt/s; throwing: false = just let go).
+// Simulation `stepBalls` (in SnowField.step): fall (gravity, side walls; lands on a resting ball of a different stack = stacks if radius <= below and |dx| <= 0.4 r and depth < 3, else slides off; hits figures via `hitFigures`, where a head that
+//   fits re-attaches to a headless body; else lands on the drawn snow via `supportTop` + standY), rest (follows the drawn pile, rolls aside when it does not fit under a low window), `follow` (stack children), promotion of three decreasing
+//   balls to a user `Figure` (Figures.swift `promote`), melt fade, `transportBalls` (window moved: x shift, or knocked off), `breakBalls` / `pop` (cursor sweep breaks a ball into debris). `supportTop` is also used by gifts and penguins.
+// Coordinates: local AppKit pt, y up. Balls on a dragged window ride with the drag (Overlay.writePrims shift). Tests: SnowballTests, SnowmanTests, SpaceCarryTests.
 
 import CoreGraphics
 import Foundation

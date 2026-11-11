@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/L7Tests.swift  (robustness, review round L7)
-// Side Dock clears the frame at once (unlike a failed read), column() survives NaN/Inf/huge x, secondary screens (field origin != 0: right, above, below the primary) use only their own windows and the Dock is local to that screen, writeInstances never exceeds capacity with every pool full in Nevasca, step survives zero and huge dt.
+// Side Dock clears the frame at once (unlike a failed read), column() survives NaN/Inf/huge x, secondary screens (field origin != 0: right, above, below the primary) use only their own windows and the Dock is local to that screen, writeInstances never exceeds capacity with every pool full in Nevasca, step survives zero and huge dt, windShape stays bounded at huge `time`.
 
 import CoreGraphics
 import Foundation

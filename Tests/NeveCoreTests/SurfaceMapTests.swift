@@ -1,6 +1,10 @@
-// AGENT HEADER - Tests/NeveCoreTests/SurfaceMapTests.swift  (the biggest suite: surfaces, visibility, piles)
-// Field 1000x800 at origin (0,0): ground (Dock top) y = 90, menu-bar area from y = 780. Helpers build a window's pile directly (`rounds` deposits per bin; hidden/roofed columns take none) or step snowfall until a pile reaches a height. Covers front/back visibility by list order, clipping to the screen, off-screen windows, edges in the menu-bar area, hidden/capped columns, seams and run structure.
-// Related: SurfaceMap.swift, Surfaces.swift, Pile.swift. Slow in debug: prefer Tests/run.sh -r.
+// AGENT HEADER - Tests/NeveCoreTests/SurfaceMapTests.swift  (the biggest suite: surfaces, visibility, carry-over, ground bank; defines the shared test helpers)
+// Shared helpers used by most test files: `makeField` (1000x800 field at origin 0, groundY 90 = Dock top, visibleTop 780), `win`, `pileUp` (direct deposits), `snowUntilPiled`, `pileOnLoneWindow`, `fillBankLevel`, and the windows `back` (x 100...400, top y 400)
+//   and `front` (x 200...500, y 300...600). Covers: front/back visibility by list order, clipping to the screen, windows off screen / in the menu-bar area / without headroom / at ground level get no surface, Dock surface only over the bar, slow move carries
+//   the pile without shedding, fast move sheds (`shedFraction`), narrower resize drops only the overhang, bounds changes, vanished window drops blocks (debris count truthful at the pool limit), Space-switch stash (restore, changed width restores nothing, cap 64
+//   and 30 min expiry, no debris), headroom / ceiling rules in `Pile.deposit`, ground pile and the bank beside a bottom Dock (rises to the Dock top, never inside the bar's rounded silhouette, merged contour, shrinking Dock sheds as debris), `DockDebounce`,
+//   `Tuning.dockGlass`, `coversScreen` with a notch, ground ceiling under a floating window follows its rounded corners, a ball under a corner must fit across its width.
+// Related: SurfaceMap.swift, Surfaces.swift, Pile.swift. Slow in debug: prefer Tests/run.sh -r. Piles for the bank tests are cached per process (`heavy`).
 
 import CoreGraphics
 import Foundation

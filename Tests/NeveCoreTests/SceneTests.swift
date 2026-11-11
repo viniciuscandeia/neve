@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/SceneTests.swift  (NEVE_SCENE scenes)
-// A 1512x900 screen plays DemoScene with windows following `DemoScene.windows` at 60 Hz like the app's frame timer: timeline events fire on schedule, the run is deterministic, the scene window filter keeps only the scene windows; fight scene has two snowmen 150 pt apart, the third hit at T = 3.6 s, celebration and restack timings (README documents these instants: change both together).
+// A 1512x900 screen plays DemoScene with windows following `DemoScene.windows` at 60 Hz like the app's frame timer: timeline events fire on schedule (also defines `demoField` / `demoRun` / `fightField` helpers), the run is deterministic, the scene window filter keeps only the scene windows; fight scene has two snowmen 150 pt apart, the third hit at T = 3.6 s, celebration and restack timings (README documents these instants: change both together).
 
 import CoreGraphics
 import Testing

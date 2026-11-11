@@ -1,6 +1,8 @@
 // AGENT HEADER - Sources/NeveCore/CursorThrow.swift  (snowman throws at the held-still cursor)
-// Role: with Option held and the cursor still (< 20 pt/s for 0.8 s) away from snow, the nearest complete, free snowman within 300 pt turns, raises its arm (0.3 s windup) and throws a snowball at the cursor (`Shot.target == SnowField.cursorTarget -2`: no figure is hit),
-//   max 3 throws per hold, 2 s apart (`CursorThrow` state, reset when Option is released). `stepCursorThrow(dt:)` is called from the figure step; uses `optionHeld`, `pointer` and `pointerVel` that Overlay sets every frame. Tests: FightTests / ActorFixesTests.
+// Role: while Option is held and the cursor is still (< 20 pt/s for 0.8 s) and not over snow (`hitTest`), the nearest snowman within 300 pt (active, fully built, no fight, not cheering, not headless) turns to face it, raises its arm (0.3 s
+//   windup, drives pose.flutter.up) and throws a snowball at the cursor (`Shot.target == SnowField.cursorTarget` -2: no figure is hit; 70 % aimed at the cursor, otherwise it sails past, landing on the ground). Max 3 throws per hold, one
+//   cycle ~2 s; state in `CursorThrow` (SnowField.cursorThrow), reset when Option is released or the field is cleared / scene reset. In compact mode only inside the live strip. Does nothing in calm.
+// `stepCursorThrow(dt:)` is called from stepFigures (Figures.swift); `optionHeld`, `pointer`, `pointerVel` are set by Overlay each frame (local pt, y up). Tests: L5PhysicsTests, SleighTests.
 
 import CoreGraphics
 import Foundation

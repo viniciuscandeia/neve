@@ -1,5 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/PollSchedulerTests.swift  (PollScheduler cadence)
-// Drives the pure scheduler in 1 ms steps (`snapshot(t)` returns (changed, frameMoved)): idle wants nothing, requests stack into one read under the 30/s cap, a burst ends after guardTime + two identical snapshots but hits hardCap while changing, ordinary click = 1-2 reads, desktop click starts a burst, drag samples while moving then settles, demotes when movement stops while held, safety interval stretches when quiet, failed-read retries.
+// AGENT HEADER - Tests/NeveCoreTests/PollSchedulerTests.swift  (PollScheduler cadence + a few small app-logic tests that have no better home)
+// Drives the pure scheduler in 1 ms steps (`run(...)` with `snapshot(t)` -> (changed, frameMoved)): idle wants nothing, requests stack into one read under the 30/s cap, a burst ends after guardTime + two identical snapshots but hits hardCap while changing,
+//   an ordinary click = 2 reads, a desktop click starts a burst, drag samples while moving (~25 Hz) then settles, demotes when movement stops while held, failed-read retries are bounded (maxRetries), the safety interval stretches to 5 s after 10 quiet s with AX.
+// Also: `dragTarget` rules, per-window velocity / sample time in `update(now:)` (other windows do not alter it, identical snapshot decays instead of zeroing), `markStale` window surfaces take no snow until a changed snapshot, `FrameRate.range` steps and
+//   `cursorNear`, `Countdown` fires once, `OverlayPrefs` defaults agree with `Pref`, `Flake.pack` survives non-finite input, the sleigh fades with its look.fade.
 
 import CoreGraphics
 import Testing

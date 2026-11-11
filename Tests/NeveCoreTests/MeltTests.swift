@@ -1,5 +1,8 @@
-// AGENT HEADER - Tests/NeveCoreTests/MeltTests.swift  (Melt.swift + Drips.swift)
-// Piles drain monotonically within the duration, nothing spawns or lands and actors are gone during a melt, intro cancels a melt and keeps what is left, resume starts from the top with no flake on screen, deterministic, Reduce Motion melt = quick fade, drops form only while melting and respect the cap (none in calm/economy/low power), resumed melt restores the stack, closing the window terminates.
+// AGENT HEADER - Tests/NeveCoreTests/MeltTests.swift  (Melt.swift + Drips.swift + SnowField.clear())
+// `snowy()` = `stage(.heavy)` on a 1000x800 field. Piles drain monotonically within the duration, nothing spawns or lands and actors / icicles / gifts are gone during a melt, intro cancels a melt and keeps what is left, resume starts from the top with no flake on
+//   screen, deterministic, Reduce Motion melt = ~1 s fade, drops (`drops`, Instance kind 5) form only while melting, respect Tuning.maxDrops and never appear in calm / economy / low power, a resumed melt restores the sagged stack and a partial stack whose
+//   window closes is removed, meltDone still fires when an airborne element never expires (meltGrace). Also `clear()`: removes every accumulated effect but keeps cooldowns (snowmanCooldown, finite director cooldowns), ends director visits through
+//   `director.ended` (cooldown finite, visits resume), and drops pending dockTrickle / sweepOwed volume.
 
 import CoreGraphics
 import Testing

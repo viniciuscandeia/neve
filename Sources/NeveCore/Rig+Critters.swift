@@ -1,4 +1,5 @@
-// AGENT HEADER - Sources/NeveCore/Rig+Critters.swift  (rabbit drawing: `RabbitLook` + `Rig.rabbit`, ~18 x 14 pt at scale 1; shadow, ears, haunch, chest, head, pom tail, optional carrot; rim light toward Palette.light). Pure geometry, local x forward y up. Tests: RabbitTests / RigTests.
+// AGENT HEADER - Sources/NeveCore/Rig+Critters.swift  (rabbit drawing: `RabbitLook` + `Rig.rabbit`, ~18 x 14 pt at scale 1; shadow, ears, haunch, chest, head, pom tail, optional carrot in the mouth or flying toward it)
+// Also holds `Rig.rim` (faint rim light toward Palette.light, shared with Rig+Robin / Rig+Sleigh) and `Rig.carrotPiece` (a lying / flying carrot, used by Figures+Rabbit.writeCarrotPrims). Pure geometry, local x forward y up. Tests: RabbitTests / RigTests.
 
 import Foundation
 
