@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/RobinTests.swift  (Figures+Robin.swift)
+// Perch -> shake -> stay -> leave, a shot landing near a perched robin startles it and a full pile may loosen an avalanche, a fast cursor startles (a slow one does not), a moving window startles, none in Reduce Motion / compact mode, director starts robins within the caps, the story stages a robin before the rabbit steals and shots miss closer to the robin.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

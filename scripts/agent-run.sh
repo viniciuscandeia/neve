@@ -1,7 +1,14 @@
 #!/bin/bash
+# AGENT HEADER - scripts/agent-run.sh
+# Role: run ANY command against a private, disposable Neve instance without touching the user's app.
 # Usage: scripts/agent-run.sh [--screen] [--name N] [--defaults k=v ...] -- <command...>
-# Builds a dev bundle, launches ITS OWN instance, runs <command> with NEVE_PID / NEVE_APP /
-# NEVE_DEFAULTS_SUITE exported, then kills only that pid. Never touches the user's app. See README.
+# Flow: NEVE_DEV=$NAME scripts/make-app.sh -> build/Neve-$NAME.app (own bundle id ...neve.dev) -> launch Neve-dev-$NAME in background
+#   (env NEVE_INSTANCE=$NAME) -> export NEVE_PID / NEVE_APP / NEVE_DEFAULTS_SUITE (= io.github.viniciuscandeia.neve.dev.$NAME) -> run <command> -> EXIT trap.
+# --defaults k=v writes the dev suite via `defaults write` (type inferred: true|false -> -bool, digits -> -int, else -string). Default NAME = 4-char hash of the worktree dir.
+# --screen: acquires the shared screen lock (scripts/dev-lock.sh, /tmp/neve-screen.lock, NEVE_LOCK_TIMEOUT s, default 600) + caffeinate -dimsu. Use it for anything
+#   that needs the screen (captures, perf): screen-bound work must be idle-gated and one agent at a time.
+# Gotchas: the cleanup kills ONLY the pids it launched ($NEVE_PID, caffeinate). NEVER kill/pkill/pgrep Neve by name: it would hit the user's app and other agents.
+# Callers: agents/humans directly; README "Vários agentes em paralelo" documents it. Sleeps 2 s after launch and aborts if the app died.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCREEN=0; NAME=""; DEFS=()

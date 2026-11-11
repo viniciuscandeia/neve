@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PanelPlacementTests.swift  (PanelPlacement.swift helpers: takeOnce fires once, restoreDefaults returns to Pref defaults, screenLabels disambiguate and mark the main screen, loginNote and steppedLevel)
+
 import Testing
 import CoreGraphics
 import Foundation

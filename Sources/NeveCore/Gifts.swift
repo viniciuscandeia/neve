@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Gifts.swift  (gifts dropped by the sleigh + confetti)
+// Role: Tuning gift constants (<= 3 gifts, 9 pt box, sinks 30 % into the pile, rests 90 s then fades over 1 s, lid flies 0.7 s, <= 28 confetti), `Gift` (falls like a loose ball, rests on a surface, `out` fade-out on outro/melt), `Confetti`, `GiftState`, and SnowField
+//   `stepGifts` (same integrator that Figures+Sleigh.giftTravel mirrors - keep both in sync), `openGift(at:)` (Option-click pops the lid: confetti + white crumbs as clumps), `writeGiftPrims` (Rig.gift / confetti quads, honours the drag `shift`). Gifts stash across Space switches
+//   (Stashed.gifts) and are removed by clear(). Tests: SleighTests (drop / open).
+
 import CoreGraphics
 import Foundation
 

@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/Avalanche.swift  (avalanches: a front sliding along a full window pile)
+// Role: `Tuning` avalanche constants (avaFrontSpeed 150 pt/s, avaSpan 60, avaGroup 16 = one slab per 8 columns, avaCooldown 60 s, avaSpontaneous 300 s full, cascades <= 3 at 50 % chance, jolt thresholds), `AvaFront` (one front moving toward a
+//   drop-off end; every group of 8 columns it passes lets go 60-80 % as one slab through shedBin/flushRuns) and `AvaChain` (at most ONE chain at a time: first front + cascades onto lower full piles, depth <= 3, then a cooldown). Stepped by
+//   `SnowField.stepAvalanche(dt:)` (called in step order after ice). Triggered by an impact within avaImpactRange (80 pt) of a full pile spot, by a window moved at avaJoltLow..High (150..400 pt/s) over a full spot, spontaneously on a pile full > 300 s (mean 600 s), or by `avalancheDemo` (NEVE_DEMO_AVALANCHE). Uses `fxRng` (never `rng`).
+// Volume is conserved (released snow becomes debris slabs). Reset by SnowField.clear(). Tests: IceAvalancheTests. Units: pt, pt/s, simulation seconds.
+
 import CoreGraphics
 import Foundation
 

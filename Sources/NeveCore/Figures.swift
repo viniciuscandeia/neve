@@ -1,3 +1,11 @@
+// AGENT HEADER - Sources/NeveCore/Figures.swift  (actors: Figure data model + snowman stepping core)
+// Role: `FigureKind` (snowman, rabbit, penguin, sleigh, robin), `Phase` (building, idle, walking, fighting, cheering, collapsing, hidden), `Attachment` (on a surface id at x, or air), `Motion` (walk / fight bookkeeping), `Xfer` (hop between adjacent
+//   surfaces, ground <-> Dock), `Anchors` (ball centres, throwing hand, ground height) and `Figure` (ONE struct for every actor: `kind` selects behaviour in a `switch`; per-kind state structs RobinState / Critter / PenguinState / SleighState live in
+//   the Figures+<Kind>.swift files). SnowField extension: stepFigures/stepFigure dispatch, standing height (`meanHeight` over the DRAWN eased `shown` heights), look(of:) -> SnowmanLook for Rig, stacking/shatter helpers, stackOverlap 1.5 / sink 0.8.
+// Caps: Tuning.maxFigures = 3 snowmen per screen (auto + user stacks); visitors have EventDirector.maxAmbient 3 / maxBig 1. `active` = takes part in walking / fights (complete, not building / hidden / collapsing / headless).
+// Coordinates: foot position local AppKit pt, y up; `scale` = radii.x / 11.5 (screen-size dependent, Snowman.snowmanScale 1...1.5).
+// Adding a visitor: FigureKind case + EventDirector.spec row + SnowField.startVisitor case + Figures+<Kind>.swift step + Rig+<Kind>.swift look/draw + Overlay.writePrims branch. Tests: FigureTests, FigureHelpers, ActorFixesTests.
+
 import CoreGraphics
 import Foundation
 

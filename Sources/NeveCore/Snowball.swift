@@ -1,3 +1,10 @@
+// AGENT HEADER - Sources/NeveCore/Snowball.swift  (user snowballs: scoop, roll, drop, stack into snowmen)
+// Role: `Snowball` (id, state held/falling/resting, pos, radius, parent link for stacks, vel, spin, melting, surfaceID) in `SnowField.balls` (cap Tuning.maxBalls 6) and the interaction API the overlay calls while Option is held:
+//   `hitTest(point:)` (over a ball or on visible snow => the panel becomes interactive), `pickSnowball(at:)` (nearest free ball; the head of a stacked/headless snowman turns back into balls), `scoop(at:)` (takes up to the area from the pile, at most half
+//   per column; ballStart radius 5), `drag(_:to:dt:)` (rolling grows the ball by ballGrowth 0.1 per pt up to ballMax 20 as it picks up snow), `drop(_:throwing:)` (a pause before release is not a throw), `openGift(at:)` is in Gifts.swift.
+//   Three decreasing balls stacked promote to a user `Figure` (Figures.swift, fromBalls true). `supportTop` finds the surface under a ball. Balls on a dragged window ride with `shift` (Overlay.writePrims).
+// Coordinates: local AppKit pt, y up. Tests: SnowballTests, SnowmanTests, SpaceCarryTests.
+
 import CoreGraphics
 import Foundation
 

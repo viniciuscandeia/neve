@@ -1,3 +1,5 @@
+// AGENT HEADER - Sources/NeveCore/Countdown.swift  (N completions -> one callback; used by AppController for per-overlay outro/melt completion; keep `hit()` single-fire semantics)
+
 /// Counts `n` completions; `hit()` is true exactly once, on the last one (extra hits are ignored).
 public struct Countdown {
     private var left: Int

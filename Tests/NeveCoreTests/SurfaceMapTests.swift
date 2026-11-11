@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/SurfaceMapTests.swift  (the biggest suite: surfaces, visibility, piles)
+// Field 1000x800 at origin (0,0): ground (Dock top) y = 90, menu-bar area from y = 780. Helpers build a window's pile directly (`rounds` deposits per bin; hidden/roofed columns take none) or step snowfall until a pile reaches a height. Covers front/back visibility by list order, clipping to the screen, off-screen windows, edges in the menu-bar area, hidden/capped columns, seams and run structure.
+// Related: SurfaceMap.swift, Surfaces.swift, Pile.swift. Slow in debug: prefer Tests/run.sh -r.
+
 import CoreGraphics
 import Foundation
 import Testing

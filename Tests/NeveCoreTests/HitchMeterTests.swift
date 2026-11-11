@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/HitchMeterTests.swift  (HitchMeter: steady frames no hitch, a late frame counts the excess ms, adaptive rate changes and gaps > maxExpected 0.2 s are ignored)
+
 import Testing
 @testable import NeveCore
 

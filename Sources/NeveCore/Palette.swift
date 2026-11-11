@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Palette.swift  (the one colour palette, light + dark)
+// Role: `Tone` (light/dark SIMD3 pair; `now` blends by `Palette.dark`) and `Palette` (static `dark` 0...1, `darkTarget`, eased over ~0.5 s by `tick(now:)` with an ABSOLUTE clock so several overlays ticking in one frame do not speed it up; `stepDt` capped at 1/30 s; `resetClock`; `isBlending`;
+//   `light` = the single light vector (-0.15, 0.99 normalised, x right y up) used by piles, clumps, chunks, figures and icicles; named tones: snow, lift, flake, shade, deep, shadow, shadowHC (Increase Contrast), glint, drop*, ice*, carrot, red, twig, coal, rabbit/penguin/robin/sleigh colours...).
+// Consumers: shaders get colours baked in via `Palette.msl(tone)` string interpolation when the Metal source is built (Sources/Neve/*Shader.swift, Renderer.swift), and Rig reads `Tone.now` on the CPU. Adding/changing a colour needs no shader edit unless a new uniform is wanted. Appearance input: Sources/Neve/Renderer.swift AppearanceWatcher. Tests: PaletteTests.
+
 import Foundation
 
 /// A colour with a light and a dark variant; `now` blends by `Palette.dark` (0 light ... 1 dark, eased over ~0.5 s on an appearance change).

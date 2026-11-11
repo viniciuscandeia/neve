@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Prefs.swift  (option model shared by the app and the overlays)
+// Role: `Pref` (String raw value = the stored UserDefaults key: NEVER rename; defaults ON: enabled, snowman, walk, visitors, sleigh, adaptiveFps, pointerPush; the rest default OFF), `changedPrefs` (diff of two snapshots; drives AppController.prefChanged) and `OverlayPrefs`
+//   (what an Overlay renders: economy, behind, behindLarge, still, snowman, walk, visitors, sleigh, showInCaptures, adaptive, music, pointerPush, intensity), built by `init(_ flag:)` so defaults live ONLY in `Pref.defaultValue`. Adding an option: new case here, a UI row in
+//   Sources/Neve/SettingsView.swift, a branch in AppController.prefChanged, an OverlayPrefs field + Overlay.apply wiring, and tr() strings in both languages.
+
 import Foundation
 
 /// UserDefaults keys of the on / off options (raw values are the stored keys: never rename). Defaults on: Nevar, Boneco de neve, Andam e brigam, Visitantes, Trenó, Quadros adaptativos, Cursor empurra os flocos; the rest off.

@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/DriftTests.swift  (snow banked against a taller front window)
+// Back window x 100...400, top 400; a taller front window leans on it: the drift reaches the front top as ONE contour, tall steps cap it (Tuning.maxDrift/driftFar), nothing is lost at the wall, the drift collapses when the front window leaves, side-by-side windows join (SeamLink), unlinked ones still taper;
+// plus the Dock bar end / ground bank contour has no gap. Related: Pile.addWalls, SurfaceMap.computeSeams, Render.writePiles.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

@@ -1,9 +1,15 @@
 #!/bin/bash
-# Usage: scripts/perf.sh [heavy|media|nevasca|max|still] [secs=60] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--runs N=3] [--bin PATH]
-# Before measuring, every other app is hidden and other Finder windows are minimised, so only the test windows hold snow; all of it is restored on exit (--keep-windows skips this).
-# --sweep moves the real cursor along the window tops and the ground during each run (put back after). --no-figures turns visitors / snowman / sleigh off (steadier frame rate).
-# Last line: SUMMARY key=value ... (medians over runs) for scripts/perf-suite.sh: cpu idlew ws fps step flakesim gpu hitch (ms of lateness per s) power / wspower (Energy Impact, an estimate from top's POWER column) memMB (end) memGrowMB (end minus first sample).
-# Runs its own dev instance (never touches the user's Neve) under the screen lock. Measures Neve CPU / idle wakeups and WindowServer CPU (top) over N runs. See README "Desenvolvimento".
+# AGENT HEADER - scripts/perf.sh
+# Role: measure Neve CPU / idle wakeups / memory and WindowServer CPU on the real screen for one scenario, N runs, medians; building block of scripts/perf-suite.sh.
+# Usage: scripts/perf.sh [heavy|media|nevasca|max|still] [secs=60] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--capture] [--runs N=3] [--bin PATH]
+#   (env: SWEEP_SEGS="x0,x1,y ..." overrides the cursor segments (CG top-left coords), ADAPTIVE=true|false A/B for adaptiveFps, NEVE_LOCK_TIMEOUT).
+# Flow: own dev bundle (NEVE_DEV=perf-<hash>) or --bin; writes the dev defaults suite io.github.viniciuscandeia.neve.dev.<name> (intensity, pointerPush, enabled, ambient=true so the 5-min
+#   idle pause does not read 0 %, visitors/snowman/sleigh/walk=false for --no-figures, stillSnow, showInCaptures); hides other apps and minimises Finder windows via osascript (restored in
+#   the EXIT trap unless --keep-windows); opens 1-2 Finder windows (bounds are top-left-origin pt); optional --drag (window dragger loop) and --sweep (build/cursor-sweep from
+#   scripts/cursor-sweep.swift moves the real cursor); samples `top -l N` (drops the first sample), footprint for memory; app-side numbers come from NEVE_PERF=1 + NEVE_PERF_LOG
+#   ([screen ...] lines: ticks/s, step, flakesim, gpu, hitch; see Sources/Neve/Perf.swift). Last output line: SUMMARY key=value ...
+# Env passed to the app: NEVE_PERF=1, NEVE_INSTANCE, NEVE_PERF_LOG, NEVE_SCENARIO=heavy, NEVE_REDUCE_MOTION=1 (still mode).
+# Side effects: holds the screen lock for the whole run, caffeinate, kills ONLY its own pids (NEVE_PID, sweep, dragger) - NEVER kill Neve by name (the user's app may run; it only warns).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE=media; SECS=60; DRAG=0; SWEEP=0; POINTER=""; NOFIG=0; KEEP=0; RUNS=3; BIN=""

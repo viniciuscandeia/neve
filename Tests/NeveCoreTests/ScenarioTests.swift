@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/ScenarioTests.swift  (Scenario.heavy: fills piles to >= 80 %, completes the snowmen and starts a fight; staging twice does not duplicate)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

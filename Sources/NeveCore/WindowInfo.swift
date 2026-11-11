@@ -1,3 +1,10 @@
+// AGENT HEADER - Sources/NeveCore/WindowInfo.swift  (window snapshot model, drag tracking, poll scheduling)
+// Role: `WindowInfo` (number, frame in GLOBAL AppKit y-up pt, corner radius, occluderOnly; number 0 = Dock bar), `appKitFrame(fromCG:primaryHeight:)` (CG top-left -> AppKit y-up; the flip is its own inverse), `RawWindow` (plain window-server entry) + `filterWindows` (classification via
+//   classifyWindows, own-pid/exclude removal, alpha > 0.3, scene mode keeps ONLY the scene windows), `mostlyOffscreen` (show-desktop slivers count as gone; < 30 % visible), `dragTarget` (the unique window whose move matches the mouse's over the SAME interval, tol max(8, 30 %)),
+//   `dragPlausible` (press in a title strip 60 pt / edge band 8 pt, or Command held), `DragTracker` (target/exempt state machine: pinned at screen edges, exempt keeps a dragged-offscreen window's snow), `PollReasons`, `PollScheduler` (pure cadence of window reads: minGap 1/30 s,
+//   ~20 Hz bursts after a transition until guardTime 0.25 s + 2 identical snapshots or hardCap 1.5 s, ~25 Hz while dragging, settle tail after release, safety 2 s / 5 s after 10 s quiet, retry on failed reads) and `coversScreen` (fullscreen-app test incl. notch inset).
+// The app (Sources/Neve/main.swift) is the only driver: it asks `nextDue`, sleeps via a Timer, calls `take`, performs the read and reports `didRead`. Everything here is pure and unit-tested (PollSchedulerTests, WindowClassTests, DriftTests).
+
 import CoreGraphics
 import Foundation
 

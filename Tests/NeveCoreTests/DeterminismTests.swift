@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/DeterminismTests.swift  (same seed + same steps/window updates with explicit dt => identical worlds; guards against hidden clocks / I/O / unseeded randomness in NeveCore. If this fails after your change, you introduced a nondeterministic source.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

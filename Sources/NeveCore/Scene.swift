@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Scene.swift  (deterministic showcase scenes NEVE_SCENE=demo|fight)
+// Role: `SceneKind` (demo, fight), `FightScene` timing (hits at 3.0/3.3/3.6 s, head restack at 7 s, loop 14 s), `DemoScene` (30 s loop; `windows(in:t:)` gives the three scene windows Terminal, Fotos, Notas for the visible area at scene time t - Notas high with its right end over Fotos
+//   (avalanche cascade), Terminal overlapping Fotos and 12 pt taller (drift seam); at 25 s Fotos slides 14 % of its width in 0.3 s), `SceneState` and SnowField `beginScene` / `sceneTime` / `stepScene` (scripted events keyed by `fired`, user snowmen, rabbit, head carry-back) driven purely by simulation time + seed, so the
+//   same frames replay the same story. The app side (Sources/Neve/SceneStage.swift, main.swift) creates the real windows; scene mode ignores the real cursor and fixes the options. Tests: SceneTests, ScenarioTests.
+
 import CoreGraphics
 import Foundation
 

@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/RabbitTests.swift  (Figures+Rabbit.swift + director)
+// Rabbit steals the carrot and leaves footprints, an all-miss fight lets the nose regrow after 60 s, a hit drops the carrot and the snowman fetches it, the visit needs a complete snowman with a carrot on a long enough stretch, none in Reduce Motion / with walking off; "Director" section: rabbit cadence and caps through the EventDirector.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

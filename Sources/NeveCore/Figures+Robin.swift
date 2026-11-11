@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Figures+Robin.swift  (robin visitor)
+// Role: Tuning.robin* constants and `RobinState` (Stage fly -> hop -> perch -> shake -> leave) with the stepping/look code for `.robin` figures: flies a sine path (amp 12, wave 80, 60 pt/s) to a window top with a visible run >= robinRun, hops, perches, shakes
+//   at robinShakeAt, and is startled (flies off) by shots within robinShot, a fast cursor within robinCursor (> robinCursorSpeed), an impact within robinImpact, or its window moving > robinSurfaceSpeed. The rabbit may wait robinStoryWait s for a
+//   "story robin" (EventDirector follow-up request). `robinLook(of:)` feeds Rig.robin. Uses SnowField.shotLand / impactAt (last landings). Tests: RobinTests.
+
 import CoreGraphics
 import Foundation
 

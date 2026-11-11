@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Drips.swift  (meltwater drops during the idle melt)
+// Role: `Drop` (forming 0.3 s swell -> falling with gravity 900 pt/s^2 -> splash 0.3 s into 2-3 micro-droplets or leaves the screen) in `SnowField.drops` (<= Tuning.maxDrops 16, ~dripRate 5/s); hangs from a random pile end (window / Dock bar) or a
+//   sagging snowman; never lands on its own source surface. Only while `dripsAllowed` = melting && !meltDone && !calm && !economy && !lowPower. `writeDrops` appends Instances (kind 5, teardrop shader) inside writeInstances. Uses `fxRng`.
+// Callers: Melt.swift (melting flag), Render.writeInstances. Cleared by SnowField.clear()/resize. Tests: MeltTests.
+
 import CoreGraphics
 import Foundation
 

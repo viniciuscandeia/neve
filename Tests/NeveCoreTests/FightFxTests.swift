@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/FightFxTests.swift  (fight visuals: Pile.carve grooves with berms, dragging a ball across snow, one splat per hit that fades, splat pool cap (Tuning.maxSplats), shot squash hold then hidden, third head hit droops the loser, re-stacked head straightens. Related: Fights.swift, Snowball.swift, Rig.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

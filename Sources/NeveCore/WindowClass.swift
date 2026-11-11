@@ -1,3 +1,9 @@
+// AGENT HEADER - Sources/NeveCore/WindowClass.swift  (which windows hold snow; Mission Control / screen saver detection)
+// Role: `WindowClass` (surface, occluder, ignore) + `classifyWindows(raw, ownPID, screens)`: layer 0 = surface; layers 1...20 (floating panels / HUDs) = surface unless under 40x20 or a larger same-process window intersects it (then occluder-only: hides snow, holds none); system owners (`systemOwners`: Dock,
+//   Window Server, Control Center, ...) and Neve's own windows = ignore. `isMissionControl` (two or more Dock-owned full-screen windows at layers 18...20 on one screen; titles are NOT used: they need Screen Recording), `MissionControlGate` (state machine: suspend after 2 positive
+//   reads or 1 "strong" read (WindowIDWatch saw the ID list change), release on the first negative / Esc / click, 15 s watchdog, `holdsPiles`, `pending`), `WindowIDWatch` (cheap change detector over the on-screen ID list), `isScreensaverEngine(bundleID)`, `optionClickOpensSettings`.
+// Coordinates: `screens` in CG (top-left) like the raw bounds. Callers: Sources/Neve/WindowList.swift and main.swift. Tests: WindowClassTests.
+
 import CoreGraphics
 import Foundation
 

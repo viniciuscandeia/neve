@@ -1,3 +1,18 @@
+// AGENT HEADER - Sources/NeveCore/SnowField.swift  (the per-screen simulation: state + lifecycle + the step() order)
+// Role: `SnowField` (final class, one per screen, owned by an Overlay) holds ALL simulation state and `step(dt:)`; behaviour is split into `extension SnowField` across many files (Surfaces, SurfaceMap, Render, Flakes, Effects,
+//   Avalanche, Frost, Icicles, Drips, Melt, DockPush, DockSpill, Coverage, Resize, Figures*, Fights, Walk, Snowball, Snowman, Gifts, CursorThrow, EventDirector wiring, Scene). Also `BusyReasons` (why the frame rate must be 60) and `Stashed`.
+//   Pure data/logic: no AppKit, no I/O, no wall clock; time = sum of dt (`time`) plus a monotonic `clock` the app feeds through update(now:); randomness = SplitMix64 `rng`/`fxRng` seeded in init => deterministic tests (DeterminismTests).
+// Coordinates/units: LOCAL to the screen, AppKit y-up, points. `origin` = screen.frame.origin (global AppKit); `groundY` = Dock-/visibleFrame-bottom height, `visibleTop` = under the menu bar. Pile columns are BINS of
+//   Tuning.binWidth (2 pt): `numCols` global columns across the screen width; a surface's `c0` is its first GLOBAL column, `pile.heights[b]` is LOCAL bin b (global = c0 + b). `column(x)`, `binCenter(c)` convert.
+// Pools: `flakes` is preallocated once for Nevasca (sky pool [0, skyCount) + background pool); intensity only changes `skyLimit/bgLimit` (active counts), `skyEnd/bgEnd` bound loops; dormant slots cost nothing. `debris`, glints, puffs, drops,
+//   icicles, figures, balls, fights, shots, splats, carrots, gifts are capped arrays (Tuning.max*). `capacity` = max instances the GPU buffer must hold.
+// step(dt) order: scene script -> snowman builder/director -> outro/intro/melt -> balls, gifts, figures, splats -> wind/music -> stepFlakes (landing -> deposit into piles) -> peel, ice, avalanche, debris, dock, bank, dock spill,
+//   puffs, wind dust, glints, drips. The app drives it ~30/60 Hz from Overlay.tick (dt <= 0.06) and feeds windows at poll rate via `update(windows:)` (Surfaces.swift).
+// Presentation state kept here on purpose (testable): `pileVersion`/`pilesDirty`, `pileWritten`, `pileEasing`, `Pile.shown`; the renderer rewrites the pile buffer only when pileVersion changes or easing is active (`pilesSettled`).
+// Public flags the app sets each frame/pref change: pointer/optionHeld/music/calendarDay/timer, economy, snowmanEnabled/walkEnabled/visitorsEnabled/sleighEnabled/pointerPush/groundOnlyActors, frozen (still snow), setIntensity/setCalm/setLowPower.
+// Gotchas: `clear()` is THE contract for removing accumulated effects (keep it in sync when adding state); anything new that persists across Space switches must join `Stashed`; `fxRng` is separate so ice/avalanche never perturb `rng`.
+//   `markStale` = Space switch protocol (no deposits on window surfaces until the next changed snapshot). Perf: `timer` (non-nil only with NEVE_PERF) wraps stepFlakes; stepFlakes is the per-frame hot path (hundreds-1200 flakes).
+
 import CoreGraphics
 import Foundation
 

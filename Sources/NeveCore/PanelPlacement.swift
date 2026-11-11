@@ -1,3 +1,7 @@
+// AGENT HEADER - Sources/NeveCore/PanelPlacement.swift  (small pure helpers for the menu / Ajustes UI)
+// Role: `takeOnce(key, in:)` (true the first time, persisted in the given UserDefaults store: first-launch menu, one-time hints), `restoreDefaults(in:)` (removes every stored option so each reads its default from Pref / Intensity again), `screenLabels(names:sizes:)` (names for the "Nevar em"
+//   picker: identical names get the resolution then a number), `loginNote(requiresApproval:failed:)` (caption text via tr()), `steppedLevel(_:by:)` (Quantidade 0...3). Callers: Sources/Neve/main.swift, SettingsView.swift. Strings here go through tr(): keep both Localizable.strings in sync. Tests: PanelPlacementTests.
+
 import CoreGraphics
 import Foundation
 

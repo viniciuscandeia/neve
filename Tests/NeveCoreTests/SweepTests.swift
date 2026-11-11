@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/SweepTests.swift  (cursor sweep, Surfaces.sweep + pointer swirl)
+// Window top y = 500, x 200...500, piles built by direct deposits: a sweep clears only its path and throws debris along the cursor direction, a sweep above the pile removes nothing, the dragged window's pile is not swept, falling flakes part around a still pointer and a distant pointer does nothing; "soft dent": a cursor driven at a given speed at 60 fps leaves a dent whose depth grows with speed (Tuning.plowFloor).
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

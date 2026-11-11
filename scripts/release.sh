@@ -1,6 +1,9 @@
 #!/bin/bash
-# Usage: scripts/release.sh VERSION -> dist/Neve-VERSION.zip (universal, ad-hoc signed).
-# Builds into dist/Neve.app so the locally signed build/Neve.app you run (and its Accessibility grant) is never touched.
+# AGENT HEADER - scripts/release.sh
+# Role: produce a distributable dist/Neve-VERSION.zip (universal arm64+x86_64, ad-hoc signed with hardened runtime). Usage: scripts/release.sh VERSION.
+# Unsets NEVE_DEV/NEVE_INSTANCE/NEVE_SCENE, exports NEVE_VERSION/NEVE_SIGN=-/NEVE_UNIVERSAL=1/NEVE_APP_DIR=dist and calls scripts/make-app.sh, then validates the artifact
+# (executable, bundle id, version strings, numeric CFBundleVersion, required Info.plist keys, icns, both lipo slices) before codesign + ditto + shasum.
+# Builds into dist/ so the locally signed build/Neve.app (and its Accessibility grant) is never touched. Keep the validated plist keys in sync with make-app.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 V=${1:?usage: release.sh VERSION}

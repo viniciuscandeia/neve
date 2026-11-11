@@ -1,3 +1,5 @@
+// AGENT HEADER - Sources/NeveCore/Rig+Sleigh.swift  (sleigh team drawing: `SleighLook` + `Rig.sleigh` (~120 x 30 pt, 2-4 reindeer in single file, gallop phase from t), plus `Rig.gift` (9 x 9 box with ribbon cross, opened = lid gone) and confetti scraps). Pure geometry. Tests: SleighTests.
+
 import Foundation
 
 /// Everything the rig needs to draw the sleigh team (about 120 x 30 pt at scale 1; `pos` is the centre of the team).

@@ -1,3 +1,14 @@
+// AGENT HEADER - Sources/Neve/Renderer.swift  (Metal setup + flake shader + appearance watcher)
+// Role: `Gpu` (built once, shared by all overlays via Overlay.sharedGpu): MTLDevice, command queue and the three render pipelines (flakes, prims, piles; premultiplied-alpha blend into bgra8Unorm).
+//   The Metal library is compiled AT RUNTIME from source strings (flakeShaderSource + primShaderSource + pileShaderSource) because Command Line Tools have no `metal` compiler: Gpu.init? returns nil on any
+//   compile/pipeline failure (the controller then logs once and shows "Sem neve: este Mac não consegue desenhá-la").
+// `flakeShaderSource` (MSL in a Swift string; \(Palette.msl(...)) interpolations bake NeveCore Palette colours into the shader, so palette edits need no shader edit): instanced quads, one per `Instance`
+//   (kind: 0 flake, 1 clump, 2 slab/falling chunk (packed profile in kind>>8), 3 puff, 4 glint, 5 meltwater drop, 6 out-of-focus disc). Motion-streak stretch uses frameDt (set from the SIM frame, keeps slowmo consistent);
+//   `Occ` buffer = the 17 float4 occluder rects (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
+// `AppearanceWatcher` (@MainActor): mirrors the system light/dark appearance into Palette.darkTarget (fade ~0.5 s eased by Palette.tick per frame) and posts `changed` so paused (still) overlays wake.
+// Invariants: the MSL `struct Instance` here MUST match NeveCore/Render.swift `Instance` (field order, 4-byte types); changing one without the other renders garbage silently. Y is up, units are screen-local points.
+// Perf: flake fragment shader runs for every flake pixel at up to 60 fps on full-screen drawables: keep branches cheap. Callers: Overlay.swift (pipeline use), AppController (indirectly).
+
 import AppKit
 import NeveCore
 import Metal

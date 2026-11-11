@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/FightTests.swift  (Fights.swift rules)
+// Fights start only on the same surface within Tuning.fightRange, at most 2 at once, shots alternate, the third head hit ends the fight, putting the head back restores the snowman, the fight ends when distance grows / one is knocked off / the surface changes, rest and maxThrows, hitChance falls with distance,
+// the auto snowman loses its head as a loose ball. Helpers: FigureHelpers.swift (stackBalls, stand, advance).
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

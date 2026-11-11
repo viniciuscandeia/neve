@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/SpeckTests.swift  (first snow on a bare 800 pt window is isolated specks at ~20 s and a continuous layer by ~60 s (Nevasca about twice as fast). Related: Tuning.speck*/dust*, Pile.deposit.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

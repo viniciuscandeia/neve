@@ -1,6 +1,9 @@
-// Moves the real cursor back and forth along horizontal segments for a while, then puts it back (scripts/perf.sh --sweep).
-// Usage: cursor-sweep <secs> <x0,x1,y> [<x0,x1,y> ...]   (CoreGraphics coordinates: top-left origin, points)
-// Peak speed ~600 pt/s with a small vertical wobble, so the cursor cuts through the snow sitting on each segment.
+// AGENT HEADER - scripts/cursor-sweep.swift
+// Role: standalone tool (compiled by scripts/perf.sh with swiftc -O into build/cursor-sweep) that drives the REAL cursor via CGWarpMouseCursorPosition for a perf scenario.
+// Usage: cursor-sweep <secs> <x0,x1,y> [<x0,x1,y> ...] in CG coordinates (top-left origin, pt). 4 s per segment, sinusoidal sweep with peak speed ~600 pt/s regardless of length,
+// 8 ms steps, y wobbles 4..8 pt above the segment so the cursor cuts through the snow resting on that edge (exercises the pointer push / CursorThrow paths).
+// Restores the original cursor position on normal exit; SIGTERM skips the restore (perf.sh knows). Moves the user's real pointer: only run under the screen lock.
+
 import CoreGraphics
 import Foundation
 

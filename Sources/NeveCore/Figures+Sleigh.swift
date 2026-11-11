@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Figures+Sleigh.swift  (Santa's sleigh crossing + gift drops)
+// Role: Tuning.sleigh* constants (140 pt/s, bob 8 pt / 3 s), `SleighState` (dir, endX, y0, scale, t, 2-4 deer, up to 3 gift drop x's computed with the same integrator as stepGifts via `giftTravel`) and SnowField code: `sleighInterval` (start-to-start
+//   mean: Dec 24-25 every 10 min, rest of December 45 min, otherwise 3 h; cooldown <= 20 min), `sleighAllowed` (option on, areaScale >= 1, not economy / low power), `sleighChance()` (per-second Poisson chance, called by the director), crossing step and
+//   `sleighLook(of:)` for Rig.sleigh. Date comes from `calendarDay` (injected by the app, Overlay.refreshDay re-reads every 10 min). NEVE_DEMO_SLEIGH (SimConfig.sleighDemo) crosses soon after launch. Tests: SleighTests.
+
 import CoreGraphics
 import Foundation
 

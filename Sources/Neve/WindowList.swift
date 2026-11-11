@@ -1,3 +1,12 @@
+// AGENT HEADER - Sources/Neve/WindowList.swift  (CGWindowList readers; the only place that reads the window list)
+// Role: `readWindowsAndMC` / `readWindows` (MainActor): one `CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements])` per poll -> [RawWindow] (number, pid, layer, alpha, bounds in CG top-left pt,
+//   owner name only for layer != 0) -> NeveCore `filterWindows` (classification, own-pid / `exclude` removal, conversion to AppKit y-up frames, corner radius `osWindowRadius`, scene filter) and `isMissionControl`.
+//   Returns nil when CGWindowList fails (distinct from a valid empty list: callers keep the last snapshot). Bounds need no Screen Recording permission. Result order = front to back.
+//   `onScreenWindowIDs()` = cheap ID-only list via dlsym'd CGWindowListCreate (~65 us vs ~190 us) used by the 0.3 s Mission Control probe (WindowIDWatch in NeveCore).
+//   `ScreenCache`: screen frames converted to CG coords, invalidated on didChangeScreenParameters / invalidateScreenCache() (NSScreen.screens is costly per poll).
+// Perf: runs at poll rate (<= 30/s while windows move); CF values are read directly instead of bridging dictionaries. Keep it allocation-light.
+// Callers: AppController.pollWindows / pollScene / mcProbeTick (main.swift). Gotcha: the CG <-> AppKit flip uses the PRIMARY screen height (appKitFrame(fromCG:primaryHeight:)).
+
 import AppKit
 import CoreGraphics
 import Foundation

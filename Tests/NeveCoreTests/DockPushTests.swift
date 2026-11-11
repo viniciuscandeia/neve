@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/DockPushTests.swift  (growing / shrinking Dock pushes the ground snow)
+// Ground snow 20 deep outside the Dock span [400,1000): growing end builds a berm and CONSERVES volume, kicks debris unless calm, berm moves monotonically outward, shrinking end drops its Dock-top snow, bank outline stays connected; second half: the bank beside the Dock grows up to the Dock top (stepBank).
+// Related: DockPush.swift, Tuning.dockSpeed/dockKick/bank*.
+
 import Testing
 import CoreGraphics
 @testable import NeveCore

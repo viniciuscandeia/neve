@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PerfStatTests.swift  (PerfStat: ms per frame vs per second)
+
 import Testing
 @testable import NeveCore
 

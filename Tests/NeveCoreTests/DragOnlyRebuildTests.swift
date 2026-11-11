@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/DragOnlyRebuildTests.swift  (Surfaces.movedOnly / dragOnlyRebuild)
+// A drag sample rebuilds only the dragged window and the ones its x-range (+-8 pt) meets; the resulting SnowField must equal what a full rebuild produces (`same(a, b)` compares surfaces). If you add per-surface state, include it in the comparison or the incremental path will silently diverge.
+
 import CoreGraphics
 import Foundation
 import Testing

@@ -1,3 +1,10 @@
+// AGENT HEADER - Sources/Neve/SceneStage.swift  (NEVE_SCENE=demo stage windows)
+// Role: `SceneStage` (@MainActor) builds the demo scene's real NSWindows on the main screen's visibleFrame: a gradient `Backdrop` window (hides the user's apps) + a `strip` window at Dock level continuing it over the Dock, and
+//   three light/dark `PaperView` stand-in app windows (Notas, Fotos, Terminal; titles from NeveCore DemoScene.windows). place(t:) sets each frame from `DemoScene.windows(in:t:)` by SIMULATION time (Overlay.sceneTime), so
+//   the fast drag of Fotos is part of the script. `numbers` = window numbers: the only ones the overlay sees in scene mode (readWindows(scene:)).
+// Coordinates: AppKit y-up, points; list order = front to back (windows are created back-to-front then reversed). Created lazily by AppController.pollScene when k == .demo; driven by a 60 Hz timer there.
+// Gotchas: the stage windows are ordinary windows (mouse-ignoring, stationary) but they must NOT be excluded from the CGWindowList read - the snow lands on them like on real windows. Scene content is deterministic: no real app data.
+
 import AppKit
 import NeveCore
 

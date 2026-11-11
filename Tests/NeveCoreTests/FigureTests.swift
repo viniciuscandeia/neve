@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/FigureTests.swift  (Figures.swift lifecycle)
+// promote (3-ball stack -> Figure) needs a formed stack, demote back to balls (falling drops the whole stack, headless -> two balls), shatter -> debris, figure count never exceeds the cap, a figure on a hidden spot does not walk / fight, travels with its window and falls apart when knocked off, closing the window drops it as balls.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

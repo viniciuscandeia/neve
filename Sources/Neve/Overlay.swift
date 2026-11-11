@@ -1,3 +1,22 @@
+// AGENT HEADER - Sources/Neve/Overlay.swift  (one click-through Metal window per screen + its display-link frame loop)
+// Role: `Overlay` (@MainActor, CAMetalDisplayLinkDelegate) owns, for ONE NSScreen: a borderless non-activating NSPanel (canJoinAllSpaces, level just above the Dock window, or just above
+//   desktop icons in "behind windows" mode; sharingType .none unless showInCaptures), a CAMetalLayer, the `SnowField` simulation (NeveCore), 3-slot ring buffers (flake Instances, actor Prims, PileSegs;
+//   inFlight semaphore = 3, never blocks main: a skipped slot just drops the frame) and the three Metal passes (piles -> prims/actors -> flakes; shaders in PileShader/PrimShader/Renderer.swift).
+//   `InteractView` forwards mouse events; the panel ignores the mouse EXCEPT while Option is held over snow / a snowball (hitTest) or a drag is in progress (`pressing`, `held`).
+// Coordinates: simulation + all buffers are screen-LOCAL AppKit points, y-up, origin = screen.frame.origin (groundY = visibleFrame.minY - frame.minY, visibleTop likewise). Metal viewport slides the whole-screen
+//   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ[17] = shader occluder rects + strength).
+// Frame loop (`tick`, main thread via RunLoop.main .common; the nonisolated delegate uses MainActor.assumeIsolated): dt = min(real dt, 0.06); Palette.tick; advanceCover; cursor sweep (one segment from last
+//   position, only if not near another screen); pointer velocity; MusicTap.shared.read(); field.step (optionally calm interpolation: Tuning.interpolateCalm); drag shift (pile/figure offset = mouse delta since poll);
+//   render(). Adaptive rate: 60 fps while anything fast (cursor near snow, held ball, field.isBusy) else 30 after FrameRate.holdDown; economy/low power cap; still mode (Reduce Motion + stillSnow) sleeps the link
+//   once piles settle (`dirty`/`wake()` restart it: ANY state change that alters the picture must call wake()).
+// Controller API (called by AppController in main.swift): setRun / present (fade 0.4 s then orderOut, link paused), setSuspended (Mission Control fade 0.2 s), dip (Space change), update(windows:covering:dragTarget:mouse:)
+//   (poll rate, NOT per frame: grows buffers, measureCover), adopt/screenChanged/refreshBounds/teardown (display hot-plug, Dock/menu-bar visibleFrame changes keep piles), intro/resume/melt/outro (gen counters make stale
+//   completions no-ops; teardown completes pending melt/outro so the controller's Countdown ends), apply(OverlayPrefs), clear, stage, beginScene.
+// Dependencies: NeveCore (SnowField, Tuning, FrameRate, Palette, Rig, PrimWriter, WindowInfo, coversScreen...), Perf.swift (NEVE_PERF meter, signposts), MusicTap, Gpu from Renderer.swift. Env: NEVE_REDUCE_MOTION=1 (force), NEVE_SLOWMO=<f>.
+// Perf: tick is the per-frame hot path (~60/s per screen): no allocation, no locks; buffers grow only in update() (poll rate); writePrims/writePiles/writeInstances mirror data the shaders read.
+// Gotchas: Rig/Prim/PileSeg/Instance layouts must match the Metal source strings in the shader files; Render.writePiles is mirrored by Tests WritePilesEquivalenceTests (keep in sync); do not re-set window.level/sharingType unless
+//   changed (WindowServer recomposite hitch); screen tests/captures must be idle-gated and run under scripts/agent-run.sh --screen.
+
 import NeveCore
 import AppKit
 import Metal

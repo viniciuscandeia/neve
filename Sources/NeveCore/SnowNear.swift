@@ -1,3 +1,7 @@
+// AGENT HEADER - Sources/NeveCore/SnowNear.swift  (cursor/drag glue on SnowField)
+// Role: `setDragTarget(_:)` (the ONE dragged-window id, mouse-confirmed by DragTracker and set by Overlay before each update; pile layer, shedding, avalanches and figures all read `draggingID`) and `snowNear(from:to:radius:)` (cheap test whether a cursor sweep would cut snow, a ball,
+//   figure or gift: decides whether a fast cursor needs 60 fps even with pointerPush off; same bin walk as sweep, a few dozen bins). Coordinates: local AppKit pt. Callers: Overlay.update / tick.
+
 import CoreGraphics
 
 extension SnowField {

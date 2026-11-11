@@ -1,3 +1,5 @@
+// AGENT HEADER - Sources/NeveCore/HitchMeter.swift  (hitch from presented timestamps; fed from the Metal presented handler on another thread via a lock in Perf.Meter; reported by scripts/perf.sh as `hitch`). Tests: HitchMeterTests.
+
 /// Hitch accounting from presented timestamps (seconds). A frame is a hitch when its presented interval exceeds 1.5x the interval it was
 /// scheduled for (consecutive target timestamps, so the 30/60 fps adaptive rate is not a hitch); lateness is the excess in ms.
 /// Gaps scheduled longer than `maxExpected` (pause, occlusion, wake) are not frames to judge.

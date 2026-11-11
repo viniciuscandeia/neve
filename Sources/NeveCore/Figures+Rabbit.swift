@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Figures+Rabbit.swift  (rabbit visitor + carrot theft, carrots on the snow)
+// Role: Tuning.rabbit*/carrot* constants, `Critter` (stage hopIn -> sniff -> snatch -> flee; also the snowman's way back to a dropped carrot), `Carrot` (a stolen nose lying on a pile or falling, in `SnowField.carrots`), and stepping/look code for
+//   `.rabbit` figures: hops to a complete snowman (>= minStretch of visible surface), sniffs, snatches the nose (the snowman loses `carrot` until it regrows after carrotRegrow 60 s of snowfall or fetches it back at fetchSpeed x walk), flees
+//   (faster when hit; the snowman throws at it, hit chance x rabbitHitScale; `rabbitHitScale` is test-overridable on SnowField). `rabbitLook(of:)` feeds Rig.rabbit; `writeCarrotPrims` draws carrots (Overlay.writePrims, with the drag `shift`). Tests: RabbitTests.
+
 import CoreGraphics
 import Foundation
 

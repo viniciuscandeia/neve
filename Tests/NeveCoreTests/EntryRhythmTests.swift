@@ -1,3 +1,6 @@
+// AGENT HEADER - Tests/NeveCoreTests/EntryRhythmTests.swift  (pure app-logic pieces extracted into NeveCore: drag tracking, poll bursts, frame rates)
+// Covers dragTarget tolerance, DragTracker (kept until release, switches only on a clear match, exempt window, pinned at an edge, Command-press plausibility), PollScheduler extra read after a burst and held-button behaviour, FrameRate.snap on 120/144/75/50 Hz panels, pointerVelocity with real dt and slowmo, snowNear.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

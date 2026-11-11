@@ -1,3 +1,7 @@
+// AGENT HEADER - Sources/NeveCore/DockSpill.swift  (Dock-top overflow trickles down to the ground bank)
+// Role: `DockTrickle` (pending volume + wait per Dock end) and `deposit(dock:bin:volume:powder:)`: snow a full Dock-top pile rejects within `trickleBins` (10 bins) of a bar end becomes pending volume (cap trickleCap 30); `stepDockSpill` releases a small
+//   clump (>= trickleMin 3.6) every 0.5-2 s per end (slower in Economy) falling beside the bar's rounded side onto the bank; under Reduce Motion the volume goes straight into the bank column. Reset by clear(). Tests: DockSpillTests.
+
 import CoreGraphics
 import Foundation
 

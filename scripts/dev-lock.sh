@@ -1,6 +1,11 @@
 #!/bin/bash
-# Screen lock shared by agents: dev-lock.sh acquire <owner> [timeout=600] | release <owner> | status
-# Source-able: neve_lock_acquire / neve_lock_release / neve_lock_status.
+# AGENT HEADER - scripts/dev-lock.sh
+# Role: cross-agent mutex for the physical screen (only one agent may have Neve/Finder windows on screen, move the cursor, or capture at a time).
+# CLI: dev-lock.sh acquire <owner> [timeout=600] | release <owner> | status. Also source-able: neve_lock_acquire / neve_lock_release / neve_lock_status.
+# Lock = directory $NEVE_LOCK (default /tmp/neve-screen.lock; mkdir is the atomic acquire) holding files `owner` and `pid`.
+# Stale detection: if the holder pid (NEVE_LOCK_PID, else the caller's $PPID) is dead, the lock dir is removed and acquisition retries; polls every 2 s until timeout.
+# Only the owner string that acquired can release. Callers: scripts/agent-run.sh (--screen) and scripts/perf.sh, which set NEVE_LOCK_PID=$$ before sourcing.
+# Gotcha: via the CLI in one-shot shells the stored pid is the (short-lived) shell, so the lock looks stale quickly; prefer agent-run.sh --screen.
 NEVE_LOCK=${NEVE_LOCK:-/tmp/neve-screen.lock}
 
 neve_lock_status() {

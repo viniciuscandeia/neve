@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/ConversionTests.swift  (coordinate conversion + window filter)
+// Covers appKitFrame(fromCG:primaryHeight:) on a 1440x900 primary (CG top-left y-down <-> AppKit bottom-left y-up; screens left of / above / below the primary) and filterWindows (keeps normal windows in order, drops non-zero layers, alpha ~0, own pid, tiny sizes, entries missing number or bounds).
+// Related: Sources/NeveCore/WindowInfo.swift, Sources/Neve/WindowList.swift.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

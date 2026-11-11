@@ -1,3 +1,12 @@
+// AGENT HEADER - Sources/Neve/Perf.swift  (NEVE_PERF instrumentation: per-overlay meters, poll cost, signposts)
+// Role: `Perf` namespace + `Perf.Meter` (one per Overlay, created only when NEVE_PERF=1). Every 5 s each meter prints one line to stderr and appends it to $NEVE_PERF_LOG: `[screenN WxH] ticks/s presents/s`, per-slot cost
+//   (step input drag pile actors write encode: ms per presented frame `/f`, CPU ms per wall second `/s`, max, n), pile.ease/contour/join ms per write, flakesim ms, hitch ms/s + drops/s (HitchMeter, NeveCore), gpu ms
+//   (from the command-buffer completion handler), cpu %, main %, counters (skipSize/skipSlot/skipCmd...), busy reasons, entity counts, truncation (prims/piles). A separate `poll n=... ms/call` line covers pollWindows.
+// Consumers: scripts/perf.sh parses the `[screen...]` lines (keys ticks/s, step, flakesim, gpu, hitch) - renaming a field breaks perf.sh / perf-suite.sh.
+// Cost when off: every entry is one branch on a static let (`Perf.on`); Perf.now() returns 0; no allocation. Signposts (`Perf.signposter`, subsystem io.github.viniciuscandeia.neve, category frame: "sim", "encode") are free unless Instruments records.
+// Threading: Meter state is main-thread, except `gpu` and `hitch` (OSAllocatedUnfairLock) written from Metal completion / presented handlers on other threads - hence @unchecked Sendable.
+// Env: NEVE_PERF=1, NEVE_PERF_LOG=<file>. Injects Perf.seconds into SnowField.timer for flake/pile sub-timings. Callers: Overlay.tick/render, AppController.pollWindows (addPoll).
+
 import Darwin
 import Foundation
 import NeveCore

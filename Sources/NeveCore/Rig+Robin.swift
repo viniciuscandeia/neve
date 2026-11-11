@@ -1,3 +1,5 @@
+// AGENT HEADER - Sources/NeveCore/Rig+Robin.swift  (robin drawing: `RobinLook` + `Rig.robin`, ~12 x 10 pt; wings flap by alternating scaleY while flying, legs only when perched). Pure geometry. Tests: RobinTests.
+
 import Foundation
 
 /// Everything the rig needs to draw one robin (about 12 x 10 pt at scale 1).

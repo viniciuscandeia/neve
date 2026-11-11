@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/PrefDiffTests.swift  (changedKeys snapshot diff; pointerPush toggle is reported)
+
 import Testing
 @testable import NeveCore
 

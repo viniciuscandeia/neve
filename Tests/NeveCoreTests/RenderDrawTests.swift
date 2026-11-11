@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/RenderDrawTests.swift  (drawing inputs: slabs without a profile draw as blocks (never glints), PileSeg carries the real edge `inset` for the shader's depth maths, seam lift is bounded, skips thin stretches and stays under the lower pile's ceiling. Related: Render.swift, PileShader.swift.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

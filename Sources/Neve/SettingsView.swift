@@ -1,3 +1,14 @@
+// AGENT HEADER - Sources/Neve/SettingsView.swift  (all SwiftUI: menu-bar menu items + the "Ajustes" window tabs)
+// Role: `PanelState` (ObservableObject, live status text, axMissing, metalMissing, musicNote, reduceMotion, screen list, login state/note - written by AppController, read by the views); `SettingsEnv` (what the controller hands
+//   the views: the defaults store, isDev, target-screen + login Bindings, closures openWindow / askAccessibility / restoreDefaults); menu views `MenuHeader` (Nevar switch + status) and `IntensityTile` (4 Quantidade tiles,
+//   menuWidth 270) hosted in NSMenuItem.view by AppController.buildMenu; `SettingsTab` (geral, bonecos, desempenho, sistema; remembered under UserDefaults key `settingsTab`) and `SettingsPane` (one Form per tab, width 460,
+//   fixedSize vertically so the window fits each tab).
+// State flow: Bool options use `PrefBinding` = @AppStorage on the app's store (key = Pref.rawValue, default = Pref.defaultValue; the store is the per-instance suite for dev builds). Views never call the controller for
+//   those: AppController's UserDefaults.didChangeNotification observer diffs and reacts (syncPrefs/prefChanged). Intensity uses @AppStorage(Intensity.key). Pref enum + defaults: NeveCore/Prefs.swift.
+// Gotchas: EVERY user-visible string goes through tr() with keys present in BOTH pt-BR and en Localizable.strings (NeveCore/Resources); Portuguese text is the key. Menu windows are never key, hence
+//   `.environment(\.controlActiveState, .key)`. Increase Contrast (colorSchemeContrast) gets stronger fills + a border (tileBackground). Accessibility: IntensityTile is adjustable (steppedLevel); the Ajustes dot/labels are set in main.swift.
+// Adding an option: add a Pref case (NeveCore/Prefs.swift), a row here, a branch in AppController.prefChanged, and the strings in both .strings files; the dev-only login row hides when `env.isDev`.
+
 import SwiftUI
 import NeveCore
 

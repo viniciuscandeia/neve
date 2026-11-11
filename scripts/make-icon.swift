@@ -1,5 +1,7 @@
-// Draws the Neve app icon (1024x1024 PNG) with CoreGraphics: macOS-style squircle with ~10% margins,
-// soft blue gradient, white six-arm snowflake. Usage: swift scripts/make-icon.swift out.png  (scripts/make-icon.sh builds the .icns)
+// AGENT HEADER - scripts/make-icon.swift
+// Role: draws the 1024x1024 app icon PNG with CoreGraphics (superellipse squircle with ~100 pt margins, blue gradient, white six-arm snowflake with two V branches per arm).
+// Usage: swift scripts/make-icon.swift out.png (CG y-up, origin bottom-left). Driven by scripts/make-icon.sh, which builds Resources/Neve.icns. Not part of the app target.
+
 import CoreGraphics
 import Foundation
 import ImageIO

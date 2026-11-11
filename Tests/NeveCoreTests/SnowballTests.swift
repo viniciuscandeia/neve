@@ -1,3 +1,5 @@
+// AGENT HEADER - Tests/NeveCoreTests/SnowballTests.swift  (Snowball.swift: scoop takes volume from the pile, rolling grows the ball and lowers the pile, carrying through the air does not grow, dropped ball falls and rests, smaller on bigger stacks, off-centre rolls off, bigger on smaller does not stack. Pile = ground at height h over x 100...800.)
+
 import CoreGraphics
 import Testing
 @testable import NeveCore

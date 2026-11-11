@@ -1,3 +1,8 @@
+// AGENT HEADER - Sources/NeveCore/Music.swift  (beat detection + how music moves the snow)
+// Role: `MusicInput` (level, bass, beat 0...1; beat jumps to 1 on an onset and decays in ~150 ms), `BeatDetector` (runs ON THE AUDIO THREAD: no allocation, no locks; per block RMS envelope, bass RMS through a ~150 Hz one-pole low-pass, onset = bass energy vs a ~1 s running mean with a 0.25 s
+//   refractory) and SnowField.stepMusic: beats kick the wind (musicGust 30 pt/s, alternating sides, decays ~0.3 s), level adds sway and up to +40 % flakes (musicBoost), bass quickens the crest glints. Silence / Reduce Motion / economy / Low Power leave every factor at exactly 1 / 0.
+// Data path: Sources/Neve/MusicTap.swift feeds the detector and publishes one 64-bit word; Overlay.tick reads `MusicTap.shared.read()` into `field.music` when Pref.music is on. Tests: MusicTests.
+
 import Foundation
 
 /// What the app hears, already smoothed: `level` and `bass` 0...1, `beat` a pulse that jumps to 1 on an onset and decays in ~150 ms.

@@ -1,3 +1,11 @@
+// AGENT HEADER - Sources/Neve/MusicTap.swift  (system-audio tap for "Neve dança com a música")
+// Role: `MusicTap.shared` (@unchecked Sendable singleton) creates a global Core Audio process tap (macOS 14.2+, `CATapDescription(stereoGlobalTapButExcludeProcesses:)`, excluding Neve's own process) + a private aggregate
+//   device clocked by the default output device, with an IOProc that feeds `BeatDetector` (NeveCore/Music.swift; no allocation on the audio thread) and publishes level/bass/beat (3 x 16-bit, quantised to 0...65535)
+//   into ONE aligned UInt64 (`word`): single writer = audio thread, single reader = Overlay.tick via read() -> MusicInput. No locks/atomics by design (see the ponytail comment).
+// API: start() -> Bool (false on old macOS / permission refused / no output device / any Core Audio failure; it then tears everything down via fail()); stop() destroys IOProc, aggregate and tap (zero cost off); running; supported.
+// Permission: NSAudioCaptureUsageDescription (Info.plist written by scripts/make-app.sh). Callers: AppController.syncMusic (main.swift) decides when it may run (option on, not Reduce Motion / economy / Low Power / scene).
+// Gotcha: never retain anything the IOProc block allocates per call; the output format is assumed Float32 interleaved/first buffer only. If the default output device changes the tap is NOT rebuilt until stop()/start().
+
 import CoreAudio
 import AudioToolbox
 import Foundation

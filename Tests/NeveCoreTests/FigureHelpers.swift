@@ -1,3 +1,7 @@
+// AGENT HEADER - Tests/NeveCoreTests/FigureHelpers.swift  (shared helpers, not tests)
+// `stackBalls` (resting 3-ball stack, radii 20/14/10), `stand` (finished user snowman = promoted stack), `standAuto` (complete auto snowman at x), `fig`/`ball` lookups, `advance(f, seconds, fps:)`, and `directorRun` (ticks ONLY stepDirector once per simulated second with a hand-advanced `time`, ending visits after `visit` s:
+// gaps, cooldowns, caps and the Poisson roll run as in `step` without simulating the world). Used by Figure/Fight/Walk/Rabbit/Penguin/Robin/Sleigh/Snowman tests.
+
 import CoreGraphics
 import Testing
 @testable import NeveCore
