@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Walk.swift  (snowmen walking: gait, wind, hops between surfaces)
-// Role: Tuning.walk/fight constants (fightRange 250, maxFights 2, maxFigures 3, walkSpeed 14 pt/s x scale +-20 %, hop between ground and Dock: stepMax 10 pt high, stepGap 8 pt wide, hopTime 0.45 s, windPush/windLean, headlessLife 25 s, cheerTime 2,
-//   headHitsToLose 3), `Flutter` (scarf/arm pose of a walker, transforms only, no path rebuild; part of Pose in Rig) `Flutter.make/rate/arm` (pure pose from gust, gait, direction, phase) and SnowField walking helpers: `walkRange`/`standRange` (where a figure may stand on a surface), `transfer`/`hopStep` (`Xfer` hops between ground and Dock), `walkStep`.
+// Role: Tuning.walk/fight constants (fightRange 250, maxFights 2, maxFigures 3, walkSpeed 14 pt/s x scale +-20 %, hop between ground and Dock or across a seam / wall between touching windows (`touching`, Seams.swift): stepMax 10 pt high, stepGap 8 pt wide, hopTime 0.45 s, windPush/windLean, headlessLife 25 s, cheerTime 2,
+//   headHitsToLose 3), `Flutter` (scarf/arm pose of a walker, transforms only, no path rebuild; part of Pose in Rig) `Flutter.make/rate/arm` (pure pose from gust, gait, direction, phase) and SnowField walking helpers: `walkRange`/`standRange` (where a figure may stand on a surface), `transfer`/`hopStep` (`Xfer` hops between ground and Dock and across seams of touching windows), `walkStep`.
 //   Walking is skipped when `walkEnabled` is off or the field is calm (Reduce Motion) (see stepFigures); `gust` (wind -> -1...1 with a 20 pt/s dead zone) is defined here and shared by figures, shots and Fights. The Tuning fight constants (fightRange, maxFights, maxThrows, fightRest, headAim, throwGap, hitChance, shotWind) live here too; the auto snowman never walks onto bare ground. Callers: stepFigure (Figures.swift), Fights. Tests: WalkTests, NaturalMotionTests.
 
 import CoreGraphics
@@ -92,8 +92,16 @@ extension SnowField {
     /// A hop onto the neighbouring surface past the end of `f`'s stretch in direction `dir`, when the two stretches nearly
     /// touch and the snow tops differ by at most `stepMax`. Only ground <-> Dock. The auto snowman needs snow where it lands.
     func transfer(_ f: Figure, sid: Int, dir: Float, auto: Bool) -> Xfer? {
-        let to = sid == Tuning.groundID ? 0 : sid == 0 ? Tuning.groundID : nil
-        guard let to, let si = index[sid], let ti = index[to] else { return nil }
+        let pair = sid == Tuning.groundID ? 0 : sid == 0 ? Tuning.groundID : nil
+        guard let si = index[sid], sid != draggingID else { return nil }
+        for to in (pair.map { [$0] } ?? []) + touching(id: sid, dir: dir) where to != draggingID {   // ground <-> Dock, or a window whose seam / wall meets this one (one group)
+            if let x = hop(f, from: si, to: to, dir: dir, auto: auto) { return x }
+        }
+        return nil
+    }
+
+    private func hop(_ f: Figure, from si: Int, to: Int, dir: Float, auto: Bool) -> Xfer? {
+        guard let ti = index[to] else { return nil }
         let h = Snowman.height * f.scale, half = f.radii.x
         guard let cur = standRange(si: si, x: f.foot.x, height: h) else { return nil }
         let probe = dir > 0 ? cur.1 + 4 : cur.0 - 4

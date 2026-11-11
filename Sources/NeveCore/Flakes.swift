@@ -2,7 +2,7 @@
 // Role: `Flake` (plain-old-data shared by sky / background / near / debris / dormant: pos, vx, fall, phase/amp/freq sway, size, alpha, seed, fade, rot/spin, vol = carried snow area, delay (slab aloft timer, or puff/glint life left), shape,
 //   packed chunk profile `prof`, vel for motion streaks, wv wind inertia), `FlakeKind` (.sky and .background are the pooled snowfall; ONLY .sky flakes land in stepFlakes; .near = rare big out-of-focus foreground discs, never land;
 //   .debris lands through Debris.swift; .dormant = free slot) and SnowField `spawn`, `stepFlakes(dt:)` (THE per-frame hot path: gust LUT, per-flake sway with a bandGain notch near 0.2 Hz, wind, pointer push/swirl, live-region
-//   wrap for compact mode, intro / outro / melt fade rules, landing test per flake), `tryLand(x:prevY:newY:volume:fall:vol:span:)` (highest visible surface top crossed this frame -> `deposit`, heavy falls -> Effects.impact; returns false
+//   wrap for compact mode, intro / outro / melt fade rules, landing test per flake), `tryLand(x:prevY:newY:volume:fall:vol:span:)` (highest OPEN surface top crossed this frame (`Pile.open`: not hidden and not under another window's body, any stacking order; the wind-leeward hop may cross a seam onto the touching neighbour) -> `deposit`, heavy falls -> Effects.impact; returns false
 //   while `quiet`), `stepWindDust` (strong gusts: a puff + a sliver of crest volume moves one bin leeward, conserved), `edgeCalm` (Reduce Motion: slower / fewer flakes near the left / right 12 %), size / alpha / sway helpers,
 //   `introRank` / `slotKind` / `isActive` (pool bookkeeping: sky slots [0, skyCount), background after it, the first nearLimit sky slots are .near).
 // Perf: stepFlakes loops only [0, skyEnd) and [skyCount, skyCount + bgEnd), uses fastSin / fastCos (Util.swift), no allocation; its cost is timed through `timer` (flakesim in NEVE_PERF). Units: sim seconds, pt, pt/s, y up.
@@ -181,7 +181,7 @@ extension SnowField {
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
             let e = entries[k]
             let s = Int(e.surface)
-            guard landable(s) else { continue }
+            guard landable(s), surfaces[s].pile.open(c - surfaces[s].c0) else { continue }   // landing support = visible and not under another window's body (geometry, any stacking order)
             let top = e.edgeY + surfaces[s].pile.heights[c - surfaces[s].c0]
             if prevY >= e.edgeY, newY < top, top > bestTop { best = s; bestTop = top }
         }
@@ -190,12 +190,17 @@ extension SnowField {
         else {
             let v = vol > 0 ? vol / Tuning.binWidth : volume
             // A landing slab (span = its width) lays its volume along that width, not on three bins: no spike.
-            let n = surfaces[best].pile.heights.count
+            var n = surfaces[best].pile.heights.count
             var b = c - surfaces[best].c0
-            // Sustained wind: a flake landing on a crest slides one bin leeward when that bin is lower (volume only moves, never lost).
+            // Sustained wind: a flake landing on a crest slides one bin leeward when that bin is lower (volume only moves, never lost); past a seam end it hops onto the touching neighbour.
             if vol == 0, !calm, abs(windSlow) > 1 {
-                let nb = windSlow > 0 ? b + 1 : b - 1, p = min(Tuning.windBiasMax, abs(windSlow) / Tuning.windBiasRef * Tuning.windBiasMax)
-                if nb >= 0, nb < n, surfaces[best].pile.visible[nb], surfaces[best].pile.heights[nb] < surfaces[best].pile.heights[b], Float(noise(c &* 7919 &+ Int(time * 997)) + 1) * 0.5 < p { b = nb }   // hash, not rng: keeps the seeded random stream unchanged
+                let dir = windSlow > 0 ? 1 : -1, nb = b + dir, p = min(Tuning.windBiasMax, abs(windSlow) / Tuning.windBiasRef * Tuning.windBiasMax)
+                let roll = Float(noise(c &* 7919 &+ Int(time * 997)) + 1) * 0.5   // hash, not rng: keeps the seeded random stream unchanged
+                func top(_ s: Int, _ k: Int) -> Float { surfaces[s].edgeY + surfaces[s].pile.base[k] + surfaces[s].pile.heights[k] }
+                if nb >= 0, nb < n { if surfaces[best].pile.open(nb), surfaces[best].pile.heights[nb] < surfaces[best].pile.heights[b], roll < p { b = nb } }
+                else if roll < p, let nx = neighbor(si: best, dir: dir), landable(nx.si), surfaces[nx.si].pile.open(nx.bin), top(nx.si, nx.bin) < top(best, b) {
+                    best = nx.si; b = nx.bin; n = surfaces[best].pile.heights.count
+                }
             }
             let half = Int(span * invBin / 2)
             let lo = max(0, b - half), hi = min(n - 1, b + half), k = span > 2 * Tuning.binWidth && vol > 0 ? hi - lo + 1 : 1

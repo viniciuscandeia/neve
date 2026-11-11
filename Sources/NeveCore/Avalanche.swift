@@ -4,7 +4,7 @@
 //   per-window "full for N s" table and test counters started/released).
 // Full = `fullSpot`: mean height over a 60 pt span >= 85 % of the mean pile limit there (pushed heaps never count), or a drift near its limit. Triggers: `avalancheImpact` (heavy landing, called from Effects.impact; within 80 pt of a
 //   full spot), `triggerAvalanche(near:)` (public; Robin in Figures+Robin.swift, demo), a window moving 150..400 pt/s over a full spot, spontaneous after a pile stays full > 300 s (p = dt/600 per 1 s scan), NEVE_DEMO_AVALANCHE.
-// `stepAvalanche(dt:)` runs in SnowField.step after stepIce, before stepDebris; does nothing (and drops fronts) in calm (Reduce Motion). Uses `fxRng`, never `rng`. Volume is conserved (removed from pile == released as debris).
+// A front that reaches a seam end (supported end with a touching neighbour, Seams.swift `neighbor`) is not blocked: `continueFront` starts a front on the neighbour toward its far drop-off end. `stepAvalanche(dt:)` runs in SnowField.step after stepIce, before stepDebris; does nothing (and drops fronts) in calm (Reduce Motion). Uses `fxRng`, never `rng`. Volume is conserved (removed from pile == released as debris).
 // Reset: SnowField.clear(), Scene reset, Resize rebuild replace `chain`. Tests: IceAvalancheTests. Units: pt, pt/s, simulation seconds, y up.
 
 import CoreGraphics
@@ -84,8 +84,8 @@ extension SnowField {
         let n = surfaces[si].pile.heights.count, c0 = surfaces[si].c0, fr = surfaces[si].frame
         let bin = min(max(Int(x * invBin) - c0, 0), n - 1)
         guard let run = visibleRun(si: si, bin: bin) else { return false }
-        let left = run.lowerBound == 0 && !surfaces[si].pile.supportL && fr.minX >= 0
-        let right = run.upperBound == n && !surfaces[si].pile.supportR && fr.maxX <= CGFloat(size.x)
+        let left = run.lowerBound == 0 && (!surfaces[si].pile.supportL || neighbor(si: si, dir: -1) != nil) && fr.minX >= 0   // a seam end is no drop-off, but the slab front crosses it (see `continueFront`)
+        let right = run.upperBound == n && (!surfaces[si].pile.supportR || neighbor(si: si, dir: 1) != nil) && fr.maxX <= CGFloat(size.x)
         guard left || right else { return false }
         let dl = x - binCenter(c0), dr = binCenter(c0 + n - 1) - x
         let toRight = left ? (right && dr < dl) : true
@@ -167,10 +167,27 @@ extension SnowField {
                 releaseGroup(si: si, from: min(a, b), to: max(a, b), speed: f.speed)
                 f.group += 1
             }
-            if Float(f.group) * Tuning.avaGroup >= f.length { chain.fronts.swapAt(i, chain.fronts.count - 1); chain.fronts.removeLast() } else { chain.fronts[i] = f }
+            if Float(f.group) * Tuning.avaGroup >= f.length {
+                chain.fronts.swapAt(i, chain.fronts.count - 1); chain.fronts.removeLast()
+                continueFront(f, si: si)
+            } else { chain.fronts[i] = f }
             i -= 1
         }
         if chain.fronts.isEmpty { chain.cooldownUntil = time + Double(Tuning.avaCooldown); chain.cascades = 0 }
+    }
+
+    /// A front that ran off a window's end at a seam goes on along the touching neighbour (one group): a new front there toward the far end, when that end drops off and the neighbour has snow to loosen.
+    func continueFront(_ f: AvaFront, si: Int) {
+        let d = f.dir > 0 ? 1 : -1, c0 = surfaces[si].c0, n = surfaces[si].pile.heights.count
+        let endX = Float(d > 0 ? c0 + n : c0) * Tuning.binWidth
+        guard abs(f.startX + f.dir * f.length - endX) < 2 * Tuning.binWidth, chain.fronts.count < 4, let nx = neighbor(si: si, dir: d), surfaces[nx.si].id > 0, surfaces[nx.si].id != draggingID,
+              !chain.fronts.contains(where: { $0.win == surfaces[nx.si].id }), surfaces[nx.si].pile.heights.contains(where: { $0 > 1 }) else { return }
+        let t = surfaces[nx.si], tn = t.pile.heights.count, far = d > 0 ? !t.pile.supportR && t.frame.maxX <= CGFloat(size.x) : !t.pile.supportL && t.frame.minX >= 0
+        guard far else { return }
+        let dist = d > 0 ? binCenter(t.c0 + tn - 1) - binCenter(t.c0 + nx.bin) : binCenter(t.c0 + nx.bin) - binCenter(t.c0)
+        guard dist >= 8 else { return }
+        let length = min(dist, Float.random(in: 40...120, using: &fxRng)), farX = binCenter(d > 0 ? t.c0 + tn - 1 : t.c0)
+        chain.fronts.append(AvaFront(win: t.id, dir: f.dir, startX: farX - f.dir * length, length: length, speed: f.speed))
     }
 
     /// 60-80% of every visible column in [from, to] leaves as one slab run (volume conserved: removed == released).

@@ -8,7 +8,7 @@
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax moves half the
 //   excess to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
 //   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts from the GEOMETRY of the higher windows over the pile (`hideTop`, no stacking order; limit rises to the front top at the wall for step <= maxDrift, also against the wobble) and records `wallInfo`; fillet(b:h:) = draw-only concave lift beside a wall;
-//   visibleRuns() = visible bin ranges.
+//   visibleRuns() = visible bin ranges. `open(b)` = visible AND not under another window's body (`hideTop`, geometry, any stacking order): the only bins snowfall lands on / relax flows into (so a grown field is the same in every stacking order). supportL/R are also set for the HIGHER window's end over a lower window's top edge (any step): no taper / dip / bare corner there; the group exchange across such ends lives in Seams.swift. `fillet` lifts young snow too (g = 0.5 + h/3): never a vertical edge beside a wall.
 // Pile is a struct: avoid copying whole arrays in hot code (mutate surfaces[si].pile in place, see Surfaces.sweep). Callers: Surfaces.swift (build / deposit / shed), SurfaceMap.swift, Render.swift (writePiles reads it), and read or mutated directly by
 //   Avalanche, Frost, Melt, Walk, Snowball, Figures*. Tests: PileLogicTests, SurfaceMapTests, PhysicsTests and others. Changing slope / limit math changes visuals everywhere and many tuned tests.
 
@@ -54,6 +54,9 @@ public struct Pile {
     /// Whether snow / things on bin `b` still count for physics: visible, or hidden only by the stacking order.
     func alive(_ b: Int) -> Bool { visible[b] || (!held.isEmpty && held[b]) }
 
+    /// Whether snow may land on / flow into bin `b`: visible AND not under another window's body (`hideTop`, geometry, any stacking order). Snowfall and relax use this, so a grown field never depends on z.
+    @inline(__always) func open(_ b: Int) -> Bool { visible[b] && (hideTop.isEmpty || hideTop[b] <= 0) }
+
     /// Column ranges (local bins) where the pile is visible (`alive`: or held), in order.
     func visibleRuns(alive a: Bool = false) -> [Range<Int>] {
         var r: [Range<Int>] = [], b = 0
@@ -85,7 +88,7 @@ public struct Pile {
     /// so thin or young snow never ends in a vertical cut against a higher front window. Never lowers; fades out on bare bins.
     func fillet(_ b: Int, _ h: Float) -> Float {
         guard !walls.isEmpty, h > 0.15 else { return h }
-        let x = binCenter(c0 + b), g = min(1, h / 3)
+        let x = binCenter(c0 + b), g = min(1, 0.5 + h / 3)   // young snow still ramps (never a vertical edge): the lift scales with the snow beside the wall
         var out = h
         for (i, w) in walls.enumerated() {
             let u = 1 - abs(x - w) / min(max(Tuning.wallFilletWidth, 2 * (wallInfo[i].peak - h)), 40)   // wider when the lift is tall: the slope stays <= 1
@@ -160,7 +163,7 @@ public struct Pile {
     /// Returns whether anything changed.
     @discardableResult
     mutating func deposit(bin: Int, volume: Float, powder: Bool = false) -> Bool {
-        guard bin >= 0, bin < heights.count, visible[bin], cap[bin] >= Tuning.minRoom else { return false }
+        guard bin >= 0, bin < heights.count, open(bin), cap[bin] >= Tuning.minRoom else { return false }
         var changed = false
         // Fresh powder barely sticks to a clean surface and lands as a one-bin speck (no wide footprint); the grip grows as snow builds up under it.
         if !mound.isEmpty {   // self-correcting allowance: snow that left by any path (melt, release, take, slide) must not let snowfall regrow the old heap
@@ -174,7 +177,7 @@ public struct Pile {
         } else {
             for o in -1...1 {
                 var i = bin + o
-                if i < 0 || i >= heights.count || !visible[i] { i = bin }
+                if i < 0 || i >= heights.count || !open(i) { i = bin }
                 guard cap[i] >= Tuning.minRoom else { continue }
                 let before = heights[i]
                 heights[i] = max(before, min(before + volume * softness(i) * (o == 0 ? 0.5 : 0.25), limit(i)))
@@ -183,14 +186,14 @@ public struct Pile {
         }
         let lo = max(0, bin - 8), hi = min(heights.count - 1, bin + 8)
         for _ in 0..<6 {
-            for i in lo...hi where visible[i] && (mound.isEmpty || mound[i] <= 0.5) {   // hidden bins are frozen: no flow out of them (nor into them, see relax); a pushed heap is left to `settle` (a local relax of its steep flank would cut a cliff at the edge of the window)
+            for i in lo...hi where open(i) && (mound.isEmpty || mound[i] <= 0.5) {   // hidden bins are frozen: no flow out of them (nor into them, see relax); a pushed heap is left to `settle` (a local relax of its steep flank would cut a cliff at the edge of the window)
                 if relax(i, i - 1) { changed = true }
                 if relax(i, i + 1) { changed = true }
             }
         }
         for i in max(lo - 1, 0)...min(hi + 1, heights.count - 1) {   // relaxation reaches one bin past the window
             let over = heights[i] - max(limit(i), 0)
-            guard visible[i], over > 0, peel.isEmpty || peel[i] < 0 else { continue }
+            guard open(i), over > 0, peel.isEmpty || peel[i] < 0 else { continue }
             heights[i] -= over
             if i == 0 { spillL += over } else if i == heights.count - 1 { spillR += over }
             changed = true
@@ -277,7 +280,7 @@ public struct Pile {
     private mutating func relax(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
         if !inRange && (continuesPastScreen(left: j < 0) || (j < 0 ? supportL : supportR)) { return false }
-        if inRange && !visible[j] { return false }
+        if inRange && !open(j) { return false }
         let ok = inRange
         let tj = ok ? base[j] + heights[j] : base[i] - 4
         // Fresh snow on bare ground sticks where it lands (steeper step allowed onto an almost empty bin): a dusting of specks, not an instant wide film.

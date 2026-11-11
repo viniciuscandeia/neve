@@ -4,7 +4,7 @@
 //   Helpers: column(x), edgeVisible, surface(id:), pile(id:), meanHeight(si:col:span:), visibleRun(si:bin:) (binary search).
 //   `SeamLink` + computeSeams(rects:windows:): windows whose piles read as ONE snowbank (side by side gap <= 6 pt with tops within 4, or overlapped with the front top 1...maxDrift above / up to maxPileHeight/2 below). `*Supported` ends
 //   hold snow against the neighbour (no dip, taper or spill); `front` = id of the HIGHER window of an overlap junction (stacking order never matters; 0 = side by side). Render.writePiles `junctions()` / `blendCrest` draw the merged crest (smoothstep saddle, half-width min(80, max(16, 6 * crest difference)) pt; heap-guarded, skipped while one side is dragged).
-// Rects are front to back; coordinates local AppKit y-up pt. Callers: Surfaces.swift (rebuild), Render.swift, Flakes.swift (landing), Walk/Figures (standing surfaces). Tests: SurfaceMapTests, JunctionTests, LowSeamTests.
+// Rects are front to back; coordinates local AppKit y-up pt. Callers: Surfaces.swift (rebuild), Render.swift, Flakes.swift (landing), Walk/Figures (standing surfaces). Snow exchange across the links (relax, berm, hop, walk, avalanche): Seams.swift. Tests: SurfaceMapTests, JunctionTests, LowSeamTests, SeamExchangeTests.
 
 import CoreGraphics
 import Foundation

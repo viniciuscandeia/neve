@@ -6,7 +6,7 @@
 //   Tuning.binWidth (2 pt): `numCols` global columns across the screen width; a surface's `c0` is its first GLOBAL column, `pile.heights[b]` is LOCAL bin b (global = c0 + b). `column(x)`, `binCenter(c)` convert.
 // Pools: `flakes` is preallocated once for Nevasca (sky pool [0, skyCount) + background pool); intensity only changes `skyLimit/bgLimit` (active counts), `skyEnd/bgEnd` bound loops; dormant slots cost nothing. `debris`, glints, puffs, drops,
 //   icicles, figures, balls, fights, shots, splats, carrots, gifts are capped arrays (Tuning.max*). `capacity` = max instances the GPU buffer must hold.
-// step(dt) order: scene script -> snowman builder/director -> outro/intro/melt -> balls, gifts, figures, splats -> wind/music -> stepFlakes (landing -> deposit into piles) -> peel, ice, avalanche, debris, dock, bank, dock spill,
+// step(dt) order: scene script -> snowman builder/director -> outro/intro/melt -> balls, gifts, figures, splats -> wind/music -> stepFlakes (landing -> deposit into piles) -> peel, ice, avalanche, debris, dock, bank, dock spill, slump, seams (Seams.stepSeams: snow exchange across touching windows),
 //   puffs, wind dust, glints, drips. The app drives it ~30/60 Hz from Overlay.tick (dt <= 0.06) and feeds windows at poll rate via `update(windows:)` (Surfaces.swift).
 // Presentation state kept here on purpose (testable): `pileVersion`/`pilesDirty`, `pileWritten`, `pileEasing`, `Pile.shown`; the renderer rewrites the pile buffer only when pileVersion changes or easing is active (`pilesSettled`).
 // Public flags the app sets each frame/pref change: pointer/optionHeld/music/calendarDay/timer, economy, snowmanEnabled/walkEnabled/visitorsEnabled/sleighEnabled/pointerPush/groundOnlyActors, frozen (still snow), setIntensity/setCalm/setLowPower.
@@ -350,6 +350,7 @@ public final class SnowField {
         stepBank(dt: dt)
         stepDockSpill(dt: dt)
         stepSlump()
+        stepSeams()
         stepPuffs(dt: dt)
         stepWindDust(dt: dt)
         stepGlints(dt: dt)

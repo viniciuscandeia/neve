@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
 // Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
-//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), wobble, corner rounding) and `buildGround` (full-width ground pile,
+//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), `cap` = lowest underside of ANY window whose body lies above the bin (geometry, not z; only windows in front HIDE bins), wobble, corner rounding) and `buildGround` (full-width ground pile,
 //   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Figures.
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
@@ -8,7 +8,7 @@
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
-//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm); `stepSlump` (in SnowField.step) settles pushed heaps toward the repose slope 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
+//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam continues onto the touching neighbour surface via `neighbor`, Seams.swift); `stepSlump` (in SnowField.step) settles pushed heaps toward the repose slope 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
 //   scene mode (NEVE_DEMO_VANISH) filters a window out here. Tests: SurfaceMapTests, DragOnlyRebuildTests, SpaceCarryTests, DockGapTests, SweepTests.
@@ -298,17 +298,23 @@ extension SnowField {
             if l.right == id, l.rightSupported { pile.supportL = true }
             if l.left == id, l.leftSupported { pile.supportR = true }
         }
+        if id > 0 {   // wall relation (any step, any stacking): this window is the HIGHER one and its end lies over a lower window's top edge (its bottom at or below that top): the end is part of the group, no taper / dip / bare corner
+            for (j, r) in rects.enumerated() where windows[j].number > 0 && windows[j].number != id && !windows[j].occluderOnly && frame.maxY - r.maxY > 1 && frame.minY <= r.maxY + 1 {
+                if r.minX < frame.minX - 2, frame.minX < r.maxX - 2 { pile.supportL = true }
+                if frame.maxX < r.maxX - 2, frame.maxX > r.minX + 2 { pile.supportR = true }
+            }
+        }
         pile.round(radius: Float(min(radius, frame.width / 2, frame.height / 2)), c0: c0, minX: Float(frame.minX), maxX: Float(frame.maxX))
         let y = CGFloat(edgeY) + 1
         var hideTop = [Float](repeating: 0, count: c1 - c0), hideRadius = hideTop   // top (and corner radius) of the window hiding each hidden bin
         for b in 0..<(c1 - c0) {
             let x = CGFloat(binCenter(c0 + b))
             var hidden = false
-            var ceiling = Float.infinity   // lowest underside of a front window above the edge in this column
-            for j in 0..<front {
+            var ceiling = Float.infinity   // lowest underside of any window whose body lies above the bin (geometry, any stacking order)
+            for j in rects.indices where j != front && (j < front || !windows[j].occluderOnly) {
                 let r = rects[j]
-                if r.contains(CGPoint(x: x, y: y)) { hidden = true; break }   // true occlusion: only windows in front hide (freeze) the bin
-                if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radii[j])) }   // the front window's own radius (the Dock bar's is larger)
+                if j < front, r.contains(CGPoint(x: x, y: y)) { hidden = true }   // true occlusion: only windows in front hide (freeze) the bin
+                if r.minY > y { ceiling = min(ceiling, Self.roundedUnderside(x: Float(x), r, radius: radii[j])) }   // the other window's own radius (the Dock bar's is larger)
             }
             // Walls are geometry: the highest window whose rect holds the edge point acts as the wall (any stacking order; an occluder-only window behind us is no wall).
             var best = -1
@@ -601,17 +607,23 @@ extension SnowField {
         }
         let bar = surfaces[si].id == Tuning.groundID ? dockSpan() : nil
         func wall(_ k: Int) -> Bool { bar?.contains(binCenter(c + k)) ?? false }
-        var open = true, hit = false
+        var open = true, hit = false, failK: Int?
         for (i, wi) in Self.bermWeights.enumerated() {
             let k = start + dir * i
             if wall(k) { open = false; hit = true; break }   // the push stops at the Dock's side: snow never passes under the bar to the far side
-            if !add(k, wi * area) { open = false; break }
+            if !add(k, wi * area) { open = false; failK = k; break }
         }
         var m = 9
         while open, banked < area - 0.01 {
             let k = start + dir * m
             if wall(k) { hit = true; break }
-            if add(k, area - banked) { m += 1 } else { open = false }
+            if add(k, area - banked) { m += 1 } else { open = false; failK = k }
+        }
+        if let k = failK, k < 0 || k >= n, banked < area - 0.01, let nx = neighbor(si: si, dir: dir), surfaces[nx.si].id != draggingID, landable(nx.si) {   // the run ends at a seam: the heap goes on onto the touching neighbour (one group), no debris at the joint
+            var dlo = Int.max, dhi = Int.min, e: Float = 0, ey: Float = 0
+            banked += berm(nx.si, atX: (Float(surfaces[nx.si].c0 + nx.bin - dir) + 0.5) * Tuning.binWidth, dir: dir, area: area - banked, lo: &dlo, hi: &dhi, end: &e, endY: &ey)
+            if dlo <= dhi { surfaces[nx.si].pile.settle(max(dlo - 2, 0), min(dhi + 2, surfaces[nx.si].pile.heights.count - 1)) }
+            if banked < area - 0.01 { end = e; endY = ey; return banked }   // (the far end spilled: the remainder flies off there)
         }
         if hit, let bar, banked < area - 0.01 {   // bank the rest against the bar's side as a repose wedge up to the Dock top; what rises above goes onto the Dock's own pile
             let top = bar.top
