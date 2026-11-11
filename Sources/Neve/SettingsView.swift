@@ -232,7 +232,7 @@ struct SettingsPane: View {
         }
         .formStyle(.grouped)
         .frame(width: 460)
-        .frame(minHeight: 300)
+        .fixedSize(horizontal: false, vertical: true)   // the window fits each tab's content (a grouped Form would otherwise stretch, leaving empty space)
     }
 }
 

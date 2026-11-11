@@ -387,6 +387,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for t in SettingsTab.allCases {
                 let host = NSHostingController(rootView: SettingsPane(env: env, tab: t))
                 host.sizingOptions = .preferredContentSize
+                host.title = t.title   // the tab controller propagates the selected tab's title to the window (System Settings style)
                 let ti = NSTabViewItem(viewController: host)
                 ti.label = t.title
                 ti.image = NSImage(systemSymbolName: t.symbol, accessibilityDescription: nil)
