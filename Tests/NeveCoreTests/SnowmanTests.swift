@@ -1,6 +1,6 @@
 // AGENT HEADER - Tests/NeveCoreTests/SnowmanTests.swift  (Snowman.swift + intro / outro + melt interaction; 1000x800 field without flakes, coarse 1/20 s steps)
 // No auto snowman until the stretch is deep enough (Tuning.snowmanDepth, snowmanStretch), the site is the centre of the widest visible stretch and keeps Tuning.snowmanClearance from Dock ends / screen edges (waits when none has clearance), stages advance in
-//   order and scoop snow, a cursor sweep through it collapses it into debris (next to it leaves it standing), debris capped at maxDebris, clear() removes it and a cleared pile collapses it, cooldown before a rebuild and never more than one, disabled
+//   order and scoop snow, a cursor sweep through it bursts it into debris carrying its volume (conserved, lands around it) (next to it leaves it standing), debris capped at maxDebris, clear() removes it and a cleared pile collapses it, cooldown before a rebuild and never more than one, disabled
 //   switch never builds. Also in this file: `beginIntro` ramps the flake count from 0 over its duration (flakes enter from above), `collapseAll` (outro) turns piles into debris and shatters balls / the stack at once, and a 5-minute Nevasca run builds the pile
 //   and snowman without collapsing; a melt freezes the build and starts no new snowman.
 
@@ -74,6 +74,31 @@ private func built() -> SnowField {
     #expect(f.debris.count - d0 >= 60)   // three balls, a few dozen chunks each (plus swept pile snow)
     run(f, 0.6)
     #expect(f.figures.isEmpty)
+}
+
+/// Pile area (pt^2) over the ground and what the debris in flight still carry.
+private func snow(_ f: SnowField) -> (pile: Float, air: Float) {
+    (f.pile(id: Tuning.groundID)!.heights.reduce(0, +) * Tuning.binWidth, f.debris.reduce(0) { $0 + $1.vol })
+}
+
+@Test func burstingTheSnowmanConservesItsVolumeAndSpraysSnowAround() {
+    let f = built()
+    let m = f.figures[0], x0 = m.foot.x, y = m.foot.y + 25
+    let (pile0, _) = snow(f), h0 = f.pile(id: Tuning.groundID)!.heights
+    #expect(m.vol > 0)
+    f.sweep(from: CGPoint(x: CGFloat(x0) - 40, y: CGFloat(y)), to: CGPoint(x: CGFloat(x0) + 40, y: CGFloat(y)), radius: 10, dt: 0.3)   // slow enough not to plow much
+    let (pileMid, air) = snow(f)
+    #expect(air >= m.vol * 0.99)   // the chunks carry at least the scooped volume (plus any plowed snow)
+    #expect(f.debris.contains { abs($0.vx) > 100 })   // radial speeds, not the old drift
+    let total0 = pileMid + air
+    run(f, 6)
+    let (pile1, air1) = snow(f)
+    #expect(air1 < 1)
+    #expect(abs(pile1 + air1 - total0) < 0.02 * total0)   // landed snow = pile + what was in the air
+    let p = f.pile(id: Tuning.groundID)!
+    var farDelta: Float = 0   // the debris only reach so far: ground beyond 400pt is untouched
+    for b in p.heights.indices where abs(Float(b) * Tuning.binWidth - x0) > 400 { farDelta += abs(p.heights[b] - h0[b]) * Tuning.binWidth }
+    #expect(farDelta < 0.02 * pile0)
 }
 
 @Test func sweepNextToTheSnowmanLeavesItStanding() {

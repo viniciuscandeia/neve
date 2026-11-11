@@ -124,6 +124,7 @@ public enum Tuning {
     static let ballMax: Float = 20                          // rolled snowball radius cap (40pt across)
     static let ballGrowth: Float = 0.1                      // radius per pt rolled
     public static let maxBalls = 6
+    static let burstSpeed: Float = 110                     // pt/s: slowest chunk of a snowman exploded by the cursor (up to 2x)
     static let snowmanCooldown: Float = 120                 // s of snowfall after a collapse
     static let pointerRadius: Float = 60     // falling snow avoids the cursor within this distance
     static let pointerPush: Float = 450      // pt/s radial speed at point blank (scaled by (1 - d/R)^2)

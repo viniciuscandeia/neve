@@ -2,7 +2,7 @@
 // Role: `FigureKind` (snowman, rabbit, penguin, sleigh, robin), `Phase` (building, idle, walking, fighting, cheering, collapsing, hidden), `Attachment` (on surface id at x, or air), `Motion` (walk / fight bookkeeping), `Xfer` (hop between adjacent
 //   surfaces, ground <-> Dock), `Anchors` (ball centres, throwing hand, ground height) and `Figure` (ONE struct for every actor: `kind` selects behaviour; per-kind state RobinState / Critter / PenguinState / SleighState lives in the
 //   Figures+<Kind>.swift files). SnowField extension: `stepFigures` (visitors fade with melt/outro/dying, dispatch to stepRabbit/Robin/Penguin/Sleigh or the snowman body of `stepFigure`; then, only when walking and not calm/melting:
-//   startFights, stepFights, stepShots, stepCarrots, stepCursorThrow), `look(of:)` -> SnowmanLook for Rig, `anchors`, `addFigure`, `promote(bottomBall:)` / `demote` (stack of 3 balls <-> snowman), `shatter` (debris; the auto snowman collapses
+//   startFights, stepFights, stepShots, stepCarrots, stepCursorThrow), `look(of:)` -> SnowmanLook for Rig, `anchors`, `addFigure`, `promote(bottomBall:)` / `demote` (stack of 3 balls <-> snowman), `shatter` (debris; `burst:` = cursor explosion, chunks carry the snowman's volume via fxRng; the auto snowman collapses
 //   and starts snowmanCooldown), `removeFigure` (ends its fight, tells EventDirector.ended for visitors), `lose`/`knockOff`/`transportFigures` (window moved: x shift, or knocked off when shed speed > 0.5), `dropWindowFigures` (Space switch).
 // Snowmen stand on the DRAWN snow (`meanShown`, eased `shown` heights; physics stays on `heights`) and fade out (`hide`, 0.2 s) while a window / the Dock covers the body. `snowmanCount < Tuning.maxFigures` gates spawning (`canSpawnFigure`);
 //   visitors are capped by EventDirector. `active` = snowman, not hidden / collapsing / building / headless, stageAge >= 0.3 s. Auto snowman (`fromBalls == false`) builds itself; user stacks (`fromBalls`) are pickable.
@@ -62,6 +62,7 @@ public struct Figure {
     var hide: Float = 1                                         // snowmen: 1 -> 0 while a window / the Dock covers the body (0.2 s ease), multiplied into the look's fade
     var intro: Float = 1                                        // promoted stacks: 0 -> 1 over 0.25 s, the face / arms / nose / scarf ease in
     var turn: Float = 1                                         // drawn facing: eases to `facing` through 0 in 0.12 s
+    var vol: Float = 0                                          // auto snowman: pile area (pt^2) its scoops took; returned as debris volume when the cursor bursts it
     var headlessT: Float = 0                                    // seconds the auto snowman has stood headless (it collapses after 25 s)
     var scale: Float { radii.x / 11.5 }
     /// Takes part in the world (walks, fights, can be hit).
@@ -194,11 +195,32 @@ extension SnowField {
 
     /// Breaks a figure into debris thrown along `velocity` (a few dozen chunks per ball). The auto snowman fades its
     /// accessories for 0.4 s first (and starts the rebuild cooldown); a user-built one is gone at once.
-    public func shatter(_ id: Int, velocity v: SIMD2<Float> = .zero) {
+    /// `burst` (moving cursor): radial explosion whose chunks carry the snowman's real volume (`vol`) so the snow lands around it again.
+    public func shatter(_ id: Int, velocity v: SIMD2<Float> = .zero, burst: Bool = false) {
         guard let j = figureIndex(id), figures[j].phase != .collapsing else { return }
         if figures[j].kind != .snowman { if !quiet { removeFigure(j) }; return }   // in the outro / melt visitors fade (stepFigures)
         let f = figures[j], a = anchors(of: f)
-        if !silent {
+        if !silent, burst {
+            // Volume: what scoop took (auto) or the balls' disc areas (user stack); split evenly over the chunks. fxRng only.
+            var total: Float = 0, count = 0
+            for k in 0..<ballCount(f) { let (_, r) = circle(a, f, k); total += f.fromBalls ? .pi * r * r : 0; count += Int(r * 1.5) + 4 }
+            if !f.fromBalls { total = f.vol }
+            let per = total / Float(count), mid = circle(a, f, min(1, ballCount(f) - 1)).0
+            for k in 0..<ballCount(f) {
+                let (c, r) = circle(a, f, k)
+                for _ in 0..<(Int(r * 1.5) + 4) {
+                    let ang = Float.random(in: 0..<(2 * .pi), using: &fxRng), d = r * Float.random(in: 0...1, using: &fxRng).squareRoot()
+                    let p = SIMD2(c.x + cos(ang) * d, c.y + sin(ang) * d)
+                    var u = p - mid; let l = max((u.x * u.x + u.y * u.y).squareRoot(), 1e-3); u /= l
+                    let sp = Float.random(in: Tuning.burstSpeed...(Tuning.burstSpeed * 2), using: &fxRng)
+                    let fl = Flake(pos: p, vx: u.x * sp + v.x * 0.3, fall: -u.y * sp - 40 - v.y * 0.3, phase: 0.3, amp: 0, freq: 0,
+                                   size: Float.random(in: 4...8, using: &fxRng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng),
+                                   fade: 1, spin: Float.random(in: -4...4, using: &fxRng), vol: per, shape: 1)
+                    _ = put(fl)
+                }
+            }
+            for _ in 0..<6 { addPuff(x: mid.x + Float.random(in: -20...20, using: &fxRng), y: mid.y + Float.random(in: -20...20, using: &fxRng)) }
+        } else if !silent {
             for k in 0..<ballCount(f) {
                 let (c, r) = circle(a, f, k)
                 let n = f.fromBalls ? Int(r * 1.5) + 4 : (k == 0 ? 36 : k == 1 ? 28 : 20)

@@ -43,21 +43,25 @@ extension SnowField {
         f.progress += dt * config.snowmanSpeed / Snowman.seconds[f.built]
         if f.progress >= 1 {
             f.progress = 0; f.built += 1; f.stageAge = 0
-            scoop(si, x: f.foot.x, scale: f.scale, stage: f.built)
+            f.vol += scoop(si, x: f.foot.x, scale: f.scale, stage: f.built)
         }
     }
 
     /// Gathering snow for a ball: lowers the pile around the base (cosine falloff), a share of what is there.
-    private func scoop(_ si: Int, x: Float, scale: Float, stage: Int) {
+    @discardableResult private func scoop(_ si: Int, x: Float, scale: Float, stage: Int) -> Float {
         let rad = 20 * scale, s = surfaces[si], share = Snowman.share[stage - 1]
         let lo = max(column(x - rad), s.c0), hi = min(column(x + rad), s.c0 + s.pile.heights.count - 1)
-        guard lo <= hi else { return }
+        guard lo <= hi else { return 0 }
+        var took: Float = 0
         for c in lo...hi {
             let d = abs(binCenter(c) - x)
             guard d < rad else { continue }
-            surfaces[si].pile.heights[c - s.c0] *= 1 - share * 0.5 * (1 + cos(.pi * d / rad))
+            let h = surfaces[si].pile.heights[c - s.c0], k = share * 0.5 * (1 + cos(.pi * d / rad))
+            took += h * k * Tuning.binWidth
+            surfaces[si].pile.heights[c - s.c0] = h * (1 - k)
         }
         pilesDirty = true
+        return took
     }
 
     /// Widest visible stretch of ground (Dock pile only when no ground is visible) holding a window of
@@ -111,7 +115,7 @@ extension SnowField {
                 let (c, rad) = circle(a, f, k)
                 let t = min(max(((c.x - ax) * dx + (c.y - ay) * dy) / len2, 0), 1)
                 let ex = ax + t * dx - c.x, ey = ay + t * dy - c.y
-                if ex * ex + ey * ey <= (r + rad) * (r + rad) { shatter(f.id, velocity: v); break }
+                if ex * ex + ey * ey <= (r + rad) * (r + rad) { shatter(f.id, velocity: v, burst: true); break }
             }
         }
     }
