@@ -2,7 +2,7 @@
 // Window top y = 500, x 200...500, piles built by direct deposits (`pileField` full, `lightField` 3 rounds). A sweep clears only its path (the snow heaps ahead of the cursor, or to both sides for a vertical pass; nothing sprays at the cursor on a full pile),
 //   a sweep above the pile removes nothing, debris flies in the cursor direction from the run end, the dragged window's pile is not swept, falling flakes part around a still pointer and a distant pointer does nothing. "Soft dent": a swipe never pops a
 //   column, faster cuts deeper (Tuning.plowFloor leaves a thin layer), volume is conserved between pile, debris and `sweepOwed`, Reduce Motion / pointerPush off leave piles alone, a heap respects the ceiling cap, grows with more pushing and is not trimmed by
-//   snowfall. Heap persistence: survives a Space round trip, a `resize`, moving its window; a tall heap is drawn at full height. `plowMicrobench` only prints timing.
+//   snowfall. Heap persistence: survives a Space round trip, a `resize`, moving its window; a tall heap is drawn at full height. Slow deliberate strokes (150 pt/s) build a heap >= 8 pt over the pile limit. `plowMicrobench` only prints timing.
 
 import CoreGraphics
 import Testing
@@ -116,10 +116,11 @@ private func swipe(_ f: SnowField, speed: Float, y: CGFloat = 505, settle: Int =
 @Test func fasterSwipeCutsDeeperAndSlowHoverOnlySifts() {
     let slow = pileField(), fast = pileField()
     let before = slow.pile(id: 1)!.heights.reduce(0, +)
-    _ = swipe(slow, speed: 60); _ = swipe(fast, speed: 1200)
+    _ = swipe(slow, speed: 20);  // below Tuning.plowSlowSpeed: a hover
+    _ = swipe(fast, speed: 1200)
     let rs = before - slow.pile(id: 1)!.heights.reduce(0, +), rf = before - fast.pile(id: 1)!.heights.reduce(0, +)
     #expect(rs > 0)
-    #expect(rf > 2 * rs)
+    #expect(rf > 1.3 * rs)   // the hover is slow, so it spends more frames at the same 0.6 pt depth: only the ratio shrank
 }
 
 @Test func swipeConservesVolumeBetweenPileAndDebris() {
@@ -312,4 +313,18 @@ private func heapPeak(_ f: SnowField) -> Float { f.pile(id: 1)!.heights.max() ??
     f.pilesDirty = true
     let top = pileSegs(f).filter { $0.x0 > 200 && $0.x1 < 500 }.map { max($0.top0, $0.top1) }.max() ?? 0
     #expect(top - f.surfaces[si].edgeY > 140)
+}
+
+@Test func slowDeliberatePushesBuildAVisibleHeap() {
+    let f = pileField()
+    let d0 = f.debris.count
+    let v0 = volume(f) + carried(f)
+    for _ in 0..<10 {   // 150 pt/s strokes, 60 Hz, back over the same stretch
+        for i in 0..<60 { let x = 240 + CGFloat(i) * 2.5; f.sweep(from: CGPoint(x: x, y: 505), to: CGPoint(x: x + 2.5, y: 505), radius: 10, dt: 1 / 60) }
+    }
+    let p = f.pile(id: 1)!
+    let over = p.heights.indices.map { p.heights[$0] - p.rawLimit($0) }.max() ?? 0
+    #expect(over >= 8)
+    #expect(abs(volume(f) + carried(f) - v0) < 1)
+    #expect(f.debris.count == d0)   // nothing sprays at the cursor
 }

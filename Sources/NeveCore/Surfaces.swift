@@ -6,7 +6,7 @@
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
 //   gifts; cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
-//   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides
+//   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (dent depth per pass: Tuning.plowHoverDepth 0.6 pt below plowSlowSpeed 40 pt/s, else speed/150 clamped to plowSlowDepth 2 ... plowMaxDepth 6 pt; Tuning.plowFloor stays on the window)
 //   (cursor `berm`, not DockPush.berm); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
@@ -453,7 +453,7 @@ extension SnowField {
         let lo = min(ay, ay + dy) - r, hi = max(ay, ay + dy) + r
         let first = debris.count
         let speed = len2.squareRoot() / dt, share = min(len2.squareRoot() / (1.33 * r), 1)
-        let depth = min(max(speed / 150, 0.6), 6)   // total dent depth of a pass (pt): a slow brush barely marks, a fast swipe cuts
+        let depth = speed < Tuning.plowSlowSpeed ? Tuning.plowHoverDepth : min(max(speed / 150, Tuning.plowSlowDepth), Tuning.plowMaxDepth)   // total dent depth of a pass (pt): a hover barely marks, a slow deliberate push still moves ~2pt, a fast swipe cuts up to 6
         let horizontal = abs(dx) >= abs(dy)
         var owed: Float = 0, ox: Float = 0, oy: Float = 0, cx: Float = 0, cy: Float = 0, sum: Float = 0
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)

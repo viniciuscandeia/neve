@@ -112,7 +112,7 @@ private func playOut(_ f: SnowField, limit: Float = 90, each: () -> Void = {}) {
     let g = field(speed: 30)
     home(g, x: 300)
     advance(g, 5, fps: 20)
-    g.startRabbit()
+    _ = g.startRabbit()
     #expect(!rabbits(g).isEmpty)
     g.setCalm(true)   // calm mid-visit: it leaves at once, the nose is whole
     advance(g, 0.5)
@@ -190,14 +190,14 @@ private func startTimes(_ f: SnowField, minutes: Float, full: Bool = false) -> (
     let g = field()
     home(g, x: 300)
     g.economy = true
-    g.startRabbit()
+    _ = g.startRabbit()
     g.request(.rabbit, after: 0)
     advance(g, 3, fps: 20)
     #expect(g.director.started == 0 && rabbits(g).count == 1)
     // the full cap of three
     let h = field()
     home(h, x: 300)
-    for _ in 0..<3 { h.startRabbit() }
+    for _ in 0..<3 { _ = h.startRabbit() }
     h.request(.rabbit, after: 0)
     advance(h, 3, fps: 20)
     #expect(h.director.started == 0 && rabbits(h).count == 3)
