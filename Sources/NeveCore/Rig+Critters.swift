@@ -18,12 +18,13 @@ public struct RabbitLook {
 }
 
 extension Rig {
-    static let rabbitFur = C(0.93, 0.95, 0.99, 1), earPink = C(0.95, 0.75, 0.80, 1), pom = C(1, 1, 1, 1)
-
-    static let rimLight = C(0.85, 0.92, 1.0, 1)
-    /// Faint top rim light under a body ellipse so dark parts read on dark wallpapers.
+    static var rabbitFur: C { c4(Palette.rabbitFur.now) }
+    static var earPink: C { c4(Palette.earPink.now) }
+    static var pom: C { c4(Palette.trim.now) }
+    static var rimLight: C { c4(Palette.rim.now) }
+    /// Faint rim light on the lit side (toward `Palette.light`) under a body ellipse so dark parts read on dark wallpapers.
     static func rim(_ c: V, _ r: V, _ al: Float, _ s: Float, into w: inout PrimWriter) {
-        w.ellipse(center: c + V(0, 0.6 * s), radii: r * 0.97, color: a(rimLight, 0.35 * al))
+        w.ellipse(center: c + Palette.light * (0.6 * s), radii: r * 0.97, color: a(rimLight, 0.35 * al))
     }
 
     /// Rabbit: ground shadow, ears (inner pink), haunch, chest, head with a coal eye and pink nose, white pom tail, optional carrot in the mouth.

@@ -17,7 +17,9 @@ public struct PenguinLook {
 }
 
 extension Rig {
-    static let penguinBack = C(0.12, 0.13, 0.16, 1), penguinBelly = C(0.97, 0.98, 1, 1), penguinOrange = C(0.96, 0.52, 0.12, 1)
+    static var penguinBack: C { c4(Palette.penguinBack.now) }
+    static var penguinBelly: C { c4(Palette.penguinBelly.now) }
+    static var penguinOrange: C { c4(Palette.carrot.now) }
 
     /// Penguin: dark back, white belly, orange beak and feet, coal eye, two flippers; the body rotates about its middle, and about the belly contact (dropped onto the snow) as it lies down.
     public static func penguin(_ l: PenguinLook, contrast: Bool, into w: inout PrimWriter) {
@@ -36,7 +38,7 @@ extension Rig {
         let sw = l.flap * 0.5 * m
         let fb = p(-0.5, 12.5), ft = rot(p(-5.2, 7.2), fb, sw)
         w.capsule(from: fb, to: ft, width: 2.6 * s, color: back)                          // far flipper
-        w.ellipse(center: p(0, 10.6), radii: r(6.1, 9.0), rotation: a, color: Rig.a(rimLight, 0.35 * al))   // top rim light
+        w.ellipse(center: p(0, 10) + Palette.light * (0.6 * s), radii: r(6.1, 9.0), rotation: a, color: Rig.a(rimLight, 0.35 * al))   // top rim light
         ell(0, 10, 6.3, 9.3, back)                                                        // body
         w.ellipse(center: p(1.2, 8.8), radii: r(4.7, 7.5), rotation: a, color: Rig.a(contrast ? shadowHC : shadow, (contrast ? 0.9 : 0.5) * al))   // blue outline so the belly reads on white
         ell(1.2, 8.8, 4.2, 7.0, white)                                                    // belly

@@ -16,7 +16,10 @@ public struct RobinLook {
 }
 
 extension Rig {
-    static let robinBack = C(0.45, 0.33, 0.24, 1), robinBreast = C(0.85, 0.38, 0.20, 1), robinWing = C(0.36, 0.26, 0.19, 1), robinBeak = C(0.16, 0.14, 0.12, 1)
+    static var robinBack: C { c4(Palette.fawn.now) }
+    static var robinBreast: C { c4(Palette.robinBreast.now) }
+    static var robinWing: C { c4(Palette.robinWing.now) }
+    static var robinBeak: C { c4(Palette.robinBeak.now) }
 
     /// Robin: back, red-orange breast, head with beak and coal eye, tail, legs when perched; wings flap by alternating scaleY while flying.
     public static func robin(_ l: RobinLook, contrast: Bool, into w: inout PrimWriter) {

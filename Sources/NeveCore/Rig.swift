@@ -43,8 +43,11 @@ public enum Rig {
     static var shadowHC: C { c4(Palette.shadowHC.now) }
     static var speckle: C { c4(Palette.speckle.now, 0.85) }
     static var shotSnow: C { c4(Palette.lift.now) }
-    static let carrot = C(0.96, 0.52, 0.12, 1), scarfRed = C(0.82, 0.17, 0.20, 1), twig = C(0.38, 0.25, 0.14, 1), coal = C(0.13, 0.14, 0.16, 1)
-    static let stripe = C(0.98, 0.88, 0.86, 0.9)
+    static var carrot: C { c4(Palette.carrot.now) }
+    static var scarfRed: C { c4(Palette.red.now) }
+    static var twig: C { c4(Palette.twig.now) }
+    static var coal: C { c4(Palette.coal.now) }
+    static var stripe: C { c4(Palette.stripe.now, 0.9) }
     /// Rolling speckles: (radius fraction, angle, size fraction).
     static let specks: [SIMD3<Float>] = [SIMD3(0.55, 0.5, 0.095), SIMD3(0.72, 2.4, 0.12), SIMD3(0.3, 4.0, 0.08),
                                          SIMD3(0.8, 5.3, 0.10), SIMD3(0.45, 3.0, 0.07), SIMD3(0.62, 1.5, 0.065)]

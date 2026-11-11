@@ -107,7 +107,7 @@ extension SnowField {
 
     /// Frost lip: a pale blue-white line 0.8pt under the bottom edge and its rounded corners, plus a faint haze at each lower corner.
     func writeFrostPrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
-        let col = SIMD3<Float>(0.85, 0.93, 1.0), sc = Rig.a(contrast ? Rig.shadowHC : Rig.shadow, 0.25)
+        let col = Palette.frost.now, sc = Rig.a(contrast ? Rig.shadowHC : Rig.shadow, 0.25)
         // Frost capsule with a faint shadow capsule 0.8 pt below it, so the lip reads on light backgrounds.
         func lip(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ al: Float, _ w: inout PrimWriter, _ cover: [CGRect], _ sh: SIMD2<Float>) {
             clipSegment(a, b, cover, 0) { a, b in   // a, b unshifted (window-local); drawn shifted

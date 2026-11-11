@@ -10,6 +10,15 @@ import Testing
         #expect(Palette.snow.dark.x < Palette.snow.light.x && Palette.flake.dark.x < Palette.flake.light.x)   // dark mode softens the white
         #expect(Palette.shadowAlpha.dark > Palette.shadowAlpha.light && Palette.rimAlpha.dark == 0)
     }
+    @Test func extrasHaveBothAppearancesAndFollowTheBlend() {
+        #expect(Palette.extras.count == 25 && Palette.all.count >= 39)
+        for (name, t) in Palette.extras { #expect(t.light != t.dark, "\(name)") }
+        for t in [Palette.rabbitFur, Palette.penguinBelly, Palette.trim, Palette.frost] { #expect(t.dark.max() < t.light.max() || t.dark.x < t.light.x) }   // whites soften
+        let d = Palette.dark; defer { Palette.dark = d }
+        Palette.dark = 0; let l = Rig.penguinBelly
+        Palette.dark = 1; let k = Rig.penguinBelly
+        #expect(l.x > k.x && Rig.carrot.x != l.x || Rig.carrot.x == Palette.carrot.dark.x)
+    }
     @Test func lightIsUnitAndFromAbove() {
         #expect(abs(Palette.light.x * Palette.light.x + Palette.light.y * Palette.light.y - 1) < 1e-5 && Palette.light.y > 0.98 && Palette.light.x < 0)
     }

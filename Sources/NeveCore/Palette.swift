@@ -50,9 +50,38 @@ public enum Palette {
     public static let ice = Tone(SIMD3(0.80, 0.90, 1.0), SIMD3(0.74, 0.85, 0.97))         // icicle fill
     public static let iceEdge = Tone(SIMD3(0.45, 0.62, 0.85), SIMD3(0.40, 0.57, 0.80))
     public static let iceShine = Tone(SIMD3(1, 1, 1), SIMD3(0.95, 0.97, 1))
+    // Optional extras (snowman, penguin, rabbit, robin, sleigh, gifts, frost). Dark: softened whites, a little less saturation, dark parts lifted so they do not vanish.
+    public static let carrot = Tone(SIMD3(0.96, 0.52, 0.12), SIMD3(0.90, 0.52, 0.18))     // carrot nose, penguin beak and feet
+    public static let red = Tone(SIMD3(0.82, 0.17, 0.20), SIMD3(0.76, 0.22, 0.24))        // scarf, sleigh, Santa's suit
+    public static let stripe = Tone(SIMD3(0.98, 0.88, 0.86), SIMD3(0.90, 0.82, 0.81))     // scarf stripes
+    public static let twig = Tone(SIMD3(0.38, 0.25, 0.14), SIMD3(0.42, 0.30, 0.20))       // arms, antlers
+    public static let coal = Tone(SIMD3(0.13, 0.14, 0.16), SIMD3(0.16, 0.17, 0.19))       // eyes, buttons
+    public static let rabbitFur = Tone(SIMD3(0.93, 0.95, 0.99), SIMD3(0.86, 0.88, 0.93))
+    public static let earPink = Tone(SIMD3(0.95, 0.75, 0.80), SIMD3(0.88, 0.72, 0.76))
+    public static let trim = Tone(SIMD3(1, 1, 1), SIMD3(0.93, 0.94, 0.97))                // pom tail, Santa's trim, gift ribbon
+    public static let rim = Tone(SIMD3(0.85, 0.92, 1.0), SIMD3(0.80, 0.87, 0.96))         // faint rim light on dark parts
+    public static let penguinBack = Tone(SIMD3(0.12, 0.13, 0.16), SIMD3(0.17, 0.18, 0.22))
+    public static let penguinBelly = Tone(SIMD3(0.97, 0.98, 1), SIMD3(0.88, 0.90, 0.94))
+    public static let fawn = Tone(SIMD3(0.45, 0.33, 0.24), SIMD3(0.48, 0.37, 0.28))       // robin back, reindeer
+    public static let robinBreast = Tone(SIMD3(0.85, 0.38, 0.20), SIMD3(0.80, 0.40, 0.24))
+    public static let robinWing = Tone(SIMD3(0.36, 0.26, 0.19), SIMD3(0.41, 0.31, 0.24))
+    public static let robinBeak = Tone(SIMD3(0.16, 0.14, 0.12), SIMD3(0.20, 0.18, 0.16))
+    public static let gold = Tone(SIMD3(0.95, 0.75, 0.20), SIMD3(0.88, 0.72, 0.28))
+    public static let skin = Tone(SIMD3(0.96, 0.80, 0.68), SIMD3(0.88, 0.74, 0.64))
+    public static let reins = Tone(SIMD3(0.30, 0.20, 0.12), SIMD3(0.38, 0.27, 0.18))
+    public static let sack = Tone(SIMD3(0.62, 0.46, 0.28), SIMD3(0.58, 0.45, 0.30))
+    public static let rudolph = Tone(SIMD3(0.95, 0.15, 0.10), SIMD3(0.88, 0.20, 0.15))    // red nose of the lead reindeer
+    public static let deerTail = Tone(SIMD3(0.85, 0.80, 0.70), SIMD3(0.80, 0.76, 0.68))
+    public static let giftRed = Tone(SIMD3(0.86, 0.18, 0.20), SIMD3(0.80, 0.24, 0.25))
+    public static let giftGreen = Tone(SIMD3(0.16, 0.55, 0.28), SIMD3(0.20, 0.50, 0.30))
+    public static let giftInside = Tone(SIMD3(0.12, 0.07, 0.08), SIMD3(0.14, 0.09, 0.10))
+    public static let frost = Tone(SIMD3(0.93, 0.96, 0.99), SIMD3(0.84, 0.88, 0.94))      // neutral icy white, a hint of cool
     /// Every colour, for tests.
-    public static let all: [(String, Tone)] = [("snow", snow), ("lift", lift), ("flake", flake), ("shade", shade), ("deep", deep), ("shadow", shadow), ("shadowHC", shadowHC),
+    public static let all: [(String, Tone)] = extras + [("snow", snow), ("lift", lift), ("flake", flake), ("shade", shade), ("deep", deep), ("shadow", shadow), ("shadowHC", shadowHC),
                                                ("glint", glint), ("dropFill", dropFill), ("dropEdge", dropEdge), ("speckle", speckle), ("ice", ice), ("iceEdge", iceEdge), ("iceShine", iceShine)]
+    static let extras: [(String, Tone)] = [("carrot", carrot), ("red", red), ("stripe", stripe), ("twig", twig), ("coal", coal), ("rabbitFur", rabbitFur), ("earPink", earPink), ("trim", trim), ("rim", rim),
+        ("penguinBack", penguinBack), ("penguinBelly", penguinBelly), ("fawn", fawn), ("robinBreast", robinBreast), ("robinWing", robinWing), ("robinBeak", robinBeak), ("gold", gold), ("skin", skin),
+        ("reins", reins), ("sack", sack), ("rudolph", rudolph), ("deerTail", deerTail), ("giftRed", giftRed), ("giftGreen", giftGreen), ("giftInside", giftInside), ("frost", frost)]
 
     // Scalars: (light, dark).
     public static let crestAlpha: Float = 0.9

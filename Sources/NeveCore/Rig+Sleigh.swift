@@ -14,9 +14,14 @@ public struct SleighLook {
 }
 
 extension Rig {
-    static let sleighRed = C(0.82, 0.17, 0.20, 1), gold = C(0.95, 0.75, 0.20, 1), white = C(1, 1, 1, 1), reindeer = C(0.45, 0.33, 0.24, 1)
-    static let skin = C(0.96, 0.80, 0.68, 1), reins = C(0.30, 0.20, 0.12, 1), sack = C(0.62, 0.46, 0.28, 1), giftGreen = C(0.16, 0.55, 0.28, 1)
-    static let giftColors: [C] = [C(0.86, 0.18, 0.20, 1), giftGreen, gold]
+    static var sleighRed: C { c4(Palette.red.now) }
+    static var gold: C { c4(Palette.gold.now) }
+    static var white: C { c4(Palette.trim.now) }
+    static var reindeer: C { c4(Palette.fawn.now) }
+    static var skin: C { c4(Palette.skin.now) }
+    static var reins: C { c4(Palette.reins.now) }
+    static var sack: C { c4(Palette.sack.now) }
+    static var giftColors: [C] { [c4(Palette.giftRed.now), c4(Palette.giftGreen.now), gold] }
 
     /// Red sleigh with gold runner, Santa (red suit, white trim), 2...4 reindeer with twig antlers, harness line. Local x forward, y up.
     public static func sleigh(_ l: SleighLook, contrast: Bool, into w: inout PrimWriter) {
@@ -66,8 +71,8 @@ extension Rig {
             w.capsule(from: p(x + 4, -1.5 + yb), to: p(x + 4 - sw, -10), width: 1.2 * s, color: reindeer)
             w.capsule(from: p(x + 4.5, 1 + yb), to: p(x + 8.5, 6 + yb), width: 2.4 * s, color: reindeer)
             w.ellipse(center: p(x + 10.5, 6.8 + yb), radii: r(2.7, 1.7), rotation: -0.3 * m, color: reindeer)
-            w.ellipse(center: p(x + 13, 6.3 + yb), radii: r(k == n - 1 ? 1.2 : 0.8, k == n - 1 ? 1.2 : 0.8), color: k == n - 1 ? C(0.95, 0.15, 0.10, 1) : coal)
-            w.ellipse(center: p(x - 6.8, 1.6 + yb), radii: r(1.4, 1.4), color: C(0.85, 0.80, 0.70, 1))
+            w.ellipse(center: p(x + 13, 6.3 + yb), radii: r(k == n - 1 ? 1.2 : 0.8, k == n - 1 ? 1.2 : 0.8), color: k == n - 1 ? c4(Palette.rudolph.now) : coal)
+            w.ellipse(center: p(x - 6.8, 1.6 + yb), radii: r(1.4, 1.4), color: c4(Palette.deerTail.now))
             w.capsule(from: p(x + 9.6, 8 + yb), to: p(x + 7.6, 13.4 + yb), width: 0.8 * s, color: twig)
             w.capsule(from: p(x + 8.2, 11.2 + yb), to: p(x + 10.8, 12.8 + yb), width: 0.7 * s, color: twig)
             w.capsule(from: p(x + 10.6, 8 + yb), to: p(x + 11.6, 13.4 + yb), width: 0.8 * s, color: twig)
@@ -93,7 +98,7 @@ extension Rig {
         w.quad(p(-h, -h), p(h, -h), p(h, h), p(-h, h), color: col)
         w.quad(p(-0.8, -h), p(0.8, -h), p(0.8, h), p(-0.8, h), color: rib)
         w.quad(p(-h, -0.8), p(h, -0.8), p(h, 0.8), p(-h, 0.8), color: rib)
-        if open { w.ellipse(center: p(0, h), radii: V(h * 0.85, 1.2), color: a(C(0.12, 0.07, 0.08, 1), 0.85 * al)) }
+        if open { w.ellipse(center: p(0, h), radii: V(h * 0.85, 1.2), color: a(c4(Palette.giftInside.now), 0.85 * al)) }
         if !g.falling { w.ellipse(center: c + V(0, -0.2 * g.size), radii: V(h * 1.1, 1.5), color: a(lift, al)) }   // snow lip over the base
         if open, g.opened < Tuning.lidLife {   // the lid pops up and away, spinning
             let u = g.opened, d: Float = g.color == 1 ? -1 : 1
