@@ -5,6 +5,7 @@
 //   then calls avalancheImpact). `addPuff`/`stepPuffs` (shape 3, `delay` = life Tuning.puffLife, rise 6 pt/s). `stepGlints` (sparkles on crests of piles >= 6 pt, <= Tuning.maxGlints, one per 2 s; off when calm / economy /
 //   lowPower / quiet (outro or melt): live ones fade). `dropBlocks` (vanished-window pile -> INTACT slabs, amp = 1, packed profile via `Flake.pack`, held `delay` so they release in a ripple at Tuning.rippleSpeed from originX), `slabHit`,
 //   `breakSlab`, `trailPowder` (stepDebris's helpers for those slabs), `put` (cap-checked append), `crestY`.
+// Origin z (`Flake.oz`, Debris.swift): `put` stamps `spawnZ` on pieces that carry none; `shedBin` infers the window of a run from its column / height (`oz:` overrides it: the Dock passes .max), `flushRuns` / `impact` / `dropEave` / avalanche slabs spawn under it, `breakSlab` / `trailPowder` pieces inherit the parent's.
 // Cornice: `stepEaves` (every 0.5 s from SnowField.step: feeds / melts `Pile.eaveL/R` at bare window ends) and `dropEave` (the overflowing cornice falls as one block, fxRng).
 // Callers of shedBin/flushRuns/dropBlocks: Surfaces.swift, Avalanche, DockPush.berm, Figures+Robin. Units: pt, pt/s, `vol` = pt^2 (conserved: deposited where the debris lands). Uses `rng` (not fxRng). Rendering: Render.writeInstances.
 // Gotcha: a glint rides the DRAWN crest (`crestY` of eased `shown`); it stores the GLOBAL column in `phase` and the surface's frame.minX at birth in `vol`, so a window that moved without a drag fades it.
@@ -24,7 +25,7 @@ struct RunBin {
 extension SnowField {
     /// Snow of one column slice [from, from+amount] falls. Consecutive columns (up to 8 = 16pt, same velocity) are collected and
     /// emitted together by `flushRuns`, which every releasing entry point calls when it is done; this returns what an earlier run flushed.
-    func shedBin(col: Int, edgeY: Float, from: Float, amount h: Float, velocity v: SIMD2<Float>) -> Int {
+    func shedBin(col: Int, edgeY: Float, from: Float, amount h: Float, velocity v: SIMD2<Float>, oz: UInt16? = nil) -> Int {
         guard h > 0.5, !silent else { return 0 }
         var n = 0
         if let last = runBins.last, col != last.col + 1 || runBins.count == 8 || v != runV { n = flushRuns() }
@@ -32,7 +33,7 @@ extension SnowField {
             var z = UInt16.max, best = -Float.infinity
             let c = min(max(col, 0), offsets.count - 2)
             for k in Int(offsets[c])..<Int(offsets[c + 1]) where entries[k].edgeY <= edgeY + from + 1 && entries[k].edgeY > best { best = entries[k].edgeY; z = originZ(si: Int(entries[k].surface)) }
-            runZ = z
+            runZ = oz ?? z
         }
         runBins.append(RunBin(col: col, y: edgeY + from, h: h))
         runV = v

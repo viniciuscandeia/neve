@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Snowball.swift  (user snowballs: scoop, roll, drop, stack into snowmen)
+// Origin z: `pop` stamps its debris with the ball's surface z (`originZ(id:)`, Debris.swift).
 // Role: `Snowball` (id, state held / falling / resting, pos, radius, parent link for stacks, vel, spin, face for a loose head, melting, fade, surfaceID) in `SnowField.balls`, and the interaction API the overlay calls while Option is held:
 //   `hitTest(point:)` (over a ball, figure, gift, the tree or visible, uncovered snow (window piles from their top edge up; covered pile / gift / tree / figure ignored via `openAt`) => the panel becomes interactive), `pickSnowball(at:)` (nearest ball with nothing on top; also the top of a stacked / headless snowman, which `demote`s into balls),
 //   `scoop(at:)` (needs half a ballStart-radius disc of snow within +-8 columns, takes at most half of each column; radius Tuning.ballStart 5; above Tuning.maxBalls 6 the oldest free ball melts away), `drag(_:to:dt:)` (on a surface the ball

@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/DockPush.swift  (Dock bar resize pushes the ground snow)
+// Origin z: the berm's shedBin call passes `oz: .max` (Dock origin = behind every window; Debris.swift).
 // Role: the Dock's frame read by Sources/Neve (`dockTarget`, arrives in the window list as WindowInfo number 0) is approached by the animated `dockCur` (minX/maxX move at Tuning.dockSpeed 800 pt/s) so a jump reads as a gradual push.
 //   `effective(_:)` (called from Surfaces.swift's window update) swaps the animated Dock rect into the window list; a new, vertically moved, disjoint or `frozen` Dock snaps. `stepDock` (in SnowField.step) advances dockCur, rebuilds surfaces
 //   (`dockIsolated`: only Dock + ground when no later window overlaps its reach) and, for Tuning.dockSlumpTime, relaxes the bank around both ends via zero-volume deposits. `berm` banks plowed ground snow ahead of a growing end through
@@ -76,7 +77,7 @@ extension SnowField {
         }
         guard left > 0.5, !calm else { return 0 }
         let c = min(max(b0, 0), numCols - 1)
-        return shedBin(col: c, edgeY: 0, from: pile.heights[c], amount: left, velocity: SIMD2(Float(dir) * Tuning.dockSpeed * 0.5, 0))
+        return shedBin(col: c, edgeY: 0, from: pile.heights[c], amount: left, velocity: SIMD2(Float(dir) * Tuning.dockSpeed * 0.5, 0), oz: .max)
     }
 }
 

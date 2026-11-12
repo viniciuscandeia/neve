@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/SnowField.swift  (the per-screen simulation: state + lifecycle + the step() order)
+// Origin z for debris: `spawnZ` (stamped by put / addDebris, set with `withSpawnZ`) and `runZ` (the pending shed run); see Debris.swift.
 // Role: `SnowField` (final class, one per screen, owned by an Overlay) holds ALL simulation state and `step(dt:)`; behaviour is split into `extension SnowField` across many files (Surfaces, SurfaceMap, SurfaceSet (the surface list and its derived structures live in the `sset` struct), Render, Flakes, Effects,
 //   Avalanche, Frost, Icicles, Drips, Melt, DockPush, DockSpill, Coverage, Resize, Figures*, Fights, Walk, Snowball, Snowman, Gifts, Tree (+ Rig+Tree), CursorThrow, EventDirector wiring, Scene). Also `BusyReasons` (why the frame rate must be 60) and `Stashed`.
 //   Pure data/logic: no AppKit, no I/O, no wall clock; time = sum of dt (`time`) plus a monotonic `clock` the app feeds through update(now:); randomness = SplitMix64 `rng`/`fxRng` seeded in init => deterministic tests (DeterminismTests).

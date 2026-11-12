@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Figures+Penguin.swift  (penguin visitor: waddle, belly slide, groove plowing)
+// Origin z: the plow spray debris is stamped with the penguin's surface z (`originZ(si:)`, Debris.swift).
 // Role: Tuning.penguin* constants, `PenguinState` (Stage: rise 0.4 s, waddle, flop 0.2 s, slide, stand 0.3 s, air, sink 0.45 s; `life` 20-40 s from startPenguin) and the SnowField code for `Figure.kind == .penguin`.
 //   `startPenguin` (window tops only, never ground / Dock; first visible run >= penguinMinRun 200 pt with mean h >= 3; one penguin at a time; off in ground-only mode) places it at 25-75 % of the run. It waddles 18 pt/s (rock 8 deg at 2.5 Hz);
 //   when 120 pt ahead carry snow (mean h >= 3) and 4 s have passed since the last slide it flops onto its belly and slides from 90 pt/s, braking 8 + 1.5 * depth ahead pt/s^2, plowing a trench via `Pile.plow` (`plowPath`: penguinGroove 2.5 pt

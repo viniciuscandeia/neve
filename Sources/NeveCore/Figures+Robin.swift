@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Figures+Robin.swift  (robin visitor + story state)
+// Origin z: the carve crumbs are stamped with the robin's surface z (`withSpawnZ(originZ(si:))`, Debris.swift).
 // Role: Tuning.robin* constants, `RobinState` (Stage fly -> hop -> perch -> shake -> leave; stay 8-20 s) with the stepping code for `.robin` figures, and `StoryState` (EventDirector.story). `startRobin` (not in ground-only mode, one at a time)
 //   picks `robinSpot`: the fullest pile on a window top with a visible run >= robinRun 80 pt, and flies in from the nearer screen edge on a sine path (amp 12, wave 80, 60 pt/s). It hops 2-3 times, perches, shakes at robinShakeAt 2 s (carves
 //   a 10 pt wide, 1.5 pt deep dent, 3 clumps fall). `startled` (shot landing within robinShot, a cursor > 300 pt/s within robinCursor, an impact within robinImpact, or its window moving > robinSurfaceSpeed) triggers `knock` + a fast

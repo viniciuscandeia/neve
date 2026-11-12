@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Figures.swift  (actors: Figure data model + snowman stepping core)
+// Origin z: `shatter` stamps its chunks with the figure's surface z (`originZ(id:)`, Debris.swift).
 // Role: `FigureKind` (snowman, rabbit, penguin, sleigh, robin), `Phase` (building, idle, walking, fighting, cheering, collapsing, hidden), `Attachment` (on surface id at x, or air), `Motion` (walk / fight bookkeeping), `Xfer` (hop between adjacent
 //   surfaces, ground <-> Dock), `Anchors` (ball centres, throwing hand, ground height) and `Figure` (ONE struct for every actor: `kind` selects behaviour; per-kind state RobinState / Critter / PenguinState / SleighState lives in the
 //   Figures+<Kind>.swift files). SnowField extension: `stepFigures` (visitors fade with melt/outro/dying, dispatch to stepRabbit/Robin/Penguin/Sleigh or the snowman body of `stepFigure`; then, only when walking and not calm/melting:

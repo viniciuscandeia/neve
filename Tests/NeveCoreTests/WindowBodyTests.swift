@@ -28,8 +28,16 @@ private func reach(_ f: SnowField, x: Float, y: Float, vx: Float, oz: UInt16) ->
 
 @Test func debrisLeavingAFrontWindowCrossesABackWindowOutline() {
     let f = makeField()
-    f.update(windows: [win(1, 100, 200, 200, 150), win(2, 320, 100, 380, 300)])   // 1 in front (x 100...300), 2 behind and beside it (x 320...700)
-    #expect(reach(f, x: 302, y: 320, vx: 300, oz: 0) > 340)
+    f.update(windows: [win(1, 100, 200, 200, 150), win(2, 320, 100, 130, 300)])   // 1 in front (x 100...300), 2 behind and beside it (x 320...450, y 100...400); past it the ground is open
+    func beyondWall() -> Float { f.surfaces.reduce(0) { t, s in t + s.pile.heights.indices.reduce(0) { $0 + ((Float(s.c0 + $1) + 0.5) * Tuning.binWidth >= 320 ? s.pile.heights[$1] : 0) } } }
+    let g = f.surfaces.firstIndex { $0.id == Tuning.groundID }!   // a bare ground is tunnelled by fast pieces: give it a 12 pt layer past the back window so they land
+    for b in f.surfaces[g].pile.heights.indices where (Float(b) + 0.5) * Tuning.binWidth >= 460 { f.surfaces[g].pile.heights[b] = 12 }
+    let before = beyondWall()
+    #expect(reach(f, x: 302, y: 320, vx: 600, oz: 0) > 340)
+    for _ in 0..<200 { f.step(dt: 1 / 60) }
+    #expect(f.debris.isEmpty)               // landed, not stuck
+    #expect(beyondWall() > before)          // its snow is in a pile past the back window wall, on the ground beyond it (under the window the ground is not open), never above that window top (y 400)
+    #expect(f.surfaces.allSatisfy { s in s.pile.heights.indices.allSatisfy { s.edgeY + s.pile.base[$0] + s.pile.heights[$0] <= 400.5 } })
 }
 
 @Test func debrisFromABackWindowStillStopsAtAFrontWindowWall() {

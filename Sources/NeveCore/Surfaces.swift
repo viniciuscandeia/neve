@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
+// Origin z: the spawn sites here (stepOverflow lumps, `spill`, the Dock-over burst chunks, Dock sheds with `oz: .max`) stamp Flake.oz so debris leaving a front window crosses the windows behind it (Debris.swift); shed runs infer it in `shedBin`.
 // Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
 //   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), `cap` = lowest underside of ANY window whose body lies above the bin (geometry, not z; only windows in front HIDE bins), wobble, corner rounding) and `buildGround` (full-width ground pile,
 //   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Tree / Figures.
@@ -287,9 +288,9 @@ extension SnowField {
                 }
                 if swept {
                     let kick = calm || over * Tuning.dockKick <= 0.5 ? 0 : over * Tuning.dockKick
-                    if kick > 0 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: kick, velocity: SIMD2(left ? -Tuning.dockSpeed : Tuning.dockSpeed, 0) * 0.5) }
+                    if kick > 0 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: kick, velocity: SIMD2(left ? -Tuning.dockSpeed : Tuning.dockSpeed, 0) * 0.5, oz: .max) }
                     if left { push.l += over - kick } else { push.r += over - kick }
-                } else if over > 0.5 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero) }
+                } else if over > 0.5 { spawned += shedBin(col: b, edgeY: 0, from: keep, amount: over, velocity: .zero, oz: .max) }
             }
             if let nd {
                 if push.l > 0 { spawned += berm(&pile, from: Int((Float(nd.minX) * invBin - 0.5).rounded(.down)), dir: -1, volume: push.l) }
