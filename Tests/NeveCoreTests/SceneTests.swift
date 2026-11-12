@@ -44,11 +44,14 @@ func demoRun(_ f: SnowField, to t: Float, peak: ((SnowField) -> Void)? = nil) {
     demoRun(f, to: 18.5)
     #expect(f.figures.contains { $0.kind == .robin && !$0.robin.flying })               // landed on the top window
     #expect(f.figures.contains { $0.kind == .snowman && !$0.carrot })                    // the rabbit has the carrot
-    var avalanched = false, burst = 0
+    var avalanched = false, shed = 0
     demoRun(f, to: 21) { avalanched = avalanched || $0.avalancheActive }
     #expect(avalanched && f.chain.started == 1)
-    demoRun(f, to: 25.8) { burst = max(burst, $0.debris.count) }   // Fotos slides away fast at 25 s
-    #expect(burst > 6)   // wavy ceilings: the sliding window may carry a lower stretch of pile
+    demoRun(f, to: 24.9)
+    let x0 = f.surfaces.first { $0.id == 2 }!.frame.minX
+    demoRun(f, to: 25.8) { shed = max(shed, $0.debris.count) }   // Fotos slides away fast at 25 s
+    #expect(x0 - f.surfaces.first { $0.id == 2 }!.frame.minX > 100)   // the slide happened (14 % of its width)
+    #expect(shed >= 1)   // and shed at least a piece of snow (the demo's slide is visually weak: ~2 pieces; it used to pass on an unrelated ground impact at ~22.8 s)
     demoRun(f, to: 29.5)
     #expect(f.figures.contains { $0.kind == .sleigh } || !f.gifts.isEmpty)
     demoRun(f, to: 29.9)

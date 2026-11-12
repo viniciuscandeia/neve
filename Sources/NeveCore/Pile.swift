@@ -82,7 +82,7 @@ public struct Pile {
     mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = []; eaveL = 0; eaveR = 0; owedL = 0; owedR = 0 }
 
     /// Snow a full pile cannot keep in a middle bin `bin` is owed to the nearest end that is not a seam / drift (`supportL/R`); lost only when both ends are supported.
-    static let owedCap: Float = 400   // per end: a long idle full window cannot build a landslide debt
+    static let owedCap: Float = 1500  // per end: a long idle full window cannot build a landslide debt
     mutating func owe(_ v: Float, from bin: Int) {
         let left = bin < heights.count / 2
         if left, !supportL { owedL = min(owedL + v, Self.owedCap) } else if !left, !supportR { owedR = min(owedR + v, Self.owedCap) } else if !supportL { owedL = min(owedL + v, Self.owedCap) } else if !supportR { owedR = min(owedR + v, Self.owedCap) }
@@ -180,7 +180,7 @@ public struct Pile {
     @discardableResult
     mutating func deposit(bin: Int, volume: Float, powder: Bool = false) -> Bool {
         guard bin >= 0, bin < heights.count, open(bin), cap[bin] >= Tuning.minRoom else {
-            if volume > 0, bin >= 0, bin < heights.count, open(bin) { owe(volume, from: bin) }   // landing under a ceiling is not thrown away either
+            if !powder, volume > 0, bin >= 0, bin < heights.count, open(bin) { owe(volume, from: bin) }   // a chunk landing under a ceiling is not thrown away
             return false
         }
         var changed = false
@@ -195,14 +195,17 @@ public struct Pile {
             mixAge(bin, added: heights[bin] - h0, age: 0, weight: Tuning.ageFresh)
             changed = heights[bin] != h0
         } else {
-            var lost = volume   // what the pile does not keep (softness, ceiling, ceiling cap) is owed to the nearest end, see `owe`
+            // Overflow owed to the nearest end: a chunk (powder false) owes everything the pile does not keep; a powder flake owes only what the ceiling cut (softness bounce is the old, silent loss), so a window that is merely
+            // 80-90 % full does not trickle.
+            var lost: Float = 0
             for o in -1...1 {
                 var i = bin + o
                 if i < 0 || i >= heights.count || !open(i) { i = bin }
-                guard cap[i] >= Tuning.minRoom else { continue }
-                let before = heights[i]
-                heights[i] = max(before, min(before + volume * softness(i) * (o == 0 ? 0.5 : 0.25), limit(i)))
-                lost -= heights[i] - before
+                let w: Float = o == 0 ? 0.5 : 0.25
+                guard cap[i] >= Tuning.minRoom else { if !powder { lost += volume * w }; continue }
+                let before = heights[i], want = before + volume * softness(i) * w, lim = limit(i)
+                heights[i] = max(before, min(want, lim))
+                lost += powder ? max(0, want - max(before, lim)) : volume * w - (heights[i] - before)
                 if heights[i] != before { changed = true; mixAge(i, added: heights[i] - before, age: 0, weight: Tuning.ageFresh) }
             }
             if lost > 1e-4 { owe(lost, from: bin) }

@@ -71,3 +71,20 @@ private func totalArea(_ f: SnowField) -> Float {   // pt^2 on every surface, pl
     advance(f, 10, fps: 60)
     #expect(totalArea(f) - a0 + f.bankRefused + f.debris.reduce(0) { $0 + $1.vol } >= carried * 0.98)
 }
+
+/// A window that is only 85 % full under Medium snowfall must not trickle: its flakes owe nothing for the softness bounce, so at most about one lump per 5 s per end leaves it.
+@Test func aMerelyFullWindowDoesNotTrickle() {
+    let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: Tuning.flakes, seed: 3)
+    f.update(windows: [win(1, 300, 300, 800, 300)])
+    let i = f.index[1]!
+    for b in f.surfaces[i].pile.heights.indices { f.surfaces[i].pile.heights[b] = f.surfaces[i].pile.limit(b) * 0.85 }
+    var lumps = 0, prevL: Float = 0, prevR: Float = 0
+    for _ in 0..<(120 * 30) {
+        f.step(dt: 1 / 30)
+        let p = f.surfaces[i].pile
+        if p.owedL < prevL - 0.01 { lumps += 1 }
+        if p.owedR < prevR - 0.01 { lumps += 1 }
+        prevL = p.owedL; prevR = p.owedR
+    }
+    #expect(lumps <= 2 * 120 / 5)   // measured ~21 in 120 s over both ends (the budget is 48); with softness owed too it was ~157
+}

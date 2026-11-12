@@ -29,8 +29,8 @@ extension SnowField {
     }
 
     /// Every 3rd 0.5 s tick (SnowField.step): what full window piles could not keep in a middle bin (`Pile.owedL/R`) drips off the nearest end as ONE lump per end once >= overflowMin
-    /// (half the debt, 6...80 height units, at most every 1.5 s per end, so a burst's debt drains over ~half a minute): drops, not continuous rain. The lump carries its volume and lands again (hash noise: draws no random number, so neither `rng` nor `fxRng` shifts).
-    static let overflowMin: Float = 6
+    /// (the debt, 40...80 height units, at most every 1.5 s per end, so a burst's debt drains over ~half a minute): drops, not continuous rain. The lump carries its volume and lands again (hash noise: draws no random number, so neither `rng` nor `fxRng` shifts).
+    static let overflowMin: Float = 40
     func stepOverflow() {
         guard !quiet, !calm else { return }
         overflowTick += 1
@@ -42,7 +42,7 @@ extension SnowField {
             for left in [true, false] {
                 let owed = left ? p.owedL : p.owedR
                 guard owed >= Self.overflowMin else { continue }
-                let take = min(max(owed / 2, Self.overflowMin), 80, owed), sign: Float = left ? -1 : 1, seed = si &* 7919 &+ Int(time * 997) &+ (left ? 1 : 2)
+                let take = min(owed, 80), sign: Float = left ? -1 : 1, seed = si &* 7919 &+ Int(time * 997) &+ (left ? 1 : 2)
                 func u(_ k: Int) -> Float { Float(noise(seed &* 31 &+ k) + 1) * 0.5 }
                 guard put(Flake(pos: [Float(left ? surfaces[si].c0 : surfaces[si].c0 + last + 1) * Tuning.binWidth, surfaces[si].edgeY + p.base[left ? 0 : last]],
                                 vx: sign * (8 + 17 * u(1)), fall: 10 + 20 * u(2), phase: 0, amp: 0, freq: 0, size: 3 + 2 * u(3),
