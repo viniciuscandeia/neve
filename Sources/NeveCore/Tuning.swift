@@ -74,6 +74,10 @@ public enum Tuning {
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
     static let relaxReach = 8               // Pile.deposit relaxes this many bins either side of the landing (+1 for the trim) ...
     static let relaxPasses = 6              // ... in this many passes
+    static let moundStepVar: Float = 0.25   // +-share the heap repose step varies per column (stable slow noise): the face is not one straight line
+    static let moundRound: Float = 0.12     // pt per bin^2: the sharpest curvature a pushed heap keeps; above it Pile.roundHeap rounds the crest / foot
+    static let plowSlumpTime: Float = 0.5   // s the walls of a scooped gap keep slumping toward repose (spilling some snow back in behind the cursor)
+    static let dockOverSpeed: Float = 500   // pt/s: a push slower than this only heaps against the Dock bar; faster, a speed-scaled share of what rises above the bar's top arcs over onto the Dock pile
     static let moundReach = 9               // a deposit re-checks a pushed heap's allowance this many bins either side
     // Drawn contour (Render.writePiles, Contour.writeGroups): draw only, never changes heights
     static let crestSlope: Float = 0.95     // steepest drawn crest step per bin (a gentle ramp: <= 1 pt per 2 pt step)

@@ -68,6 +68,7 @@ public final class SnowField {
     var sweepOwed: Float = 0     // cursor-dent volume (pt^2) not yet launched as debris
     var slumpClock: Float = 0    // seconds owed to `stepSlump` (fixed 1/60 s substeps, so the slump does not depend on the frame rate)
     var ageClock: Float = 0       // accumulates dt toward the next Pile.ageStep (0.5 s)
+    var sweepSpeed: Float = 0    // pt/s of the cursor push in progress (Surfaces.sweep sets it for `berm`: a fast push crests over the Dock bar)
     var sweptAt = -1.0           // `time` of the last cursor push (Surfaces.sweep): pushed heaps slump toward their repose slope once the blade has moved on
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints

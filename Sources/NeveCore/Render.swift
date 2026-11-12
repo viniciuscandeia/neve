@@ -275,6 +275,12 @@ extension SnowField {
         return n
     }
 
+    /// Slow stable noise (knots every 14 columns, smoothstep) in -1...1.
+    static func lumpNoise(_ rel: Int) -> Float {
+        let r = ((rel % 14) + 14) % 14, g = rel - r, u = Float(r) / 14, w = u * u * (3 - 2 * u)
+        return Float(noise(g &* 3 &+ 77)) * (1 - w) + Float(noise((g + 14) &* 3 &+ 77)) * w
+    }
+
     /// Stable irregularity of a pile top keyed on the window-relative column (travels with the pile), interpolated between every 4th column.
     static func jitter(_ s: Surface, _ i: Int, _ sm: Float) -> Float {
         let rel = s.c0 + i - s.anchor, r = ((rel % 4) + 4) % 4, g = rel - r
@@ -282,7 +288,9 @@ extension SnowField {
         let nz = Float(noise(g)) * (1 - w) + Float(noise(g + 4)) * w
         let r2 = ((rel % 2) + 2) % 2, g2 = rel - r2, w2: Float = r2 == 0 ? 0 : 0.5   // finer octave, interpolated between knots: rounded, never a per-column sawtooth
         let fine = 0.3 * (Float(noise(g2 &* 7 &+ 1013)) * (1 - w2) + Float(noise((g2 + 2) &* 7 &+ 1013)) * w2) * min(sm / 4, 1)
-        return nz * min(sm * 0.08, s.pile.maxes.isEmpty ? 1.5 : 2.5) + fine   // the Dock bank is bigger: a little more texture
+        let tall = max(sm - 20, 0)   // tall heaps: bigger lumps (cap grows with height past 20 pt) plus a slow wide octave; thin piles are unchanged
+        let lump = tall > 0 ? 0.06 * tall * lumpNoise(rel) : 0
+        return nz * min(sm * 0.08, (s.pile.maxes.isEmpty ? 1.5 : 2.5) + 0.012 * tall) + fine + lump   // the Dock bank is bigger: a little more texture
     }
 
     /// THE drawn crest of bin `i` of `s` (ground / Dock runs in writePiles and window groups in Contour.swift): the 1-2-1 blur of the shown heights (`l`, `h`, `r`: the neighbours already resolved for walls / ends) plus the stable jitter,
