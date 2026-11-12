@@ -12,6 +12,7 @@ private func iceField(seed: UInt64 = 1) -> SnowField {
     let f = makeField(seed: seed)
     f.update(windows: [win(1, 100, 500, 200, 150), win(2, 400, 500, 200, 150), win(3, 700, 500, 200, 150)])
     for id in 1...3 { pileUp(f, id: id) }
+    f.chain.cooldownUntil = .infinity   // icicles need ~200 s of undisturbed piles: since avalanches got frequent (spontaneous after 60 s full) a full window would shed first, and this suite is about icicles
     return f
 }
 
@@ -130,4 +131,23 @@ private func stackedField(seed: UInt64) -> SnowField {
     f.breakIcicle(0, .zero)
     #expect(f.pileVersion == v && f.icicles.count == n - 1 && f.debris.count >= d + 2)
     #expect(f.writeInstances(to: p) >= drawn0 + 2)
+}
+
+/// Frequency: a full window lets go on its own within ~6 min (after the 60 s "full" wait, p = dt/240 per second) in most runs; slowly moving a full window (60..150 pt/s) also releases snow.
+@Test func fullWindowLetsGoSpontaneouslyWithinSixMinutesAndOnASlowMove() {
+    var went = 0
+    for seed in 1...20 as ClosedRange<UInt64> {
+        let f = makeField(seed: seed)
+        f.update(windows: [win(1, 200, 400, 400, 150)])
+        pileUp(f, id: 1, rounds: 14)
+        advance(f, 360, fps: 10)
+        if f.chain.started > 0 { went += 1 }
+    }
+    #expect(went >= 10)   // expected ~70 %; with the old 300 s wait / 600 s mean it was ~0 within 6 min
+    let g = makeField(seed: 1)
+    g.update(windows: [win(1, 200, 400, 400, 150)])
+    pileUp(g, id: 1, rounds: 14)
+    g.update(windows: [win(1, 280, 400, 400, 150)], dt: 1)   // 80 pt/s
+    g.step(dt: 1.0 / 60)
+    #expect(g.chain.started == 1)
 }

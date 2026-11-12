@@ -49,7 +49,7 @@ private func fill(_ f: SnowField) {
 
 @Test func shotLandingNearAPerchedRobinStartlesItAndAFullPileLoosensAnAvalanche() {
     func play(full: Bool) -> (SnowField, Bool) {
-        let f = field()
+        let f = field(height: 6)   // 6: clearly below avaFullFraction (0.7) of the limit, which the default 12 now reaches
         if full { fill(f) }
         _ = f.startRobin()
         run(f) { perched(f) }

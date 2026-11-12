@@ -2,8 +2,8 @@
 // Role: `Tuning` avalanche constants, `AvaFront` (one front on one window: slides toward a drop-off end at avaFrontSpeed 150 pt/s; every avaGroup 16 pt = 8 bins it passes calls `releaseGroup`, which strips 60-80 % of each visible bin in
 //   the group and sheds it through shedBin/flushRuns as debris slabs) and `AvaChain` (SnowField.chain: at most ONE chain at a time, <= 4 fronts, cascades <= avaMaxCascades 3 onto other windows at p 0.5, then avaCooldown 60 s; also the
 //   per-window "full for N s" table and test counters started/released).
-// Full = `fullSpot`: mean height over a 60 pt span >= 85 % of the mean pile limit there (pushed heaps never count), or a drift near its limit. Triggers: `avalancheImpact` (heavy landing, called from Effects.impact; within 80 pt of a
-//   full spot), `triggerAvalanche(near:)` (public; Robin in Figures+Robin.swift, demo), a window moving 150..400 pt/s over a full spot, spontaneous after a pile stays full > 300 s (p = dt/600 per 1 s scan), NEVE_DEMO_AVALANCHE.
+// Full = `fullSpot`: mean height over a 60 pt span >= 70 % of the mean pile limit there (pushed heaps never count), or a drift near its limit. Triggers: `avalancheImpact` (heavy landing, called from Effects.impact; within 80 pt of a
+//   full spot), `triggerAvalanche(near:)` (public; Robin in Figures+Robin.swift, demo), a window moving 60..400 pt/s over a full spot, spontaneous after a pile stays full > 60 s (p = dt/240 per 1 s scan: first ~5-6 min after opening, then ~1 per 5 min per full window), NEVE_DEMO_AVALANCHE.
 // A front that reaches a seam end (supported end with a touching neighbour, Seams.swift `neighbor`) is not blocked: `continueFront` starts a front on the neighbour toward its far drop-off end. `stepAvalanche(dt:)` runs in SnowField.step after stepIce, before stepDebris; does nothing (and drops fronts) in calm (Reduce Motion). Uses `fxRng`, never `rng`. Volume is conserved (removed from pile == released as debris).
 // Reset: SnowField.clear(), Scene reset, Resize rebuild replace `chain`. Tests: IceAvalancheTests. Units: pt, pt/s, simulation seconds, y up.
 
@@ -12,7 +12,7 @@ import Foundation
 
 extension Tuning {
     static let avaFrontSpeed: Float = 150     // pt/s
-    static let avaFullFraction: Float = 0.85  // mean height over avaSpan / mean limit there
+    static let avaFullFraction: Float = 0.7   // mean height over avaSpan / mean limit there
     static let avaSpan: Float = 60
     static let avaDriftFraction: Float = 0.9  // a drift is full from this share of its boost up to its limit
     static let avaGroup: Float = 16           // one slab per 8 columns
@@ -20,9 +20,9 @@ extension Tuning {
     static let avaImpactRange: Float = 80
     static let avaCascadeChance: Float = 0.5
     static let avaMaxCascades = 3
-    static let avaSpontaneous: Float = 300    // s a pile must stay full
-    static let avaSpontaneousMean: Float = 600
-    static let avaJoltLow: Float = 150
+    static let avaSpontaneous: Float = 60     // s a pile must stay full
+    static let avaSpontaneousMean: Float = 240
+    static let avaJoltLow: Float = 60
     static let avaJoltHigh: Float = 400
 }
 
@@ -139,7 +139,7 @@ extension SnowField {
                 }
             }
         }
-        // Once a second: how long each window has been full; a pile full for 5 min lets go about once in 10.
+        // Once a second: how long each window has been full; a pile full for 1 min lets go about once in 4.
         chain.scanT += dt
         if chain.scanT >= 1 {
             let tick = chain.scanT
