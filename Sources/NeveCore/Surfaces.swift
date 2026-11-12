@@ -124,6 +124,7 @@ extension SnowField {
         // Reused surfaces keep their piles, but `cover` (what the Dock hides of a window's foot) follows the Dock: refresh it where the Dock was, is or is going.
         var reach = rects.indices.first { windows[$0].number == 0 }.map { rects[$0] }
         if only != nil { for r in [dockPrev, dockTarget?.offsetBy(dx: -ox, dy: -oy)] { if let r { reach = reach.map { $0.union(r) } ?? r } } }
+        let radii = windows.map(\.radius)   // once per rebuild, not per window
         for (i, r) in rects.enumerated() {
             let id = windows[i].number, edge = Float(r.maxY)
             if windows[i].occluderOnly { continue }   // hides piles and ground (it stays in `rects`) but carries no snow
@@ -139,7 +140,7 @@ extension SnowField {
                 if let reach, r.intersects(reach) { s.cover = rects[0..<i].filter { $0.intersects(s.frame) } }
                 built.append(s); continue
             }
-            if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, radii: windows.map(\.radius), windows: windows, front: i, old: &old, spawned: &spawned) { built.append(s) }
+            if let s = buildSurface(id: id, frame: r, edgeY: edge, radius: windows[i].radius, rects: rects, radii: radii, windows: windows, front: i, old: &old, spawned: &spawned) { built.append(s) }
             spawned += flushRuns()   // runs never span two surfaces
         }
         if let g = buildGround(rects: rects, windows: windows, old: &old, spawned: &spawned) { built.append(g) }   // behind everything: every window and the Dock hide it
@@ -277,7 +278,9 @@ extension SnowField {
     static func roundedUnderside(x: Float, _ r: CGRect, radius: CGFloat) -> Float {
         let bw = Tuning.binWidth, rad = Float(min(radius, r.width / 2, r.height / 2))
         var u = Float.infinity
-        for dx in [-bw / 2, 0, bw / 2] where dx == 0 || (CGFloat(x + dx) >= r.minX && CGFloat(x + dx) < r.maxX) {
+        for k in -1...1 {   // centre and both half-bin edges
+            let dx = Float(k) * bw / 2
+            guard dx == 0 || (CGFloat(x + dx) >= r.minX && CGFloat(x + dx) < r.maxX) else { continue }
             if let v = Tuning.barUnderside(x: x + dx, minX: Float(r.minX), maxX: Float(r.maxX), minY: Float(r.minY), radius: rad) { u = min(u, v) }
         }
         return u
