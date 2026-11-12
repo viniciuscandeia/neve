@@ -7,7 +7,7 @@
 //   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ[17] = shader occluder rects + strength).
 // Frame loop (`tick`, main thread via RunLoop.main .common; the nonisolated delegate uses MainActor.assumeIsolated): dt = min(real dt, 0.06); Palette.tick; advanceCover; cursor sweep (one segment from last
 //   position, only if not near another screen); pointer velocity; MusicTap.shared.read(); field.step (optionally calm interpolation: Tuning.interpolateCalm); drag shift (pile/figure offset = mouse delta since poll);
-//   render(). Adaptive rate: 60 fps while anything fast (cursor near snow, held ball, field.isBusy) else 30 after FrameRate.holdDown; economy/low power cap; still mode (Reduce Motion + stillSnow) sleeps the link
+//   render(). Adaptive rate: 60 fps while anything fast (cursor near snow, held ball, field.isBusy) else 30 after FrameRate.holdDown; economy (or thermal fair+, FrameRate.economyFrames) / low power cap; still mode (Reduce Motion + stillSnow) sleeps the link
 //   once piles settle (`dirty`/`wake()` restart it: ANY state change that alters the picture must call wake()).
 // Controller API (called by AppController in main.swift): setRun / present (fade 0.4 s then orderOut, link paused), setSuspended (Mission Control fade 0.2 s), dip (Space change), update(windows:covering:dragTarget:mouse:)
 //   (poll rate, NOT per frame: grows buffers, measureCover), adopt/screenChanged/refreshBounds/teardown (display hot-plug, Dock/menu-bar visibleFrame changes keep piles), intro/resume/melt/outro (gen counters make stale
@@ -79,6 +79,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var suspended = false, dipGen = 0   // Mission Control hides the snow (fade 0.2 s); a Space change dips it
     private var pressing = false              // between our own mouseDown and mouseUp: stays interactive so the release is ours
     private var lowPower = false
+    private var thermalWarm = false   // thermal state >= fair: economy frame rates (FrameRate.economyFrames), set by the controller
+    private var econFrames: Bool { FrameRate.economyFrames(pref: prefs.economy, thermalRaw: thermalWarm ? 1 : 0) }
     private var tickTarget = 0.0   // target timestamp of the tick being drawn
     private var contrast: Float = 0
     private var reduceMotion = false
@@ -489,6 +491,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var outroDone: (@MainActor () -> Void)?
     private func finishOutro() { let d = outroDone; outroDone = nil; d?() }
     func dropPiles() { field.dropPiles(); wake() }
+    func setThermalWarm(_ on: Bool) {
+        guard on != thermalWarm else { return }
+        thermalWarm = on
+        link?.preferredFrameRateRange = frameRange
+    }
     func setLowPower(_ on: Bool) {
         lowPower = on
         field.setLowPower(on)
@@ -520,9 +527,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
     private var simAccum = 0.0, lastStepDt: Float = 0
     /// Calm interpolation active: option on, quiet floor, and not in a mode that is capped at 30 anyway.
-    private var interpolating: Bool { Tuning.interpolateCalm && slow && !prefs.economy && !lowPower && shrunk == nil }
+    private var interpolating: Bool { Tuning.interpolateCalm && slow && !econFrames && !lowPower && shrunk == nil }
     private var frameRange: CAFrameRateRange {
-        let r = FrameRate.range(lowPower: lowPower, economy: prefs.economy, shrunk: shrunk != nil, quiet: slow && !interpolating, maxFPS: fps)
+        let r = FrameRate.range(lowPower: lowPower, economy: econFrames, shrunk: shrunk != nil, quiet: slow && !interpolating, maxFPS: fps)
         return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
@@ -671,7 +678,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let fastCursor = moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: prevCursor, to: cursor)
             && (prefs.pointerPush || (sweeping && field.snowNear(from: from, to: here)))
         if fastCursor || holding || field.isBusy { fastUntil = now + FrameRate.holdDown }
-        let wantSlow = (prefs.adaptive || prefs.economy) && now > fastUntil   // economy always steps down when calm
+        let wantSlow = (prefs.adaptive || econFrames) && now > fastUntil   // economy always steps down when calm
         if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
         if still, !dirty, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }

@@ -503,7 +503,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refreshRunState() {
         updateStatus()
         let go = run.rendering(enabled: enabled, hot: hot, userIdle: idle.userIdle)
-        for o in overlays { o.setRun(go) }
+        for o in overlays { o.setRun(go); o.setThermalWarm(ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.fair.rawValue) }
         if go { armTree() }
         scheduleTimers()
         if polling {

@@ -28,3 +28,12 @@ import Testing
     #expect(a(2.4, idle: true) == .wake && a(2.5, idle: true) == .none)
     #expect(a(5.4, idle: true, gap: 5) == .wake && a(5.5, idle: true, gap: 5) == .none)
 }
+
+@Test func thermalFairTurnsOnEconomyFrames() {
+    #expect(!FrameRate.economyFrames(pref: false, thermalRaw: 0))   // nominal
+    #expect(FrameRate.economyFrames(pref: false, thermalRaw: 1))    // fair
+    #expect(FrameRate.economyFrames(pref: false, thermalRaw: 3))    // serious / critical: still economy rates (the snow itself pauses via `hot`)
+    #expect(FrameRate.economyFrames(pref: true, thermalRaw: 0))
+    let calm = FrameRate.range(lowPower: false, economy: FrameRate.economyFrames(pref: false, thermalRaw: 1), shrunk: false, quiet: true)
+    #expect(calm.preferred == 20)
+}
