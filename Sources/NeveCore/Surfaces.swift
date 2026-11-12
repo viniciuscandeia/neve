@@ -565,9 +565,10 @@ extension SnowField {
             if removed > 0 {
                 let xl = min(ax, ax + dx) - r, xr = max(ax, ax + dx) + r
                 var lowK = b0, highK = b1, banked: Float = 0, ex: Float = 0, ey: Float = 0
-                let sides: [(Float, Int)] = horizontal ? [(dx > 0 ? xr : xl, dx > 0 ? 1 : -1)] : [(xl, -1), (xr, 1)]
-                for (bx, dir) in sides {   // each leftover (nothing fits before the run ends) flies off at that run end, never at the cursor
-                    let part = removed / Float(sides.count)
+                let nSides = horizontal ? 1 : 2   // horizontal: the leading side only; else left (-1) then right (+1)
+                for k in 0..<nSides {   // each leftover (nothing fits before the run ends) flies off at that run end, never at the cursor
+                    let bx = horizontal ? (dx > 0 ? xr : xl) : (k == 0 ? xl : xr), dir = horizontal ? (dx > 0 ? 1 : -1) : (k == 0 ? -1 : 1)
+                    let part = removed / Float(nSides)
                     let got = berm(si, atX: bx, dir: dir, area: part, lo: &lowK, hi: &highK, end: &ex, endY: &ey)
                     banked += got; ox += (part - got) * ex; oy += (part - got) * ey
                 }
@@ -587,10 +588,11 @@ extension SnowField {
     /// (`end`, `endY`). `lo`/`hi` grow to the touched bins. Overfill is bounded by the 1.25 ceiling however many passes pile onto it.
     static let bermWeights: [Float] = [0.07, 0.13, 0.17, 0.17, 0.15, 0.12, 0.09, 0.06, 0.04]   // taper over nine bins, sums to 1
     /// x range and top height of the Dock bar (the obstacle for the ground push); nil when there is none.
-    func dockSpan() -> (lower: Float, upper: Float, top: Float, contains: (Float) -> Bool)? {
+    struct DockSpan { let lower: Float, upper: Float, top: Float; func contains(_ x: Float) -> Bool { x >= lower && x < upper } }
+    func dockSpan() -> DockSpan? {
         guard let di = index[0], surfaces[di].frame.width > surfaces[di].frame.height, surfaces[di].frame.minY >= -1 else { return nil }
         let f = surfaces[di].frame, lo = Float(f.minX), hi = Float(f.maxX)
-        return (lo, hi, surfaces[di].edgeY, { $0 >= lo && $0 < hi })
+        return DockSpan(lower: lo, upper: hi, top: surfaces[di].edgeY)
     }
     /// Banks snow against a side as a repose wedge: from bin `k0` walking by `step` (away from the wall), each bin takes up to `top - slope * j` (j = bins from the wall) until `area` (pt^2, `banked` counts what is already in) is placed or the pile / run ends.
     /// `underWindows` (the wall is a higher window's side): the walk stays on open bins, `top` is relative to this surface's edge (the bin's base is subtracted) and a window's cap bounds it; else (the Dock's side on the ground) visible bins, `top` is absolute and no cap.

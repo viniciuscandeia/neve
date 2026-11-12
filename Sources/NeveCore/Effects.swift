@@ -188,12 +188,12 @@ extension SnowField {
 
     /// y of the drawn crest at local bin `b`: baseline + the 1-2-1 smoothed `shown` height (the contour in writePiles, minus its stable noise).
     func crestY(si: Int, bin b: Int) -> Float {
-        let p = surfaces[si].pile, n = p.heights.count
+        let n = surfaces[si].pile.heights.count   // fields read in place: no copy of the whole Pile (retains of every array) per call
         guard n > 0 else { return surfaces[si].edgeY }
         let b = min(max(b, 0), n - 1)
-        let h = p.shown.count == n ? p.shown : p.heights
+        let h = surfaces[si].pile.shown.count == n ? surfaces[si].pile.shown : surfaces[si].pile.heights
         let l = h[max(b - 1, 0)], r = h[min(b + 1, n - 1)]
-        return surfaces[si].edgeY + p.base[b] + (l + 2 * h[b] + r) / 4
+        return surfaces[si].edgeY + surfaces[si].pile.base[b] + (l + 2 * h[b] + r) / 4
     }
 }
 
