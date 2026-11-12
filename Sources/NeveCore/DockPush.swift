@@ -81,6 +81,13 @@ extension SnowField {
 }
 
 extension SnowField {
+    /// Height the bank shelf may reach beside bar `r`: its top, unless a window roofs the bar so low (less than Tuning.minRoom above it) that the Dock pile cannot
+    /// exist: a shelf flush with the Dock top would then end in a vertical cliff at the bar end, so the bank stays a plain ground-level ramp that meets the under-bar arc.
+    func bankTop(_ r: CGRect) -> Float {
+        let c0 = max(column(Float(r.minX)), 0), c1 = min(column(Float(r.maxX)), numCols - 1)
+        let roof = groundWinCeil.count == numCols && c0 <= c1 ? groundWinCeil[c0...c1].min()! : .infinity
+        return roof - Float(r.maxY) < Tuning.minRoom ? Tuning.groundMaxHeight : Float(r.maxY)
+    }
     /// Per-column ground limit beside the bar(s): the repose ramp from `bankLevel` (see Tuning.bankLimit).
     func bankMaxes(_ docks: [CGRect]) -> [Float] {
         let bw = Tuning.binWidth
@@ -89,7 +96,7 @@ extension SnowField {
             var m = Tuning.groundMaxHeight
             for r in docks {
                 let left = cx < Float(r.minX)
-                m = max(m, Tuning.bankLimit(dockTop: Float(r.maxY), distance: max(Float(r.minX) - cx, cx - Float(r.maxX), 0), level: left ? bankLevel.l : bankLevel.r))
+                m = max(m, Tuning.bankLimit(dockTop: bankTop(r), distance: max(Float(r.minX) - cx, cx - Float(r.maxX), 0), level: left ? bankLevel.l : bankLevel.r))
             }
             return m
         }
@@ -101,7 +108,7 @@ extension SnowField {
         bankT += dt
         guard bankT >= 0.25, let si = index[0], let gi = index[Tuning.groundID] else { return }
         bankT = 0
-        let r = surfaces[si].frame, top = Float(r.maxY)
+        let r = surfaces[si].frame, top = bankTop(r)
         guard top > Tuning.groundMaxHeight else { return }
         var changed = false
         for left in [true, false] {

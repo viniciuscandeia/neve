@@ -210,9 +210,6 @@ extension SnowField {
         pile.maxHeight = Tuning.groundMaxHeight
         // A floating bottom Dock bar (top inside the Dock strip): the bank beside it rises to its top, sloping down with distance.
         let docks = rects.indices.filter { windows[$0].number == 0 && rects[$0].minY >= -1 && rects[$0].maxY > 1 && rects[$0].minY < CGFloat(groundY) && rects[$0].width > rects[$0].height }.map { rects[$0] }
-        if !docks.isEmpty {
-            pile.maxes = bankMaxes(docks)
-        }
         // What the ordinary windows do to each ground column (hidden / roof) only changes with their frames: cached across Dock animation frames.
         let winIdx = rects.indices.filter { windows[$0].number != 0 }, winRects = winIdx.map { rects[$0] }
         if winRects != groundWinKey || groundWinCeil.count != numCols {
@@ -227,6 +224,7 @@ extension SnowField {
                 }
             }
         }
+        if !docks.isEmpty { pile.maxes = bankMaxes(docks) }   // after the window ceilings: a roofed-over Dock top has no shelf (bankTop)
         for b in 0..<numCols {
             let x = CGFloat((Float(b) + 0.5) * bw)
             var ceiling = groundWinCeil[b], barBelow = false
@@ -325,6 +323,7 @@ extension SnowField {
             if best >= 0 { hideTop[b] = Float(rects[best].maxY) }
             pile.visible[b] = !hidden
             pile.cap[b] = max(ceiling - edgeY - pile.base[b], 0)
+            if windows[front].number == 0, ceiling - edgeY < Tuning.minRoom { pile.cap[b] = max(ceiling - edgeY, 0) }   // a roofed-over Dock bar: no snow on its corner arcs either (a film there ends in a cliff beside the bank)
         }
         pile.addWalls(hideTop: hideTop, edgeY: edgeY)
         var vel = SIMD2<Float>.zero
