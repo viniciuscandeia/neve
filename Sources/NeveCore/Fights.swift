@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Fights.swift  (snowball fights between snowmen)
+// Origin z: the crumbs of a landing shot (`spray`) are stamped with the shot's surface z (`withSpawnZ(originZ(id:))`, Debris.swift).
 // Role: `Fight` (two figure ids, turn, timer, thrown), `Shot` (a snowball in flight on a parabola: from/to/peak/dur, hit/head/target/surface; `rel` makes a hit shot follow a moved target; `impacting` squash hold Tuning.impactHold 0.07 s;
 //   `ghost(k)` trail positions), `Splat` (flattened snow stuck on a figure or pile, fades over splatLife 1.2 s, <= maxSplats 8) and SnowField stepping. `startFights` pairs free snowmen on the same surface and same visible run
 //   within Tuning.fightRange 250 pt (<= maxFights 2); `stepFights` ends a fight when a figure is gone / hidden / apart, or after maxThrows 24; `launch` alternates throws every throwGap 1.1 s + 0-0.4 s, 65 % aimed at the head, hit chance
@@ -164,7 +165,7 @@ extension SnowField {
         var sp = Splat(target: onBody ? s.target : -1, surface: s.surface, rel: rel, scale: cursor && s.hit ? 14.0 / 12 * snowmanScale : scale, life: cursor && s.hit ? 1.5 : Tuning.splatLife)
         sp.last = s.to
         addSplat(sp)
-        spray(at: s.to, reflected: refl, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
+        spray(at: s.to, reflected: refl, surface: s.surface, count: s.hit ? Int.random(in: 8...12, using: &rng) : 5)
         if onBody, let j, figures[j].fight != nil { registerHit(s.target, head: s.head) }
         if onBody, let j, figures[j].kind == .rabbit { rabbitHit(j) }
     }
@@ -186,13 +187,13 @@ extension SnowField {
 
     /// Clumps fanned +-70 degrees around `dir` at 60-160 pt/s, plus one puff.
     /// Crumbs fly as clumps (instance kind 1) plus one powder puff.
-    private func spray(at p: SIMD2<Float>, reflected dir: SIMD2<Float>, count: Int) {
+    private func spray(at p: SIMD2<Float>, reflected dir: SIMD2<Float>, surface: Int, count: Int) {
         guard !silent else { return }
         let base = atan2(dir.y, dir.x), fan: Float = 70 * .pi / 180
         for _ in 0..<count {
             let a = base + Float.random(in: -fan...fan, using: &rng), sp = Float.random(in: 60...160, using: &rng)
-            _ = put(Flake(pos: p, vx: cos(a) * sp, fall: -sin(a) * sp, phase: 0, amp: 0, freq: 0, size: Float.random(in: 2.5...4, using: &rng),
-                          alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1))
+            _ = withSpawnZ(originZ(id: surface)) { put(Flake(pos: p, vx: cos(a) * sp, fall: -sin(a) * sp, phase: 0, amp: 0, freq: 0, size: Float.random(in: 2.5...4, using: &rng),
+                          alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1)) }
         }
         if !calm { addPuff(x: p.x, y: p.y) }
     }

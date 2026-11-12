@@ -1,13 +1,14 @@
 // AGENT HEADER - Sources/NeveCore/Effects.swift  (snow in motion: slabs, crumbs, puffs, craters, glints)
 // Role: `extension SnowField` for transient effects, kept as plain `Flake`s with a `shape` in `debris` / `puffs` / `glints` (shared writer, cap Tuning.maxDebris and landing code). `shedBin` collects consecutive columns (<= 8 = 16 pt, same
-//   velocity; returns 0 while `silent`) in `runBins`; `flushRuns()` emits ONE slab (shape 2; >= 8 pt wide, avg >= 3 pt; plus 1-3 crumbs and dust puffs) or plain dots via `shedDots` - every releasing entry point must call flushRuns when
-//   done. `splitSlab` (plain slab aloft > 0.25 s splits at 1.5/s; uses `delay` as its aloft timer there). `impact` (heavy landing: volume deposited as crater + raised rim over +-4 columns, 3-6 clumps jump up, puff, sets impactAt,
+//   velocity; returns 0 while `silent`) in `runBins`; `flushRuns()` emits ONE slab (shape 2; >= 8 pt wide, avg >= 3 pt; plus 1-3 crumbs, which carry `crumbShare` of its volume, and dust puffs) or plain dots via `shedDots` - every releasing entry point must call flushRuns when
+//   done. `splitSlab` (plain slab aloft > 0.25 s splits at 1.5/s; uses `delay` as its aloft timer there). `impact` (heavy landing: volume deposited as crater + raised rim over +-4 columns, 3-6 clumps jump up (vol 0: they land by size, which adds snow on purpose), puff, sets impactAt,
 //   then calls avalancheImpact). `addPuff`/`stepPuffs` (shape 3, `delay` = life Tuning.puffLife, rise 6 pt/s). `stepGlints` (sparkles on crests of piles >= 6 pt, <= Tuning.maxGlints, one per 2 s; off when calm / economy /
 //   lowPower / quiet (outro or melt): live ones fade). `dropBlocks` (vanished-window pile -> INTACT slabs, amp = 1, packed profile via `Flake.pack`, held `delay` so they release in a ripple at Tuning.rippleSpeed from originX), `slabHit`,
 //   `breakSlab`, `trailPowder` (stepDebris's helpers for those slabs), `put` (cap-checked append), `crestY`.
 // Origin z (`Flake.oz`, Debris.swift): `put` stamps `spawnZ` on pieces that carry none; `shedBin` infers the window of a run from its column / height (`oz:` overrides it: the Dock passes .max), `flushRuns` / `impact` / `dropEave` / avalanche slabs spawn under it, `breakSlab` / `trailPowder` pieces inherit the parent's.
 // Cornice: `stepEaves` (every 0.5 s from SnowField.step: feeds / melts `Pile.eaveL/R` at bare window ends) and `dropEave` (the overflowing cornice falls as one block, fxRng).
 // Callers of shedBin/flushRuns/dropBlocks: Surfaces.swift, Avalanche, DockPush.berm, Figures+Robin. Units: pt, pt/s, `vol` = pt^2 (conserved: deposited where the debris lands). Uses `rng` (not fxRng). Rendering: Render.writeInstances.
+// Gotcha: the impact crumbs carry no volume ON PURPOSE (for now): a snowman burst loses most of its chunks that spawn below the floor while `phase` > 0 (stepDebris removes them), and the size-based crumb deposit is what makes the landed snow match (OverflowTests burst*, SnowmanTests burst). Giving them `vol` (LoteHTests aHeavyImpactKeepsItsCrumbsInTheVolumeLedger, disabled) needs that loss fixed first.
 // Gotcha: a glint rides the DRAWN crest (`crestY` of eased `shown`); it stores the GLOBAL column in `phase` and the surface's frame.minX at birth in `vol`, so a window that moved without a drag fades it.
 
 import CoreGraphics
@@ -40,6 +41,9 @@ extension SnowField {
         return n
     }
 
+    /// Share of a slab's volume carried by its crumbs (they land with it; the slab holds the rest), so slab crumbs never create snow.
+    static let crumbShare: Float = 0.1
+
     /// Emits the pending run: one slab (+ crumbs and dust) when it is >= 8pt wide and averages >= 3pt; else plain dots.
     @discardableResult
     func flushRuns() -> Int {
@@ -58,15 +62,17 @@ extension SnowField {
             let vx = (calm ? 0 : Float.random(in: -12...12, using: &rng)) + v.x * 0.5
             let fall = (calm ? Tuning.calmDebrisFall : Float.random(in: 10...50, using: &rng)) - v.y * 0.5
             let spin: Float = calm ? 0 : Float.random(in: 0.5...2, using: &rng) * (Bool.random(using: &rng) ? 1 : -1)
+            let crumbShare = calm ? 0 : Self.crumbShare   // the crumbs below carry this share of the run's volume, the slab the rest
             guard put(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: width, alpha: 0.95, kind: .debris,
-                            seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: spin, vol: sum * bw, shape: 2)) else { return 0 }
+                            seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: spin, vol: sum * bw * (1 - crumbShare), shape: 2)) else { return 0 }
             n = 1
             if !calm {
-                for _ in 0..<Int.random(in: 1...3, using: &rng) {
+                let cn = Int.random(in: 1...3, using: &rng)
+                for _ in 0..<cn {
                     let c = Flake(pos: [x + Float.random(in: -width / 2...width / 2, using: &rng), y + Float.random(in: -3...3, using: &rng)],
                                   vx: vx + Float.random(in: -8...8, using: &rng), fall: max(fall + Float.random(in: -15...15, using: &rng), 0),
                                   phase: 0, amp: 0, freq: 0, size: Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris,
-                                  seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1)
+                                  seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), vol: sum * bw * crumbShare / Float(cn), shape: 1)
                     if put(c) { n += 1 }
                 }
                 for _ in 0..<Int(width / 20 + Float.random(in: 0..<1, using: &rng)) { addPuff(x: x + Float.random(in: -width / 2...width / 2, using: &rng), y: y) }
@@ -156,7 +162,7 @@ extension SnowField {
             let sign: Float = Bool.random(using: &rng) ? 1 : -1
             _ = put(Flake(pos: [x + Float.random(in: -6...6, using: &rng), top + 1], vx: sign * Float.random(in: 20...60, using: &rng), fall: -Float.random(in: 80...150, using: &rng),
                           phase: 0, amp: 0, freq: 0, size: Float.random(in: 2.5...4, using: &rng), alpha: 0.95, kind: .debris,
-                          seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1))
+                          seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1))   // vol 0 on purpose, see the Gotcha in the header
         }
         if !calm { addPuff(x: x, y: top + 3) }
         impactAt = (x, top, time)

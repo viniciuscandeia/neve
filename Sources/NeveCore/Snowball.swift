@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Snowball.swift  (user snowballs: scoop, roll, drop, stack into snowmen)
+// Covered balls: `hitTest` and `pickSnowball` skip a ball whose column is not `openAt` (under a window in front), like gifts, the tree, figures and piles.
 // Origin z: `pop` stamps its debris with the ball's surface z (`originZ(id:)`, Debris.swift).
 // Role: `Snowball` (id, state held / falling / resting, pos, radius, parent link for stacks, vel, spin, face for a loose head, melting, fade, surfaceID) in `SnowField.balls`, and the interaction API the overlay calls while Option is held:
 //   `hitTest(point:)` (over a ball, figure, gift, the tree or visible, uncovered snow (window piles from their top edge up; covered pile / gift / tree / figure ignored via `openAt`) => the panel becomes interactive), `pickSnowball(at:)` (nearest ball with nothing on top; also the top of a stacked / headless snowman, which `demote`s into balls),
@@ -81,7 +82,7 @@ extension SnowField {
     /// Whether a point is over a snowball or on / just above visible snow (where the overlay becomes interactive).
     public func hitTest(point p: CGPoint) -> Bool {
         let q = SIMD2(Float(p.x), Float(p.y))
-        for b in balls where !b.melting && b.state != .held {
+        for b in balls where !b.melting && b.state != .held && openAt(surface: b.surfaceID, x: b.pos.x) {
             let d = q - b.pos
             if d.x * d.x + d.y * d.y <= (b.radius + 4) * (b.radius + 4) { return true }
         }
@@ -135,7 +136,7 @@ extension SnowField {
     public func pickSnowball(at p: CGPoint) -> Int? {
         let q = SIMD2(Float(p.x), Float(p.y))
         var best: Int?, bestD = Float.infinity
-        for i in balls.indices where !balls[i].melting && balls[i].state != .held && !hasChild(i) {
+        for i in balls.indices where !balls[i].melting && balls[i].state != .held && !hasChild(i) && openAt(surface: balls[i].surfaceID, x: balls[i].pos.x) {
             let d = q - balls[i].pos, d2 = d.x * d.x + d.y * d.y, r = balls[i].radius + 4
             if d2 <= r * r, d2 < bestD { best = i; bestD = d2 }
         }

@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Pile.swift  (snow height profile of ONE surface + deposit/relax/plow rules)
+// `empty()` (SnowField.clear) also zeroes the pending `spillL/R`, `owedL/R` and `peel`.
 // Role: `Pile` (public struct, value type stored in `Surface.pile`): per-bin arrays along one window top / the Dock bar / the ground. Units: pt heights, bins of Tuning.binWidth (2 pt), LOCAL bin index b <-> global column c0 + b; x0 / x1 = the REAL
 //   (unclipped) window ends in x, used for taper and spill-off. y up.
 // Arrays (count = heights.count unless empty = "none"): heights (real), shown (drawn, eased toward heights by Render.writePiles; empty until first drawn), visible (false = hidden under a window in front: frozen, not lost), base (<= 0, follows rounded
@@ -80,7 +81,7 @@ public struct Pile {
         return r
     }
 
-    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = []; eaveL = 0; eaveR = 0; owedL = 0; owedR = 0 }
+    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = []; eaveL = 0; eaveR = 0; owedL = 0; owedR = 0; spillL = 0; spillR = 0; peel = [] }
 
     /// Snow a full pile cannot keep in a middle bin `bin` is owed to the nearest end that is not a seam / drift (`supportL/R`); lost only when both ends are supported.
     static let owedCap: Float = 1500  // per end: a long idle full window cannot build a landslide debt

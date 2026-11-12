@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/SnowField.swift  (the per-screen simulation: state + lifecycle + the step() order)
+// `Stashed` also carries the overflow debt (owedL/R); `clear()` drops `pendingGone` too.
 // Origin z for debris: `spawnZ` (stamped by put / addDebris, set with `withSpawnZ`) and `runZ` (the pending shed run); see Debris.swift.
 // Role: `SnowField` (final class, one per screen, owned by an Overlay) holds ALL simulation state and `step(dt:)`; behaviour is split into `extension SnowField` across many files (Surfaces, SurfaceMap, SurfaceSet (the surface list and its derived structures live in the `sset` struct), Render, Flakes, Effects,
 //   Avalanche, Frost, Icicles, Drips, Melt, DockPush, DockSpill, Coverage, Resize, Figures*, Fights, Walk, Snowball, Snowman, Gifts, Tree (+ Rig+Tree), CursorThrow, EventDirector wiring, Scene). Also `BusyReasons` (why the frame rate must be 60) and `Stashed`.
@@ -38,6 +39,7 @@ struct Stashed {
     var minX: Float = 0                // the window's left edge then: what stood on it is shifted by the move when it returns
     var balls: [Snowball] = [], figures: [Figure] = [], gifts: [Gift] = []   // what stood on it (user snowmen, resting balls, gifts)
     var tree: Tree? = nil              // ... and the Christmas tree (Tree.swift)
+    var owedL: Float = 0, owedR: Float = 0   // the overflow debt (Pile.owedL/R) rides along
 }
 
 public final class SnowField {
@@ -152,7 +154,7 @@ public final class SnowField {
     var burst: Burst?                    // its warning gust: flakes respawned meanwhile appear around burst.x
     var treeRng = SplitMix64(seed: 0x7EE_C0DE)   // own generator: placement, burst flakes, shaken snow, gifts (never `rng`)
     public var lightsEnabled = false   // Christmas lights (Lights.swift); the app sets it from Pref.lights
-    public var treeEnabled = false { didSet { if !treeEnabled { tree = nil; burst = nil } } }   // the app sets it from Pref.christmasTree; tests opt in
+    public var treeEnabled = false { didSet { if !treeEnabled { removeTree() } } }   // the app sets it from Pref.christmasTree; tests opt in
     var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
     /// Profiling only (nil = free): seconds clock; time spent in `stepFlakes` accumulates in `flakeSeconds` (reader zeroes it) over `flakeSteps` calls.
     public var timer: (() -> Double)?
@@ -306,7 +308,7 @@ public final class SnowField {
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
         giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)
-        tree = nil; burst = nil
+        tree = nil; burst = nil; pendingGone.removeAll()
         pilesDirty = true
     }
 

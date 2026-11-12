@@ -2,7 +2,7 @@
 // Role: `remapHeights(_:to:)` (heights carried to a new column count by x proportion, area-weighted mean per new column) and `SnowField.resize(size:origin:groundY:visibleTop:)`: window piles (surfaces with id > 0, and what stands on them) are stashed by
 //   window id (stashAway) and return with the windows; the ground keeps its heights and mounds by x proportion; the Dock pile waits in `dockCarry` / `dockMoundCarry` (only WHERE a heap stood; its allowance is recomputed from the carried heights on rebuild; applied only to a rebuild within ~2 s, `dockCarryUntil`); flakes / balls / figures /
 //   gifts and the Christmas tree (and its burst) keep their x proportion (x scaled by the width ratio); effects tied to the old geometry (debris, glints, puffs, drops, icicles, carrots, confetti, splats, fights, shots) and chain / dockTrickle / seams / dock animation state are dropped. The
-//   surfaces are reduced to the ground only; the next `update` rebuilds the rest (boundsDirty). Also resets the live region (liveX0/X1/liveTop) to the whole screen.
+//   surfaces are reduced to the ground only; the next `update` rebuilds the rest (boundsDirty). Also drops `pendingGone` (ghost windows of the old geometry) and resets the live region (liveX0/X1/liveTop) to the whole screen.
 // Caller: Overlay (rebuildGeometry, Sources/Neve/Overlay.swift). Tests: WindowClassTests (resize cases), SweepTests.
 
 import CoreGraphics
@@ -55,7 +55,7 @@ extension SnowField {
         drops.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); carrots.removeAll(keepingCapacity: true)
         giftState.confetti.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         chain = AvaChain(); dockTrickle = DockTrickle(); sweepOwed = 0
-        overhang.removeAll(); spaceSwitchIDs = []
+        overhang.removeAll(); spaceSwitchIDs = []; pendingGone.removeAll()   // ghosts belong to the old geometry (their windows are stashed above)
         groundWinKey = []; groundWinCeil = []; groundWinHidden = []; groundWinTop = []
         dockTarget = nil; dockCur = nil; dockPrev = nil
         var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: -1e5, x1: 2e5 + newSize.x)

@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
+// The overflow debt `Pile.owedL/R` rides with the window (rebuild `carry`, `Stashed`); a window with only frost / ice is stashed on a Space switch too.
 // Origin z: the spawn sites here (stepOverflow lumps, `spill`, the Dock-over burst chunks, Dock sheds with `oz: .max`) stamp Flake.oz so debris leaving a front window crosses the windows behind it (Debris.swift); shed runs infer it in `shedBin`.
 // Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
 //   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), `cap` = lowest underside of ANY window whose body lies above the bin (geometry, not z; only windows in front HIDE bins), wobble, corner rounding) and `buildGround` (full-width ground pile, banked against the side of a window standing on it via `Pile.addWalls` (`groundWinTop`), wavy downward only (0.85...1 x groundMaxHeight) except beside walls and within the Dock bank's widest reach,
@@ -212,10 +213,10 @@ extension SnowField {
         if keptTree != nil { tree = nil }
         for s in gone {
             let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }, tr = keptTree?.surface == s.id ? keptTree : nil
-            guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty || tr != nil else { continue }
+            guard s.pile.heights.contains(where: { $0 > 0 }) || iceWin.contains(where: { $0.id == s.id && ($0.frost > 0 || $0.frozen) }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty || tr != nil else { continue }
             stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, age: s.pile.age, mound: s.pile.mound, ice: iceWin.first { $0.id == s.id },
                                   overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
-                                  topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs, tree: tr)
+                                  topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs, tree: tr, owedL: s.pile.owedL, owedR: s.pile.owedR)
         }
         while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
     }
@@ -402,6 +403,7 @@ extension SnowField {
                     }
                 }
                 if !prev.pile.shown.isEmpty { pile.shown = shown }
+                pile.owedL = prev.pile.owedL; pile.owedR = prev.pile.owedR   // the overflow debt stays with the window
                 var out: [Int: Float] = [:]   // what now lies past the screen edge but still under the window waits there
                 func park(_ col: Int, _ h: Float) { let nc = col + shift; if h > 0, nc < c0 || nc >= c1, nc >= u0, nc < u1 { out[nc] = h } }
                 for k in prev.pile.heights.indices { park(prev.c0 + k, prev.pile.heights[k]) }
@@ -461,6 +463,7 @@ extension SnowField {
             if clock - e.stamp < 1800, e.heights.count == pile.heights.count {
             if e.mound.count == pile.heights.count { pile.mound = e.mound }
             if e.age.count == pile.heights.count { pile.age = e.age }
+            pile.owedL = e.owedL; pile.owedR = e.owedR
             for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
             pile.shown = pile.heights
             let u0 = Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)), u1 = Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1

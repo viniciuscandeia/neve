@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Tree.swift  (the one Christmas tree: warning gust, fall, landing, pick-up, window following)
+// Origin z: the snow of `shakeTree` is stamped with the tree's surface z (`withSpawnZ(originZ(id:))`). `treeEnabled = false` goes through `removeTree()` (also the tree stashed with a window on another Space).
 // Role: Tuning tree constants, `Tree` (foot-centre `pos`, state held / falling / resting, `surface` it stands on, `land` seconds since touchdown, `snow` = 0...1 snow counter per branch layer (SIMD4, bottom layer first), `tilt`, `out` fade),
 //   `Burst` (x + seconds of the warning gust) and SnowField code. API: `dropTree(replacing:)` (menu / auto timer: starts the ~2 s burst at a random x away from the edges, false when disabled, quiet or one already exists; `replacing` first `removeTree()`s the existing one: the menu), `hasTree` (tree, burst or a tree
 //   stashed with a window: the uniqueness test AppController uses across screens), `pickTree(at:)` / `dragTree(to:dt:)` / `releaseTree(throwing:)` (Option-click pick-up, mirrors Snowball held / drop), `takeTree()` / `adoptTree(_:at:)` (the drag
@@ -164,10 +165,10 @@ extension SnowField {
             guard !silent else { continue }
             for _ in 0..<(Int(amount * 3) + 1) {
                 let r = tier.h * t.scale
-                _ = put(Flake(pos: SIMD2(t.pos.x + Float.random(in: -r...r, using: &treeRng) * 0.7, t.pos.y + tier.t * t.scale * Float.random(in: 0.7...1, using: &treeRng)),
+                _ = withSpawnZ(originZ(id: t.surface)) { put(Flake(pos: SIMD2(t.pos.x + Float.random(in: -r...r, using: &treeRng) * 0.7, t.pos.y + tier.t * t.scale * Float.random(in: 0.7...1, using: &treeRng)),
                               vx: Float.random(in: -30...30, using: &treeRng) + t.vel.x * 0.2, fall: Float.random(in: 5...45, using: &treeRng) - t.vel.y * 0.1, phase: 0, amp: 0, freq: 0,
                               size: Float.random(in: 2.5...4.5, using: &treeRng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &treeRng), fade: 1,
-                              spin: Float.random(in: -2...2, using: &treeRng), shape: 1))
+                              spin: Float.random(in: -2...2, using: &treeRng), shape: 1)) }
             }
         }
     }

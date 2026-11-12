@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Icicles.swift  (stalactites under frozen windows)
+// Origin z: the slabs of `breakIcicle` are stamped with the icicle's window z (`withSpawnZ(originZ(id:))`, Debris.swift).
 // Role: `Icicle` (window-relative: win id, slot, dx from the left edge, len/maxLen, width, tilt, w0 = window width at spawn so a resize breaks it) in `SnowField.icicles` (<= 10 per window, 40 per screen, spawned by Frost.swift), `stepIce`
 //   (runs in SnowField.step after stepFlakes / stepPeel: calls stepFrost, grows icicles at grow * config.iceSpeed (x2 Nevasca, none while the anchor is hidden by a front window), and scanFrost once a second; an icicle breaks when its window
 //   closes, resizes, moves faster than icicleBreakSpeed = shedStart/2, or is no longer frozen), `breakIcicle` (2-3 thin slabs via `put`; calm / melting: it fades out as `dying` instead; muted by `silent` = just gone), `breakIcicles` (cursor sweep
@@ -78,10 +79,10 @@ extension SnowField {
         let n = Int.random(in: 2...3, using: &fxRng)
         for k in 0..<n {
             let t = (Float(k) + 0.5) / Float(n)
-            _ = put(Flake(pos: [c.x + Float.random(in: -1...1, using: &fxRng), c.y - c.len * t], vx: v.x * 0.3 + Float.random(in: -15...15, using: &fxRng),
+            _ = withSpawnZ(originZ(id: c.win)) { put(Flake(pos: [c.x + Float.random(in: -1...1, using: &fxRng), c.y - c.len * t], vx: v.x * 0.3 + Float.random(in: -15...15, using: &fxRng),
                           fall: max(Float.random(in: 10...50, using: &fxRng) - v.y * 0.3, 0), phase: 0, amp: 0, freq: 0,
                           size: min(max(c.len * 0.5, 3), 7), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng), fade: 1,
-                          spin: Float.random(in: -3...3, using: &fxRng), vol: c.len * c.width / 2 / Float(n), shape: 2))
+                          spin: Float.random(in: -3...3, using: &fxRng), vol: c.len * c.width / 2 / Float(n), shape: 2)) }
         }
     }
 

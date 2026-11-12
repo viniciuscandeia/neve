@@ -1,4 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Gifts.swift  (gifts dropped by the sleigh + confetti)
+// Origin z: the crumbs of a popped gift (`breakGifts`) are stamped with its surface z (`withSpawnZ(originZ(id:))`, Debris.swift).
 // Role: Tuning gift constants (<= 3 gifts, 9 pt box x snowmanScale, sinks 30 % into the pile, rests 90 s then fades over 1 s, lid 0.7 s, <= 28 confetti), `Gift` (falls like a loose ball, rests on a surface standing on the DRAWN snow via standY,
 //   `out` 1 -> 0 over 0.4 s on outro / second half of a melt), `Confetti`, `GiftState` (SnowField.giftState) and SnowField code. `dropGift` (called by stepSleigh; no-op while quiet), `stepGifts` (same fall integrator that Figures+Sleigh.giftTravel
 //   mirrors - keep both in sync; falls through a vanished pile), `openGift(at:)` (Option-click, from Overlay: pops the lid, 4 glints unless calm / economy / low power), `breakGifts` (a cursor sweep segment pops a gift: confetti + crumbs, called from
@@ -148,8 +149,8 @@ extension SnowField {
             if !silent {
                 for _ in 0..<5 {
                     let a = Float.random(in: 0..<(2 * .pi), using: &rng), sp = Float.random(in: 40...110, using: &rng)
-                    _ = put(Flake(pos: g.pos, vx: cos(a) * sp + v.x * 0.2, fall: -sin(a) * sp, phase: 0, amp: 0, freq: 0, size: Float.random(in: 2.5...3.5, using: &rng),
-                                  alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1))
+                    _ = withSpawnZ(originZ(id: g.surface)) { put(Flake(pos: g.pos, vx: cos(a) * sp + v.x * 0.2, fall: -sin(a) * sp, phase: 0, amp: 0, freq: 0, size: Float.random(in: 2.5...3.5, using: &rng),
+                                  alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), shape: 1)) }
                 }
             }
         }
