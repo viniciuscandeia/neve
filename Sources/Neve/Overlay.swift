@@ -619,7 +619,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         frameDt = Float(dt)
         // Cursor first, simulation after: the flakes, figures and piles of this frame already see this frame's pointer.
         // One sweep per frame from the last position (polling needs no event monitor). Drags are window physics.
-        let cursor = sceneKind == nil ? NSEvent.mouseLocation : CGPoint(x: -1e5, y: -1e5)   // scenes ignore the real cursor: the same story every time
+        let cursor = sceneKind != nil ? CGPoint(x: -1e5, y: -1e5) : FakePointer.active ? FakePointer.location(now: now) : NSEvent.mouseLocation   // NEVE_FAKE_POINTER: scripted path (FakePointer.swift)   // scenes ignore the real cursor: the same story every time
         let option = sceneKind == nil && NSEvent.modifierFlags.contains(.option)
         let o = frame.origin
         let here = CGPoint(x: cursor.x - o.x, y: cursor.y - o.y)
@@ -674,9 +674,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         // pushes the falling flakes). The cheap screen test comes first.
         let fastCursor = moved.x * moved.x + moved.y * moved.y > 60 * 60 && FrameRate.cursorNear(frame: frame, from: prevCursor, to: cursor)
             && (prefs.pointerPush || (sweeping && field.snowNear(from: from, to: here)))
+        if fastCursor { perf?.bump(.fast) }
         if fastCursor || holding || field.isBusy { fastUntil = now + FrameRate.holdDown }
         let wantSlow = (prefs.adaptive || econFrames) && now > fastUntil   // economy always steps down when calm
-        if wantSlow != slow { slow = wantSlow; link?.preferredFrameRateRange = frameRange }
+        if wantSlow != slow { slow = wantSlow; perf?.bump(.flips); link?.preferredFrameRateRange = frameRange }
+        perf?.secSlow = slow
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
         if still, !dirty, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }
     }

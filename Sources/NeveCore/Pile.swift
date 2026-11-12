@@ -366,12 +366,12 @@ public struct Pile {
     mutating func relax(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
         if !inRange && (continuesPastScreen(left: j < 0) || (j < 0 ? supportL : supportR)) { return false }
-        if inRange && !open(j) { return false }
         let ok = inRange
         let tj = ok ? base[j] + heights[j] : base[i] - 4
         // Fresh snow on bare ground sticks where it lands (steeper step allowed onto an almost empty bin): a dusting of specks, not an instant wide film.
         let drop = base[i] + heights[i] - tj
-        if drop <= Tuning.slope { return false }   // no repose step (fresh slope is the smallest; heap steps are larger) is under this: `transfer` would return 0 (the common case on a flat stretch)
+        if drop <= Tuning.slope { return false }   // no repose step (fresh slope is the smallest; heap steps are larger) is under this: `transfer` would return 0 (the common case on a flat stretch); tested before `open(j)` (pure, same result) because it is the cheaper and commoner exit
+        if inRange && !open(j) { return false }
         let m = Self.transfer(drop: drop, from: heights[i], to: ok ? heights[j] : nil, toCap: ok ? cap[j] : .infinity, heap: !mound.isEmpty && (mound[i] > 0.5 || (ok && mound[j] > 0.5)), age: age[i], stepScale: Self.stepVar(c0 + i))
         guard m > 0 else { return false }
         heights[i] -= m

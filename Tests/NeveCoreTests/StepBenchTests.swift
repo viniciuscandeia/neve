@@ -28,7 +28,7 @@ private func runBench(_ name: String, nevasca: Bool, sweep: Bool, pointer: Bool)
     if let only = ProcessInfo.processInfo.environment["NEVE_ONLY"], !name.contains(only) { return }   // e.g. NEVE_ONLY="nevasca mounds"
     let f = SnowField(size: CGSize(width: 1440, height: 900), origin: .zero, groundY: 90, visibleTop: 876, flakeCount: 400, seed: UInt64(env("NEVE_SEED", 7)))
     f.setIntensity(nevasca ? .nevasca : .media, immediate: true)
-    f.snowmanEnabled = false; f.walkEnabled = false; f.visitorsEnabled = false; f.sleighEnabled = false; f.pointerPush = pointer
+    f.snowmanEnabled = false; f.walkEnabled = false; f.visitorsEnabled = false; f.sleighEnabled = false; f.pointerPush = pointer; f.lightsEnabled = true   // the app default (Christmas lights): lightCode runs per flake in writeInstances
     let dock = WindowInfo(number: 0, frame: CGRect(x: 420, y: 10, width: 600, height: 84), radius: 25.2)
     f.update(windows: [dock, win(1, 100, 400, 600, 400), win(2, 760, 340, 600, 400)], now: 0)
     // CG segments (x0, x1, y); AppKit y = 900 - y.

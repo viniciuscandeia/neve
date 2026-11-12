@@ -3,10 +3,10 @@
 //   garland cable = 6 short capsules per arc in two alternating greens (a twisted look) drooping in a catenary; every bulb = an elongated ellipse hanging from the cable along its normal (mostly down) with a dark socket cap, and a multi-ring glow (3 concentric
 //   low-alpha ellipses `Lights.rings`, intensity = level; 1 ring in economy / Low Power; there is no additive blending); the tree carries a wire that spirals up the tiers (`treeWire`, 30 segments, x = 0.55 of the silhouette half width `Rig.treeWidth` * sin) with
 //   `treeBulbs` (14 hanging bulbs on that spiral, inside the silhouette: LightsTests) + a low-alpha coloured ellipse on the pile at each bulb's x) and `lightCode(at:)` (lit flakes: a flake within `Lights.litRadius` of a bulb centre gets
-//   Instance.kind 7 | (colour index | strength 0...15 << 3) << 8; the flake shader mixes its colour toward Palette.lights[idx]. Only flakes in the top band and inside the tree's box are tested; the garland bulb is found by x, so no scan).
+//   Instance.kind 7 | (colour index | strength 0...15 << 3) << 8; the flake shader mixes its colour toward Palette.lights[idx]. Only flakes in the top band and inside the tree's box are tested; the garland bulb is found by x, so no scan; `lightCtx()` builds the bulb positions / hidden arcs once per writeInstances, not per flake).
 // Pattern: the three modes (twinkle, chase, pulse) alternate every `Lights.cycle` s with a `fadeT` cross-fade; phase = `SnowField.time` (stops while frozen). `calm` (Reduce Motion) = every bulb steady at full level, so nothing blinks and a still screen never has to wake.
 //   Arcs hidden by a window outline (`garlandArcHidden`: start / middle / end inside an occluder) are skipped whole (cable, bulbs, lit flakes). Windows carry no lights. Colours: Palette.lights (Tones, light / dark). Ids: garland bulb i = i; tree bulb k = 1000 + k (colour = id % 5).
-// Prims: garland ~ (6 cable + 4 x (2 + rings)) per 110 pt arc; tree ~ 30 wire + 14 x (2 + rings) + 14 pile tints. Randomness: none (pure function of time). No allocation (static tables, loops). Tests: LightsTests. Units: local pt, y up.
+// Prims: garland ~ (6 cable + 4 x (2 + rings)) per 110 pt arc; tree ~ 30 wire + 14 x (2 + rings) + 14 pile tints. Randomness: none (pure function of time). Allocation: only the two small per-frame `LightCtx` arrays. Tests: LightsTests. Units: local pt, y up.
 
 import Foundation
 
@@ -111,23 +111,45 @@ extension SnowField {
         }
     }
 
+    /// Per-frame lookup tables for `lightCode`: garland bulb centres (nil = hidden arc) and tree bulb centres, built once per writeInstances instead of per flake.
+    struct LightCtx {
+        var garland: [SIMD2<Float>?] = [], tree: [SIMD2<Float>] = [], t: Float = 0
+        var treeBox: (x: Float, y0: Float, y1: Float, w: Float)? = nil
+    }
+    func lightCtx() -> LightCtx {
+        var c = LightCtx(); c.t = Float(time)
+        let n = garlandArcs * Lights.perArc
+        c.garland.reserveCapacity(n)
+        var hid = [Bool](repeating: false, count: garlandArcs)
+        for a in 0..<garlandArcs { hid[a] = garlandArcHidden(a) }
+        for k in 0..<n { c.garland.append(hid[k / Lights.perArc] ? nil : garlandBulb(k)) }
+        if let tr = tree, tr.fade > 0.5 {
+            c.treeBox = (tr.pos.x, tr.pos.y - 4, tr.pos.y + 126 * tr.scale, 40 * tr.scale)
+            c.tree = Lights.treeBulbs.indices.map { Lights.treeBulb(foot: tr.pos, scale: tr.scale, tilt: tr.tilt, $0) }
+        }
+        return c
+    }
+
     /// Instance.kind for a flake lit by a nearby bulb (see header), 0 when none; the caller checks `lightsEnabled`.
-    func lightCode(at p: SIMD2<Float>) -> UInt32 {
+    func lightCode(at p: SIMD2<Float>) -> UInt32 { lightCode(at: p, lightCtx()) }
+    func lightCode(at p: SIMD2<Float>, _ c: LightCtx) -> UInt32 {
+        let inBand = p.y > visibleTop - Lights.band
+        var inTree = false
+        if let b = c.treeBox { inTree = abs(p.x - b.x) < b.w && p.y > b.y0 && p.y < b.y1 }
+        if !inBand && !inTree { return 0 }
         var best: Float = 0, idx = 0
-        let r = Lights.litRadius, t = Float(time)
+        let r = Lights.litRadius, t = c.t
         func test(_ b: SIMD2<Float>, _ id: Int) {
             let dx = p.x - b.x, dy = p.y - b.y, d = (dx * dx + dy * dy).squareRoot()
             guard d < r else { return }
             let s = (1 - d / r) * Lights.level(id, t: t, calm: calm)
             if s > best { best = s; idx = id % 5 }
         }
-        if p.y > visibleTop - Lights.band {
-            let n = garlandArcs * Lights.perArc, j = Int(((p.x - garlandOffset) / (Lights.span / Float(Lights.perArc)) - 0.5).rounded())
-            for k in (j - 1)...(j + 1) where k >= 0 && k < n && !garlandArcHidden(k / Lights.perArc) { test(garlandBulb(k), k) }
+        if inBand {
+            let n = c.garland.count, j = Int(((p.x - garlandOffset) / (Lights.span / Float(Lights.perArc)) - 0.5).rounded())
+            for k in (j - 1)...(j + 1) where k >= 0 && k < n { if let b = c.garland[k] { test(b, k) } }
         }
-        if let tr = tree, tr.fade > 0.5, abs(p.x - tr.pos.x) < 40 * tr.scale, p.y > tr.pos.y - 4, p.y < tr.pos.y + 126 * tr.scale {
-            for k in Lights.treeBulbs.indices { test(Lights.treeBulb(foot: tr.pos, scale: tr.scale, tilt: tr.tilt, k), Lights.treeBase + k) }
-        }
+        if inTree { for k in c.tree.indices { test(c.tree[k], Lights.treeBase + k) } }
         let q = Int(best * 15)
         return q == 0 ? 0 : 7 | UInt32(idx | q << 3) << 8
     }

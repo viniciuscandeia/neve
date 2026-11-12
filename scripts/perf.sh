@@ -1,23 +1,25 @@
 #!/bin/bash
 # AGENT HEADER - scripts/perf.sh
 # Role: measure Neve CPU / idle wakeups / memory and WindowServer CPU on the real screen for one scenario, N runs, medians; building block of scripts/perf-suite.sh.
-# Usage: scripts/perf.sh [heavy|media|nevasca|max|still] [secs=60] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--capture] [--runs N=3] [--bin PATH]
+# Usage: scripts/perf.sh [heavy|media|nevasca|max|still] [secs=60] [--drag] [--sweep] [--fake] [--pointer on|off] [--no-figures] [--keep-windows] [--capture] [--runs N=3] [--bin PATH]
 #   (env: SWEEP_SEGS="x0,x1,y ..." overrides the cursor segments (CG top-left coords), ADAPTIVE=true|false A/B for adaptiveFps, NEVE_LOCK_TIMEOUT).
 # Flow: own dev bundle (NEVE_DEV=perf-<hash>) or --bin; writes the dev defaults suite io.github.viniciuscandeia.neve.dev.<name> (intensity, pointerPush, enabled, ambient=true so the 5-min
 #   idle pause does not read 0 %, visitors/snowman/sleigh/walk=false for --no-figures, stillSnow, showInCaptures); hides other apps and minimises Finder windows via osascript (restored in
 #   the EXIT trap unless --keep-windows); opens 1-2 Finder windows (bounds are top-left-origin pt); optional --drag (window dragger loop) and --sweep (build/cursor-sweep from
 #   scripts/cursor-sweep.swift moves the real cursor); samples `top -l N` (drops the first sample), footprint for memory; app-side numbers come from NEVE_PERF=1 + NEVE_PERF_LOG
 #   ([screen ...] lines: ticks/s, step, flakesim, gpu, hitch; see Sources/Neve/Perf.swift). Last output line: SUMMARY key=value ...
+# --fake (with --sweep): no real cursor; passes NEVE_FAKE_POINTER=sweep (or $SWEEP_SEGS) so Sources/Neve/FakePointer.swift walks the same path in-app (no idle gate needed for the cursor, still needs it for the screen).
 # Env passed to the app: NEVE_PERF=1, NEVE_INSTANCE, NEVE_PERF_LOG, NEVE_SCENARIO=heavy, NEVE_REDUCE_MOTION=1 (still mode).
 # Side effects: holds the screen lock for the whole run, caffeinate, kills ONLY its own pids (NEVE_PID, sweep, dragger) - NEVER kill Neve by name (the user's app may run; it only warns).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODE=media; SECS=60; DRAG=0; SWEEP=0; POINTER=""; NOFIG=0; KEEP=0; RUNS=3; BIN=""
+FAKE=0; MODE=media; SECS=60; DRAG=0; SWEEP=0; POINTER=""; NOFIG=0; KEEP=0; RUNS=3; BIN=""
 while [ $# -gt 0 ]; do
   case "$1" in
     heavy|media|nevasca|max|still) MODE=$1 ;;
     --drag) DRAG=1 ;;
     --sweep) SWEEP=1 ;;
+    --fake) FAKE=1 ;;   # with --sweep: scripted in-app pointer (NEVE_FAKE_POINTER) instead of moving the real cursor
     --pointer) POINTER=$2; shift ;;
     --no-figures) NOFIG=1 ;;
     --keep-windows) KEEP=1 ;;
@@ -25,7 +27,7 @@ while [ $# -gt 0 ]; do
     --runs) RUNS=$2; shift ;;
     --bin) BIN=$2; shift ;;
     [0-9]*) SECS=$1 ;;
-    *) echo "usage: $0 [heavy|media|nevasca|max|still] [secs] [--drag] [--sweep] [--pointer on|off] [--no-figures] [--keep-windows] [--capture] [--runs N] [--bin PATH]" >&2; exit 2 ;;
+    *) echo "usage: $0 [heavy|media|nevasca|max|still] [secs] [--drag] [--sweep] [--fake] [--pointer on|off] [--no-figures] [--keep-windows] [--capture] [--runs N] [--bin PATH]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -126,6 +128,7 @@ if [ "$SWEEP" = 1 ]; then
 fi
 
 ENVV=(NEVE_PERF=1 NEVE_INSTANCE="$NAME")
+[ "$FAKE" = 1 ] && [ "$SWEEP" = 1 ] && { ENVV+=(NEVE_FAKE_POINTER="${SWEEP_SEGS:-sweep}"); SWEEP_BIN=""; }
 [ "$MODE" = heavy ] && ENVV+=(NEVE_SCENARIO=heavy)
 [ "$MODE" = still ] && ENVV+=(NEVE_REDUCE_MOTION=1)   # still mode = Reduce Motion + Neve parada
 caffeinate -dimsu -t $(( RUNS * (SECS + 25) + 60 )) & CAFF_PID=$!; disown
@@ -135,7 +138,7 @@ if pgrep -f "/Contents/MacOS/Neve( |$)" >/dev/null; then
   echo "WARNING: another Neve.app is running; WindowServer numbers include it. Not killed."
 fi
 echo "mode=$MODE secs=$SECS runs=$RUNS drag=$DRAG sweep=$SWEEP pointer=${POINTER:-default} nofig=$NOFIG bin=$BIN"
-: > "$TMP/runs"; : > "$TMP/app"; : > "$TMP/mem"
+: > "$TMP/runs"; : > "$TMP/app"; : > "$TMP/mem"; : > "$TMP/fast"
 # Memory footprint in MB (footprint if available, else RSS from ps).
 memmb() { local m; m=$(footprint "$1" 2>/dev/null | awk '/Footprint:/ { for (i = 1; i < NF; i++) if ($i == "Footprint:") { v = $(i+1); u = $(i+2); print (u == "KB" ? v/1024 : u == "GB" ? v*1024 : u == "B" ? v/1048576 : v); exit } }')
   [ -n "$m" ] || m=$(ps -o rss= -p "$1" | awk '{ print $1 / 1024 }'); echo "${m:-0}"; }
@@ -164,6 +167,8 @@ for r in $(seq 1 "$RUNS"); do
   awk '/^\[screen/ { n++; for (i = 1; i <= NF; i++) { split($i, kv, "="); if (kv[1] == "ticks/s") f += kv[2]; if (kv[1] == "hitch") h += kv[2]; if (kv[1] == "step") { sub("/f.*", "", kv[2]); st += kv[2] }
        if (kv[1] == "flakesim") { sub("ms.*", "", kv[2]); fs += kv[2] }; if (kv[1] == "gpu") { sub("ms.*", "", kv[2]); g += kv[2] } } }
        END { if (n) printf "%.1f %.3f %.3f %.3f %.2f\n", f / n, st / n, fs / n, g / n, h / n; else print "0 0 0 0 0" }' <(tail -n +3 "$LOG" 2>/dev/null) >> "$TMP/app"
+  # frames/s where the cursor itself asked for 60 fps (`fast=` count of the [screen] lines, 5 s windows): isolates the cursor from busy bursts (avalanches, spills) that also raise the rate
+  awk '/^\[screen/ { n++; for (i = 1; i <= NF; i++) { split($i, kv, "="); if (kv[1] == "fast") s += kv[2] } } END { printf "%.2f\n", n ? s / (5 * n) : 0 }' <(tail -n +3 "$LOG" 2>/dev/null) >> "$TMP/fast"
   if [ -s "$LOG" ]; then echo "  perf log:"; tail -n 3 "$LOG" | sed 's/^/    /'; else echo "  (no NEVE_PERF_LOG output)"; fi
   kill "$NEVE_PID" 2>/dev/null || true; wait "$NEVE_PID" 2>/dev/null || true; NEVE_PID=""
   sleep 1
@@ -179,8 +184,8 @@ awk 'function med(i,  j,k,t,y){ for(j=1;j<=N;j++)y[j]=v[i,j]
     for(i=1;i<=6;i++) printf "%-24s %10.2f %10.2f\n",nm[i],med(i),sd(i) }' "$TMP/runs"
 
 # One machine-readable line: medians over runs.
-paste -d' ' "$TMP/runs" "$TMP/app" "$TMP/mem" | awk 'function med(i,  j,k,t,y){ for(j=1;j<=N;j++)y[j]=v[i,j]
+paste -d' ' "$TMP/runs" "$TMP/app" "$TMP/mem" "$TMP/fast" | awk 'function med(i,  j,k,t,y){ for(j=1;j<=N;j++)y[j]=v[i,j]
     for(j=1;j<=N;j++)for(k=j+1;k<=N;k++)if(y[k]<y[j]){t=y[j];y[j]=y[k];y[k]=t}
     return (N%2)?y[(N+1)/2]:(y[N/2]+y[N/2+1])/2 }
-  { for(i=1;i<=15;i++) v[i,NR]=$i; N=NR }
-  END { printf "SUMMARY cpu=%.2f idlew=%.1f ws=%.2f fps=%.1f step=%.3f flakesim=%.3f gpu=%.3f hitch=%.2f power=%.1f wspower=%.1f memMB=%.1f memGrowMB=%.1f\n", med(2), med(4), med(6), med(9), med(10), med(11), med(12), med(13), med(7), med(8), med(14), med(15) }'
+  { for(i=1;i<=16;i++) v[i,NR]=$i; N=NR }
+  END { printf "SUMMARY cpu=%.2f idlew=%.1f ws=%.2f fps=%.1f step=%.3f flakesim=%.3f gpu=%.3f hitch=%.2f power=%.1f wspower=%.1f memMB=%.1f memGrowMB=%.1f fastps=%.2f\n", med(2), med(4), med(6), med(9), med(10), med(11), med(12), med(13), med(7), med(8), med(14), med(15), med(16) }'

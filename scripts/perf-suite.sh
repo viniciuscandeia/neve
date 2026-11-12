@@ -4,7 +4,7 @@
 # pointer push off) and exits 1 if a budget breaks. Report: build/perf-report.md (markdown table); per-run logs in build/perf-logs/.
 # Usage: scripts/perf-suite.sh [--quick]. Env: SECS (30), RUNS (2), MAX_CPU (10 % of one core; the Nevasca sweep row has its own 11), MAX_HITCH (5 ms/s), MAX_MEM (150 MB), NEVE_LOCK_TIMEOUT.
 # Scenario row format: "title|perf.sh args|awk check on fps/cpu/base|why[| cpu limit]"; the check compares against BASE = fps of the first scenario. perf.sh prints a
-#   `SUMMARY k=v ...` line that this script parses via eval (keys cpu fps step flakesim gpu hitch power wspower memMB ws idlew).
+#   `SUMMARY k=v ...` line that this script parses via eval (keys cpu fps step flakesim gpu hitch power wspower memMB ws idlew fastps).
 # Side effects: builds its own dev bundle (NEVE_DEV=perf-<hash>), moves the REAL cursor and opens/hides Finder windows (done inside perf.sh, restored on exit), holds the screen lock
 #   (~10 min; leave the Mac alone). Never touches the user's Neve (dev bundle + dev defaults suite). Never run it concurrently with other screen work.
 set -euo pipefail
@@ -15,14 +15,14 @@ NAME=perf-$(basename "$ROOT" | shasum | cut -c1-4)
 NEVE_DEV=$NAME "$ROOT/scripts/make-app.sh" >&2
 BIN="$ROOT/build/Neve-$NAME.app/Contents/MacOS/Neve-dev-$NAME"
 
-# name | perf.sh args | extra check (awk condition on fps / cpu / base = fps of the first scenario; empty = CPU budget only) | what the check means
+# name | perf.sh args | extra check (awk condition on fps / fastps (frames/s the cursor itself asked for 60 fps) / cpu / base = fps of the first scenario; empty = CPU budget only) | what the check means
 # Verdict also fails when hitch > MAX_HITCH ms/s (5) or memory > MAX_MEM MB (150: three full-screen drawables plus Metal are ~100 MB).
 # Optional 5th field: this scenario's own CPU limit. The Nevasca sweep is a worst case (cursor cutting through the piles nonstop for the whole run;
 # the snow it throws up keeps 60 fps), so it gets 11% instead of MAX_CPU.
 SCENARIOS=(
   "Média, cursor parado|media --no-figures|fps <= 40|calm snow runs mostly at 30 fps (gusts and spills raise it briefly)"
   "Média, mouse sobre os montes|media --no-figures --sweep --pointer on||"
-  "Média, mouse no vazio, empurrão desligado|media --no-figures --sweep --pointer off --segs 300,1100,620|fps <= base + 2|a fast cursor away from any snow does not raise the rate when the push is off"
+  "Média, mouse no vazio, empurrão desligado|media --no-figures --sweep --pointer off --segs 300,1100,620|fastps <= 0.5|a fast cursor away from any snow never asks for 60 fps when the push is off (fps itself also rises with busy bursts: avalanches, spills)"
   "Nevasca, cursor parado|nevasca --no-figures||"
   "Nevasca, mouse sobre os montes|nevasca --no-figures --sweep --pointer on||| 11"
 )
@@ -41,7 +41,7 @@ for s in "${SCENARIOS[@]}"; do
   eval "$(echo "${line#SUMMARY }" | tr ' ' '\n' | sed 's/^/m_/')"
   verdict="✓"
   awk -v c="$m_cpu" -v m="$lim" 'BEGIN { exit !(c <= m) }' || { verdict="✗ CPU acima de ${lim}%"; FAIL=1; }
-  if [ -n "$check" ] && ! awk -v fps="$m_fps" -v cpu="$m_cpu" -v base="${BASE:-$m_fps}" "BEGIN { exit !($check) }"; then verdict="✗ $why ($check)"; FAIL=1; fi
+  if [ -n "$check" ] && ! awk -v fps="$m_fps" -v fastps="$m_fastps" -v cpu="$m_cpu" -v base="${BASE:-$m_fps}" "BEGIN { exit !($check) }"; then verdict="✗ $why ($check)"; FAIL=1; fi
   awk -v h="$m_hitch" -v m="$MAX_HITCH" 'BEGIN { exit !(h <= m) }' || { verdict="$verdict ✗ hitch acima de ${MAX_HITCH} ms/s"; FAIL=1; }
   awk -v h="$m_memMB" -v m="$MAX_MEM" 'BEGIN { exit !(h <= m) }' || { verdict="$verdict ✗ memória acima de ${MAX_MEM} MB"; FAIL=1; }
   [ -z "$BASE" ] && BASE=$m_fps
