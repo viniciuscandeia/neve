@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Tree.swift  (the one Christmas tree: warning gust, fall, landing, pick-up, window following)
 // Role: Tuning tree constants, `Tree` (foot-centre `pos`, state held / falling / resting, `surface` it stands on, `land` seconds since touchdown, `snow` = 0...1 snow counter per branch layer (SIMD4, bottom layer first), `tilt`, `out` fade),
-//   `Burst` (x + seconds of the warning gust) and SnowField code. API: `dropTree()` (menu / auto timer: starts the ~2 s burst at a random x away from the edges, false when disabled, quiet or one already exists), `hasTree` (tree, burst or a tree
+//   `Burst` (x + seconds of the warning gust) and SnowField code. API: `dropTree(replacing:)` (menu / auto timer: starts the ~2 s burst at a random x away from the edges, false when disabled, quiet or one already exists; `replacing` first `removeTree()`s the existing one: the menu), `hasTree` (tree, burst or a tree
 //   stashed with a window: the uniqueness test AppController uses across screens), `pickTree(at:)` / `dragTree(to:dt:)` / `releaseTree(throwing:)` (Option-click pick-up, mirrors Snowball held / drop), `takeTree()` / `adoptTree(_:at:)` (the drag
 //   crosses to a neighbour screen's field), `treeUnder` (hitTest), `writeTreePrims` (Rig.tree, honours the drag `shift`; fade * `hide`, draw-only, see Snowball.swift `stepCovered`).
 // Simulation `stepTree` (SnowField.step, after gifts): burst timer -> `startTreeFall` (from above the top edge at the burst x) -> falls like a Gift (same integrator) and lands on `treeSupport` (highest surface whose three foot columns are all `open` and
@@ -51,14 +51,21 @@ extension SnowField {
 
     /// Menu / auto timer: warns with a ~2 s gust at a random x (12-88 % of the width) and then the tree falls there. Reduce Motion skips the gust.
     @discardableResult
-    public func dropTree() -> Bool {
-        guard treeEnabled, !hasTree, !quiet, size.x > 200 else { return false }
+    public func dropTree(replacing: Bool = false) -> Bool {
+        guard treeEnabled, !quiet, size.x > 200, replacing || !hasTree else { return false }
+        if replacing { removeTree() }
         let half = Tuning.treeHalfFoot * snowmanScale
         for _ in 0..<16 {   // an x with open snow ground under the foot (a covered stretch is skipped)
             let x = Float.random(in: size.x * 0.12...size.x * 0.88, using: &treeRng)
             if treeSupport(x: x, fromY: size.y, half: half) != nil { burst = Burst(x: x, t: calm ? Tuning.burstDur : 0); return true }
         }
         return false
+    }
+
+    /// Menu "Soltar árvore" with one about: the current tree / burst / tree stashed with a window goes away (no gifts, no crater) before the new gust.
+    public func removeTree() {
+        tree = nil; burst = nil
+        for k in stash.keys { stash[k]?.tree = nil }
     }
 
     func startTreeFall(x: Float) {

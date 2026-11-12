@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Walk.swift  (snowmen walking: gait, wind, hops between surfaces)
 // Role: Tuning.walk/fight constants (fightRange 250, maxFights 2, maxFigures 3, walkSpeed 14 pt/s x scale +-20 %, hop between ground and Dock or across a seam / wall between touching windows (`touching`, Seams.swift): stepMax 10 pt high, stepGap 8 pt wide, hopTime 0.45 s, windPush/windLean, headlessLife 25 s, cheerTime 2,
-//   headHitsToLose 3), `Flutter` (scarf/arm pose of a walker, transforms only, no path rebuild; part of Pose in Rig) `Flutter.make/rate/arm` (pure pose from gust, gait, direction, phase) and SnowField walking helpers: `walkRange`/`standRange` (where a figure may stand on a surface), `transfer`/`hopStep` (`Xfer` hops between ground and Dock and across seams of touching windows), `walkStep`.
+//   headHitsToLose 3), `Flutter` (scarf/arm pose of a walker, transforms only, no path rebuild; part of Pose in Rig) `Flutter.make/rate/arm` (pure pose from gust, gait, direction, phase) and SnowField walking helpers: `walkRange`/`standRange` (where a figure may stand on a surface), `transfer`/`hopStep` (`Xfer` hops between ground and Dock and across seams of touching windows), `walkStep`, `actorBlocked` (the overlap test shared with penguin / robin: snowman, resting tree, gifts).
 //   Walking is skipped when `walkEnabled` is off or the field is calm (Reduce Motion) (see stepFigures); `gust` (wind -> -1...1 with a 20 pt/s dead zone) is defined here and shared by figures, shots and Fights. The Tuning fight constants (fightRange, maxFights, maxThrows, fightRest, headAim, throwGap, hitChance, shotWind) live here too; the auto snowman never walks onto bare ground. Callers: stepFigure (Figures.swift), Fights. Tests: WalkTests, NaturalMotionTests.
 
 import CoreGraphics
@@ -133,6 +133,17 @@ extension SnowField {
         return x.sid
     }
 
+    /// The overlap test of every walker: would standing at `x` (half-width `half`) on surface `sid` touch an active snowman (+6 pt) or, with `props`, the resting tree / a resting gift?
+    /// `from` = where it is now: only a step that gets closer is blocked (so one already touching can walk away); nil = a placement, any overlap blocks.
+    func actorBlocked(sid: Int, id: Int, x: Float, from: Float?, half: Float, props: Bool = true) -> Bool {
+        func hit(_ ox: Float, _ r: Float) -> Bool { abs(x - ox) < half + r && (from.map { abs(x - ox) < abs($0 - ox) } ?? true) }
+        for o in figures where o.id != id && o.surfaceID == sid && o.active { if hit(o.foot.x, o.radii.x + 6) { return true } }
+        guard props else { return false }
+        if let t = tree, t.state == .resting, t.surface == sid, hit(t.pos.x, t.halfFoot) { return true }
+        for g in giftState.gifts where g.surface == sid { if hit(g.pos.x, g.size / 2) { return true } }
+        return false
+    }
+
     /// -1...1: how hard the wind blows sideways. Zero below a dead zone, so only Nevasca gusts count (Leve / Media peak at 8).
     var gust: Float { if let o = gustOverride { return o }; return (wind < 0 ? -1 : 1) * min(1, max(0, abs(wind) - 20) / 80) }
 
@@ -172,10 +183,7 @@ extension SnowField {
                 let v = min(max(f.facing * base + g * Tuning.windPush * scale, -1.5 * base), 1.5 * base)
                 let nx = f.foot.x + v * dt
                 // Figures do not walk through each other (or onto bare ground, for the auto one): turn back.
-                var blocked = false
-                for o in figures where o.id != f.id && o.surfaceID == sid && o.active {
-                    if abs(nx - o.foot.x) < half + o.radii.x + 6 && abs(nx - o.foot.x) < abs(f.foot.x - o.foot.x) { blocked = true; break }
-                }
+                let blocked = actorBlocked(sid: sid, id: f.id, x: nx, from: f.foot.x, half: half, props: false)
                 if blocked || (auto && !outside && !snowUnder(sid, nx)) { f.facing = -f.facing } else {
                     shift(v * dt)
                     if f.foot.x >= hi && f.facing > 0 {

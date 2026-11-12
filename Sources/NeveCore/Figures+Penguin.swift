@@ -1,10 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Figures+Penguin.swift  (penguin visitor: waddle, belly slide, groove plowing)
 // Origin z: the plow spray debris is stamped with the penguin's surface z (`originZ(si:)`, Debris.swift).
 // Role: Tuning.penguin* constants, `PenguinState` (Stage: rise 0.4 s, waddle, flop 0.2 s, slide, stand 0.3 s, air, sink 0.45 s; `life` 20-40 s from startPenguin) and the SnowField code for `Figure.kind == .penguin`.
-//   `startPenguin` (window tops only, never ground / Dock; first visible run >= penguinMinRun 200 pt with mean h >= 3; one penguin at a time; off in ground-only mode) places it at 25-75 % of the run. It waddles 18 pt/s (rock 8 deg at 2.5 Hz);
+//   `startPenguin` (window tops only, never ground / Dock; the BACKMOST visible run >= penguinMinRun 200 pt with mean h >= 3; one penguin at a time; off in ground-only mode) places it at 25-75 % of the run. It waddles 18 pt/s (rock 8 deg at 2.5 Hz);
 //   when 120 pt ahead carry snow (mean h >= 3) and 4 s have passed since the last slide it flops onto its belly and slides from 90 pt/s, braking 8 + 1.5 * depth ahead pt/s^2, plowing a trench via `Pile.plow` (`plowPath`: penguinGroove 2.5 pt
-//   deep, berm share banked, the rest owed in `spray` and thrown as debris + puffs; snow conserved), standing up when < 15 pt/s or the snow ahead is bare. It launches (`launch`, ballistic `flyPenguin`) off a resting user ball or at the window
-//   end (50 %, else it sinks), and lands on any pile / ball below, else leaves the screen. When `life` runs out it heads for the nearer window end. `sweepPenguins` (cursor segment -> duck hop). `penguinLook(of:)` feeds Rig.penguin.
+//   deep, berm share banked, the rest owed in `spray` and thrown as debris + puffs; snow conserved), standing up when < 15 pt/s or the snow ahead is bare. It launches (`launch`, ballistic `flyPenguin`) off a resting user ball or at a window
+//   end with no touching neighbour (50 %, else it sinks; with a neighbour (`crossSeam`) it always walks on), and lands on any pile / ball below, else leaves the screen. When `life` runs out it heads for the nearer window end. `sweepPenguins` (cursor segment -> duck hop; also a window faster than robinSurfaceSpeed or an `impactAt` within robinImpact). `actorBlocked` (Walk.swift) vetoes the spawn spot and turns it back at a snowman / tree / gift. `penguinLook(of:)` feeds Rig.penguin.
 // Started by EventDirector (startVisitor; `stepPenguinDemo` for NEVE_DEMO_PENGUIN); stepped from stepFigure via `stepPenguin` (false = removed). Uses `rng` for effects, `director.rng` for visit choices. Tests: PenguinTests. Units pt, pt/s, s.
 
 import CoreGraphics
@@ -80,9 +80,11 @@ extension SnowField {
         standRange(si: si, x: x, height: 22 * snowmanScale).map { (lo: $0.0, hi: $0.1) }
     }
 
-    /// Starts a visit on the first window top with a visible run >= 200pt whose mean height is >= 3 (window-only: never the ground / Dock).
+    /// Starts a visit on the backmost window top with a visible run >= 200pt whose mean height is >= 3 (window-only: never the ground / Dock), so it does not land on the window in use (the front one);
+    /// a spot that overlaps the snowman, the tree or a gift is skipped (`actorBlocked`).
     func startPenguin() -> Bool {
         guard !visitorsGroundOnly, !figures.contains(where: { $0.kind == .penguin }) else { return false }
+        var runs: [(si: Int, lo: Float, hi: Float)] = []   // front -> back
         for si in surfaces.indices where surfaces[si].id > 0 {
             let s = surfaces[si]
             for run in s.runs {
@@ -90,19 +92,24 @@ extension SnowField {
                 guard hi - lo >= Tuning.penguinMinRun else { continue }
                 var sum: Float = 0
                 for b in run { sum += s.pile.heights[b] }
-                guard sum / Float(run.count) >= Tuning.penguinMinH else { continue }
-                let x = lo + (hi - lo) * Float.random(in: 0.25...0.75, using: &director.rng)
-                var f = Figure(id: nextFigureID, kind: .penguin, foot: SIMD2(x, standY(si: si, x: x)), radii: SIMD3(repeating: 11.5 * snowmanScale), fromBalls: true)
-                nextFigureID += 1
-                f.at = .surface(id: s.id, x: x)
-                f.phase = .walking
-                f.fade = 0
-                f.penguin.dir = hi - x >= x - lo ? 1 : -1
-                f.penguin.life = Float.random(in: 20...40, using: &director.rng)
-                f.facing = f.penguin.dir
-                figures.append(f)
-                return true
+                if sum / Float(run.count) >= Tuning.penguinMinH { runs.append((si, lo, hi)) }
             }
+        }
+        guard !runs.isEmpty else { return false }
+        let u = Float.random(in: 0.25...0.75, using: &director.rng)
+        for (si, lo, hi) in runs.reversed() {
+            let s = surfaces[si], x = lo + (hi - lo) * u, half = 11.5 * snowmanScale
+            guard !actorBlocked(sid: s.id, id: nextFigureID, x: x, from: nil, half: half) else { continue }
+            var f = Figure(id: nextFigureID, kind: .penguin, foot: SIMD2(x, standY(si: si, x: x)), radii: SIMD3(repeating: half), fromBalls: true)
+            nextFigureID += 1
+            f.at = .surface(id: s.id, x: x)
+            f.phase = .walking
+            f.fade = 0
+            f.penguin.dir = hi - x >= x - lo ? 1 : -1
+            f.penguin.life = Float.random(in: 20...40, using: &director.rng)
+            f.facing = f.penguin.dir
+            figures.append(f)
+            return true
         }
         return false
     }
@@ -163,6 +170,11 @@ extension SnowField {
         guard let sid = f.surfaceID, let si = index[sid], let run = penguinRun(si: si, x: f.foot.x) else { f.dying = true; return true }
         let prevX = f.foot.x, d = p.dir
         f.facing = d
+        let sv = surfaces[si].vel, recent = max(0.1, dt * 1.5)
+        if p.duck <= 0, p.stage != .rise, sv.x * sv.x + sv.y * sv.y > Tuning.robinSurfaceSpeed * Tuning.robinSurfaceSpeed
+            || impactAt.map({ time - $0.t <= Double(recent) && (($0.x - f.foot.x) * ($0.x - f.foot.x) + ($0.y - f.foot.y - 9 * f.scale) * ($0.y - f.foot.y - 9 * f.scale)) <= Tuning.robinImpact * Tuning.robinImpact }) == true {
+            p.duck = 0.3   // its window shakes / an avalanche lands close: it ducks (like the robin's startle, without leaving)
+        }
         switch p.stage {
         case .rise:
             let u = min(p.t / 0.4, 1), e = u * (2 - u)
@@ -214,6 +226,10 @@ extension SnowField {
             if u >= 1 { removeFigure(i); return false }
         default: break
         }
+        if p.stage == .waddle || p.stage == .slide, f.foot.x != prevX, actorBlocked(sid: sid, id: f.id, x: f.foot.x, from: prevX, half: f.radii.x) {   // snowman / tree / gift ahead: back off and turn
+            f.foot.x = prevX; p.dir = -d; f.facing = -d
+            if p.stage == .slide { p.stage = .stand; p.t = 0; p.sinceSlide = 0 }
+        }
         if p.stage == .waddle || p.stage == .slide {
             for b in balls where b.state == .resting && b.parent == nil && !b.melting && b.surfaceID == sid && b.id != p.lastBall {
                 guard (prevX - b.pos.x) * d < 0, (f.foot.x - b.pos.x) * d >= 0 else { continue }
@@ -223,6 +239,7 @@ extension SnowField {
                 return true
             }
             if d > 0 ? f.foot.x >= run.hi - 3 : f.foot.x <= run.lo + 3 {   // window end: fly off, or hop down behind the edge
+                if let n = neighbor(si: si, dir: d > 0 ? 1 : -1), crossSeam(&f, &p, to: n) { return true }   // a seam: always cross
                 if Bool.random(using: &director.rng) {
                     let v = max(p.stage == .slide ? p.speed : 0, 40)
                     launch(&f, &p, from: f.foot, v: v, vy: 0.8 * v, spin: false)
@@ -235,6 +252,15 @@ extension SnowField {
         if p.duck > 0, p.stage != .rise { f.pose.hop += 5 * f.scale * sin(.pi * (1 - p.duck / 0.3)) }
         f.at = .surface(id: sid, x: f.foot.x)
         if p.stage != .rise, p.stage != .sink { f.fade = 1 }
+        return true
+    }
+
+    /// Steps onto the surface touching this window's end (`neighbor`), a few pt in, keeping stage and direction. False when the stretch there is too small / blocked (the caller falls back to the end behaviour).
+    private func crossSeam(_ f: inout Figure, _ p: inout PenguinState, to n: (si: Int, bin: Int)) -> Bool {
+        let t = surfaces[n.si], x = min(max(Float(t.c0 + n.bin) * Tuning.binWidth + p.dir * 4, t.pile.x0), t.pile.x1)
+        guard t.id > 0, t.id != draggingID, let r = penguinRun(si: n.si, x: x), (p.dir > 0 ? r.hi - x : x - r.lo) > 12,
+              !actorBlocked(sid: t.id, id: f.id, x: x, from: nil, half: f.radii.x) else { return false }
+        f.foot = SIMD2(x, standY(si: n.si, x: x)); f.at = .surface(id: t.id, x: x)
         return true
     }
 

@@ -5,7 +5,7 @@
 //   a 10 pt wide, 1.5 pt deep dent, 3 clumps fall). `startled` (shot landing within robinShot, a cursor > 300 pt/s within robinCursor, an impact within robinImpact, or its window moving > robinSurfaceSpeed) triggers `knock` + a fast
 //   `launch`: ~40 % of the pile within +-20 pt falls as slabs and a full pile loosens an avalanche (`triggerAvalanche`). Story: `storyStarted` (EventDirector.storyBias default) makes 1 in 3 rabbit visits request a robin first;
 //   `storyWaiting` keeps the rabbit sniffing for it (<= robinStoryWait 25 s); `storyMiss` aims the snowman's missed throws toward the perched robin. Reads shotLand / impactAt / pointer / pointerVel. `robinLook(of:)` feeds Rig.robin.
-// Window moves shift a flying robin's target in Figures.swift transportFigures. Uses `director.rng` for visit choices, `rng` for effects. Tests: RobinTests.
+// `robinSpot` and its hops skip anything `actorBlocked` (Walk.swift) flags. Window moves shift a flying robin's target in Figures.swift transportFigures. Uses `director.rng` for visit choices, `rng` for effects. Tests: RobinTests.
 
 import CoreGraphics
 import Foundation
@@ -62,6 +62,7 @@ extension SnowField {
                 guard hi - lo >= Tuning.robinRun else { continue }
                 var x = lo + 12
                 while x <= hi - 12 {
+                    if actorBlocked(sid: s.id, id: -1, x: x, from: nil, half: 8 * snowmanScale) { x += 6; continue }   // never on the snowman / tree / a gift
                     let c = min(max(column(x) - s.c0, 0), s.pile.heights.count - 1)
                     var score = s.pile.heights[c] / mh - abs(x - (lo + hi) / 2) * 0.0003   // plateau ties go to the middle
                     if let px { score += (s.id == pref ? 1 : 0) - abs(px - x) * 0.002 } else { score += Float.random(in: 0..<0.05, using: &director.rng) }
@@ -154,6 +155,7 @@ extension SnowField {
                 if !r.hopping {
                     let dir: Float = Bool.random(using: &director.rng) ? 1 : -1
                     r.hopFrom = f.foot.x; r.hopTo = min(max(f.foot.x + dir * 6, lo + 8), max(lo + 8, hi - 8)); r.hopT = 0; r.hopping = true
+                    if actorBlocked(sid: r.sid, id: f.id, x: r.hopTo, from: f.foot.x, half: 8 * f.scale) { r.hopTo = r.hopFrom }   // a snowman / tree / gift that way: it hops in place
                     f.facing = r.hopTo >= r.hopFrom ? 1 : -1
                 }
                 r.hopT += dt

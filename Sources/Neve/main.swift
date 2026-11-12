@@ -6,7 +6,7 @@
 // Threading: everything is @MainActor; notifications that may arrive off-main are delivered with queue:.main + MainActor.assumeIsolated. Timers are added to RunLoop .common so menus do not stall them.
 // Run state: `run` (RunState, NeveCore/RunState.swift: outroing/screensAsleep/sessionInactive/screensaver): running = (enabled||outroing) && !asleep && !inactive && !screensaver; polling = running && !hot (thermal >= serious); overlays run only if !idle.userIdle.
 //   userIdle = no input for NEVE_IDLE_SECS (default 300 s) unless Modo ambiente: first the melt (IdleMonitor.swift: snow melts, meltGen guards stale completions) then rendering pauses; input -> IdleMonitor.wake.
-//   refreshRunState() is the single re-evaluation point (status icon, overlay setRun, timers, Dock + poll kick). Christmas tree: `dropTreeNow` ("Soltar árvore" menu item and a one-shot 15 s timer after the snow starts, `armTree`) picks the cursor's screen and refuses while any overlay `hasTree`. Prefs: syncPrefs diffs Pref snapshot (NeveCore/Prefs.swift) -> prefChanged(pref) is the only reaction path.
+//   refreshRunState() is the single re-evaluation point (status icon, overlay setRun, timers, Dock + poll kick). Christmas tree: `dropTreeNow` ("Soltar árvore" menu item and a one-shot 15 s timer after the snow starts, `armTree`) picks the cursor's screen; the timer refuses while any overlay `hasTree`, the menu (`replacing`) removes the existing tree first. Prefs: syncPrefs diffs Pref snapshot (NeveCore/Prefs.swift) -> prefChanged(pref) is the only reaction path.
 // Split (behavior-neutral): RunState (NeveCore/RunState.swift) = pause flags; IdleMonitor.swift = idle melt / wake; WindowPoller.swift = scheduler, mouse monitor, pollWindows, Mission Control gate, scene mode (everything described under "Window polling" below except the safety timer / AX watcher / Dock refresh, which stay here).
 // Window polling: every read goes through `sched` (PollScheduler, NeveCore/WindowInfo.swift: coalesced, <=30/s, bursts bounded). Sources: WindowWatcher AX events (transitionPoll / settlePoll),
 //   safety timer (2 s -> 5 s after 10 s quiet with AX; 0.5 s without Accessibility; 1 Hz while every screen is under a fullscreen app), 30 s Dock refresh, 0.3 s Mission Control probe (WindowList.swift onScreenWindowIDs),
@@ -53,7 +53,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion   // read once per system change
     private var menuViews: [NSView] = []   // the custom-view items, re-fitted each time the menu opens
     private var ajustesItem: NSMenuItem?
-    private var treeItem: NSMenuItem?      // "Soltar árvore": enabled only while there is no tree anywhere
+    private var treeItem: NSMenuItem?      // "Soltar árvore": enabled whenever the tree option is on (an existing tree is replaced)
     private var treeAutoPending = true     // the tree falls by itself once, shortly after the snow starts (Pref.christmasTree on)
     private var treeTimer: Timer?
     private var tabsObservation: NSKeyValueObservation?
@@ -346,7 +346,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         updateStatus()
-        treeItem?.isEnabled = flag(.christmasTree) && !overlays.contains(where: \.hasTree) && overlays.contains(where: \.showing)
+        treeItem?.isEnabled = flag(.christmasTree) && overlays.contains(where: \.showing)
         menuViews.forEach { $0.frame.size = $0.fittingSize }
         ajustesItem?.attributedTitle = nil
         let plainTitle = ajustesItem?.title
@@ -616,13 +616,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func clearSnow() { for o in overlays { o.clear() } }
 
     /// The Christmas tree falls on the cursor's screen (else the first shown one); never a second one anywhere (also counts a tree carried by a drag onto another screen).
-    @discardableResult private func dropTreeNow() -> Bool {
-        guard flag(.christmasTree), !overlays.contains(where: \.hasTree) else { return false }
+    @discardableResult private func dropTreeNow(replacing: Bool = false) -> Bool {
+        guard flag(.christmasTree), replacing || !overlays.contains(where: \.hasTree) else { return false }
         let m = NSEvent.mouseLocation, shown = overlays.filter(\.showing)
         guard let o = shown.first(where: { $0.screenFrame.contains(m) }) ?? shown.first else { return false }
-        return o.dropTree()
+        if replacing { overlays.forEach { $0.removeTree() } }   // the menu: the current tree goes, a new gust + fall starts
+        return o.dropTree(replacing: replacing)
     }
-    @objc private func dropTreeAction() { dropTreeNow() }
+    @objc private func dropTreeAction() { dropTreeNow(replacing: true) }
     /// Once per launch the tree falls by itself ~15 s after the snow starts; retried every 15 s while nothing can show it (paused, idle melt, option off).
     private func armTree() {
         guard treeAutoPending, treeTimer == nil, flag(.christmasTree), sceneKind == nil else { return }

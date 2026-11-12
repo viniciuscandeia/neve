@@ -52,7 +52,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     var screenFrame: CGRect { frame }
     var hasTree: Bool { field.hasTree }
     /// "Soltar árvore": starts the tree's gust + fall on this screen (false when there is one already, the option is off or the snow is leaving).
-    func dropTree() -> Bool { let ok = field.dropTree(); if ok { wake() }; return ok }
+    func dropTree(replacing: Bool = false) -> Bool { let ok = field.dropTree(replacing: replacing); if ok { wake() }; return ok }
+    /// Removes any tree / burst this screen holds (the menu replaces it); a drag in progress ends with it.
+    func removeTree() { field.removeTree(); if heldTree != nil { heldTree = nil; pressing = false }; wake() }
     private var lastDragTime: CFTimeInterval = 0
     private var dayChecked: CFTimeInterval = -1000
     private var pollMouse = NSEvent.mouseLocation
