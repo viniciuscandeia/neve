@@ -4,7 +4,7 @@
 //   inFlight semaphore = 3, never blocks main: a skipped slot just drops the frame) and the three Metal passes (piles -> prims/actors -> flakes; shaders in PileShader/PrimShader/Renderer.swift).
 //   `InteractView` forwards mouse events; the panel ignores the mouse EXCEPT while Option is held over snow / a snowball (hitTest) or a drag is in progress (`pressing`, `held` snowball, `heldTree` = the overlay whose field holds the dragged Christmas tree: it moves to the neighbour screen's overlay (Overlay.all) when the cursor crosses; `dropTree()` / `hasTree` are the menu / uniqueness hooks).
 // Coordinates: simulation + all buffers are screen-LOCAL AppKit points, y-up, origin = screen.frame.origin (groundY = visibleFrame.minY - frame.minY, visibleTop likewise). Metal viewport slides the whole-screen
-//   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ[17] = shader occluder rects + strength).
+//   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ[26] = shader occluder rects + strength / counts).
 // Frame loop (`tick`, main thread via RunLoop.main .common; the nonisolated delegate uses MainActor.assumeIsolated): dt = min(real dt, 0.06); Palette.tick; advanceCover; cursor sweep (one segment from last
 //   position, only if not near another screen); pointer velocity; MusicTap.shared.read(); field.step (optionally calm interpolation: Tuning.interpolateCalm); drag shift (pile/figure offset = mouse delta since poll);
 //   render(). Adaptive rate: 60 fps while anything fast (cursor near snow, held ball, field.isBusy) else 30 after FrameRate.holdDown; economy (or thermal fair+, FrameRate.economyFrames) / low power cap; still mode (Reduce Motion + stillSnow) sleeps the link
@@ -102,7 +102,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var coverPause = false                     // `covered`: nothing live, paused like a fullscreen app
     private var coverActive = false                    // compact mode entered (until the exit ramp ends)
     private var occStrength: Float = 0, occTarget: Float = 0   // flake occluders 0...1
-    private var occ = [SIMD4<Float>](repeating: .zero, count: 17)   // 4 rects hiding every flake, 4 hiding background flakes, 8 hard rects (floating panels), strength
+    private var occ = [SIMD4<Float>](repeating: .zero, count: 26)   // 8 compact rects (faded by strength), 8 hiding background flakes, 8 hard rects (surfaceless windows, floating panels), s, n (see Renderer `Occ`)
+    private var occCount = (compact: 0, behind: 0, hard: 0)
     private var shrunk: CGRect?                        // live rect applied to panel + Metal layer (screen-local); nil = whole screen
 
     init?(screen: NSScreen, prefs: OverlayPrefs) {
@@ -226,7 +227,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         visibleTop = v.maxY - f.minY
         shrunk = nil; liveLocal = nil; coverKey = nil
         cover = CompactState(); coverFraction = 0; coverActive = false; coverPause = false; occStrength = 0; occTarget = 0
-        for i in occ.indices { occ[i] = .zero }
+        for i in occ.indices { occ[i] = .zero }; occCount = (0, 0, 0)
         held = nil; heldTree = nil; pressing = false; lastCursor = nil; shiftID = nil; shift = .zero
         lastWindows = []; pileSeen = -1; pileForce = true
         field.resize(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop)
@@ -354,23 +355,17 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
 
     private func computeCover(_ windows: [WindowInfo], _ vis: CGRect) {
         let o = frame.origin
-        let rects = windows.filter { $0.number != 0 && !$0.occluderOnly && $0.frame.intersects(vis) }.map(\.frame).sorted { $0.width * $0.height > $1.width * $1.height }
+        let rects = windows.filter { $0.number != 0 && !$0.occluderOnly && $0.frame.intersects(vis) }.map(\.frame)
         let c = coverage(of: rects, in: vis)
         coverFraction = c.fraction;
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
-        for i in 0..<16 { occ[i] = .zero }
-        if !prefs.behind {
-            // Largest first, window id breaks ties: equal areas keep the same slots between polls (no flicker).
-            let hard = windows.filter { $0.occluderOnly && $0.frame.intersects(frame) && $0.frame.width >= 4 && $0.frame.height >= 4 }
-                .sorted { (x: WindowInfo, y: WindowInfo) -> Bool in let a = x.frame.width * x.frame.height, b = y.frame.width * y.frame.height; return a != b ? a > b : x.number < y.number }
-            for (i, w) in hard.prefix(8).enumerated() { occ[8 + i] = box(w.frame) }
-        }
-        for (i, r) in rects.prefix(4).enumerated() { occ[i] = box(r) }
-        if prefs.behindLarge {
-            let big = rects.filter { $0.width * $0.height >= 0.35 * vis.width * vis.height }
-            for (i, r) in big.prefix(4).enumerated() { occ[4 + i] = box(r) }
-        }
+        for i in 0..<24 { occ[i] = .zero }
+        let l = occluderLayout(windows: windows, vis: vis, screen: frame, behindWindows: prefs.behind, behindFar: prefs.behindLarge)
+        for (i, r) in l.compact.enumerated() { occ[i] = box(r) }
+        for (i, r) in l.behind.enumerated() { occ[8 + i] = box(r) }
+        for (i, r) in l.hard.enumerated() { occ[16 + i] = box(r) }
+        occCount = (l.compact.count, l.behind.count, l.hard.count)
     }
 
     /// Hysteresis timers keep running on every poll, changed snapshot or not.
@@ -796,6 +791,13 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: primCapacity)
         t0 = Perf.now()
         writePrims(&w)
+        // Soft cut: before the drawable shrinks, everything outside the live strip fades with the occluders (`Rig.a` convention: alpha only).
+        var outFade: Float = 0
+        var live = SIMD4<Float>.zero
+        if coverActive, shrunk == nil || occStrength < 1, let r = liveLocal, r.width * r.height <= 0.5 * frame.width * frame.height {
+            outFade = occStrength; live = SIMD4(Float(r.minX), Float(r.minY), Float(r.maxX), Float(r.maxY))
+            w.fadeOutside(live, by: 1 - outFade)
+        }
         if w.dropped > 0 { primWant = max(primWant, primCapacity + w.dropped) }
         perf?.truncated(prims: w.dropped)
         perf?.add(.actors, t0); t0 = Perf.now()
@@ -835,6 +837,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                 var occN = UInt32(field.occluders.count)
                 if pileOcc.isEmpty { pileOcc = [.zero, .zero] }
                 enc.setFragmentBytes(&pileOcc, length: pileOcc.count * MemoryLayout<SIMD4<Float>>.stride, index: 2)
+                enc.setFragmentBytes(&live, length: MemoryLayout<SIMD4<Float>>.size, index: 4)
+                enc.setFragmentBytes(&outFade, length: MemoryLayout<Float>.size, index: 5)
                 enc.setFragmentBytes(&occN, length: MemoryLayout<UInt32>.size, index: 3)
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pileCount)
             }
@@ -852,7 +856,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
             var cf = SIMD2<Float>(contrast, fx)
             enc.setFragmentBytes(&cf, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
-            occ[16] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, (8..<16).contains { occ[$0].z > occ[$0].x } ? 1 : 0, Palette.dark)   // rects 0-3 only mask with strength > 0; 4-7 always
+            occ[24] = SIMD4(occStrength, occStrength > 0 ? Float(occCount.compact) : 0, Float(occCount.hard), Palette.dark)   // compact rects only mask with strength > 0; behind / hard always
+            occ[25] = SIMD4(Float(occCount.behind), 0, 0, 0)
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()

@@ -1,10 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Coverage.swift  (maximized-window / compact mode)
 // Role: `coverage(of:in:cols:rows:)` (share of `area` hidden by window rects, sampled on a 48x30 grid of cell centres, plus the bounding box of the uncovered cells), `liveRect(frame:visible:uncovered:)` (uncovered part + Dock / side strips,
 //   menu bar excluded, clipped to frame), `CompactState` (hysteresis: enter at >= 90 % hidden for 0.6 s, leave < 85 % for 0.2 s, frozen while a mouse button is down; `covered` = compact with live height < 8 pt, the overlay then pauses;
-//   `pending` = a timer is running, an idle caller must look again) and `SnowField.setLive(_:)` / `wake(fraction:)` / `activeFlakes`.
+//   `pending` = a timer is running, an idle caller must look again) and `occluderLayout` (window rects -> the shader's 8 compact / 8 background-flake / 8 always-on slots; windows with no surface, top within minHeadroom of the menu bar, are always-on), `SnowField.setLive(_:)` / `wake(fraction:)` / `activeFlakes`.
 // setLive: flakes live and spawn only inside the live rect (local coords, spawn just above its top edge), areaScale = rect area / screen area (min 0.08), then re-applies intensity. wake: each dormant active flake respawns above the top
 //   with probability `fraction` and a random extra height up to 2.5 s of fall. The free functions are coordinate-agnostic: Overlay.measureCover feeds global rects, then offsets the live rect to local before setLive.
-// Callers: Overlay.measureCover / advanceCover (Sources/Neve; wake(fraction: 0.5) on leaving compact). Tests: CoverageTests.
+// Callers: Overlay.measureCover / advanceCover (Sources/Neve; wake(fraction: 0.5) on leaving compact). Tests: CoverageTests, OccluderLayoutTests.
 
 import CoreGraphics
 import Foundation
@@ -99,4 +99,30 @@ extension SnowField {
 
     /// Flakes alive (not dormant) in the sky + background pools.
     public var activeFlakes: Int { flakes.reduce(0) { $0 + ($1.kind == .dormant ? 0 : 1) } }
+}
+
+// Flake-shader occluder slots (Overlay.computeCover fills them, Renderer's `Occ` reads them): 8 compact + 8 background + 8 hard rects.
+public struct OccluderLayout: Equatable {
+    public static let slots = 8
+    public var compact: [CGRect] = []   // mask every flake, faded by occStrength (maximized-window compact mode): the largest windows
+    public var behind: [CGRect] = []    // hide only background flakes (seed >= 2): every front window (pref `behindLarge`)
+    public var hard: [CGRect] = []      // always hide every flake: windows with no surface (top within `Tuning.minHeadroom` of the menu bar: zoomed / tiled, they hold no snow) first, then floating panels
+}
+
+/// Which window rects go to which occluder slots. `windows`: GLOBAL AppKit rects, `vis` = the visible frame, `screen` = the overlay's frame. `behindWindows`: the overlay sits under the windows (no hard rects needed).
+public func occluderLayout(windows: [WindowInfo], vis: CGRect, screen: CGRect, behindWindows: Bool, behindFar: Bool) -> OccluderLayout {
+    func bigFirst(_ w: [WindowInfo]) -> [WindowInfo] {   // largest first, window id breaks ties: equal areas keep the same slots between polls (no flicker)
+        w.sorted { (x: WindowInfo, y: WindowInfo) -> Bool in let a = x.frame.width * x.frame.height, b = y.frame.width * y.frame.height; return a != b ? a > b : x.number < y.number }
+    }
+    let n = OccluderLayout.slots
+    let real = bigFirst(windows.filter { $0.number != 0 && !$0.occluderOnly && $0.frame.intersects(vis) })
+    var out = OccluderLayout()
+    out.compact = real.prefix(n).map(\.frame)
+    let bare = Set(real.filter { vis.maxY - $0.frame.maxY < CGFloat(Tuning.minHeadroom) }.map(\.number))
+    if !behindWindows {
+        let panels = windows.filter { $0.occluderOnly && $0.frame.intersects(screen) && $0.frame.width >= 4 && $0.frame.height >= 4 }
+        out.hard = (real.filter { bare.contains($0.number) && $0.frame.intersects(screen) } + bigFirst(panels)).prefix(n).map(\.frame)
+    }
+    if behindFar { out.behind = real.filter { !bare.contains($0.number) || behindWindows }.prefix(n).map(\.frame) }
+    return out
 }

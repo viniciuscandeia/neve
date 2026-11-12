@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
 // Origin z: the spawn sites here (stepOverflow lumps, `spill`, the Dock-over burst chunks, Dock sheds with `oz: .max`) stamp Flake.oz so debris leaving a front window crosses the windows behind it (Debris.swift); shed runs infer it in `shedBin`.
 // Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
-//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), `cap` = lowest underside of ANY window whose body lies above the bin (geometry, not z; only windows in front HIDE bins), wobble, corner rounding) and `buildGround` (full-width ground pile,
+//   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), `cap` = lowest underside of ANY window whose body lies above the bin (geometry, not z; only windows in front HIDE bins), wobble, corner rounding) and `buildGround` (full-width ground pile, banked against the side of a window standing on it via `Pile.addWalls` (`groundWinTop`), wavy downward only (0.85...1 x groundMaxHeight) except beside walls and within the Dock bank's widest reach,
 //   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Tree / Figures.
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
@@ -242,19 +242,26 @@ extension SnowField {
         let docks = rects.indices.filter { windows[$0].number == 0 && rects[$0].minY >= -1 && rects[$0].maxY > 1 && rects[$0].minY < CGFloat(groundY) && rects[$0].width > rects[$0].height }.map { rects[$0] }
         // What the ordinary windows do to each ground column (hidden / roof) only changes with their frames: cached across Dock animation frames.
         let winIdx = rects.indices.filter { windows[$0].number != 0 }, winRects = winIdx.map { rects[$0] }
-        if winRects != groundWinKey || groundWinCeil.count != numCols {
+        if winRects != groundWinKey || groundWinCeil.count != numCols || groundWinTop.count != numCols {
             groundWinKey = winRects
-            groundWinCeil = [Float](repeating: .infinity, count: numCols); groundWinHidden = [Bool](repeating: false, count: numCols)
+            groundWinCeil = [Float](repeating: .infinity, count: numCols); groundWinHidden = [Bool](repeating: false, count: numCols); groundWinTop = [Float](repeating: 0, count: numCols)
             for b in 0..<numCols {
                 let x = CGFloat((Float(b) + 0.5) * bw)
                 for i in winIdx {
                     let r = rects[i]
-                    if r.contains(CGPoint(x: x, y: 1)) { groundWinHidden[b] = true; break }
+                    if r.contains(CGPoint(x: x, y: 1)) { groundWinHidden[b] = true; groundWinTop[b] = max(groundWinTop[b], Float(r.maxY)); continue }   // every window over the column: the highest top is the wall (as in buildSurface)
                     if r.minY > 1 { groundWinCeil[b] = min(groundWinCeil[b], Self.roundedUnderside(x: Float(x), r, radius: windows[i].radius)) }
                 }
             }
         }
+        pile.addWalls(hideTop: groundWinTop, edgeY: 0)   // snow banks against the side of a window that stands on the ground (before `maxes`: walls read maxHeight)
         if !docks.isEmpty { pile.maxes = bankMaxes(docks) }   // after the window ceilings: a roofed-over Dock top has no shelf (bankTop)
+        pile.setWobble(id: Tuning.groundID, anchor: 0)   // wavy ground, downward only (0.85...1 x the ceiling): never above groundMaxHeight; walls and the Dock bank keep their exact levels. After addWalls (it reads the wobble)
+        for b in 0..<numCols {
+            let x = (Float(b) + 0.5) * bw   // the bank can grow (stepBank) up to bankLevelMax: no wave anywhere within its widest reach of a Dock end
+            let bank = docks.contains { r in let reach = (max(Float(r.maxY), Tuning.groundMaxHeight) - Tuning.groundMaxHeight) / Tuning.bankSlope + Tuning.bankShelf + bw; return x > Float(r.minX) - reach && x < Float(r.maxX) + reach }, wall = !pile.boost.isEmpty && pile.boost[b] > 0
+            pile.wobble[b] = bank || wall ? 1 : 0.925 + (pile.wobble[b] - 1) * 0.5
+        }
         for b in 0..<numCols {
             let x = CGFloat((Float(b) + 0.5) * bw)
             var ceiling = groundWinCeil[b], barBelow = false

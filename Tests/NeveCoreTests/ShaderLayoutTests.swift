@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/ShaderLayoutTests.swift  (Swift GPU structs vs the MSL struct text)
-// Covers: `Instance`, `Prim`, `PileSeg` (Render.swift) against the MSL struct definitions in `ShaderStructs` (NeveCore), the very strings the shader sources in Sources/Neve interpolate (the test target cannot see the Neve executable, hence the text lives in NeveCore).
+// Covers: the `Occ` slot count (3 x OccluderLayout.slots rects + s + n), `Instance`, `Prim`, `PileSeg` (Render.swift) against the MSL struct definitions in `ShaderStructs` (NeveCore), the very strings the shader sources in Sources/Neve interpolate (the test target cannot see the Neve executable, hence the text lives in NeveCore).
 //   The MSL text is parsed (float / uint = 4 B, float2 = 8 B, float4 = 16 B, each aligned to its size; struct size rounded up to its alignment) and compared with MemoryLayout size, stride, alignment and every field offset, in order.
 // Related: Render.swift, ShaderStructs.swift, PolishATests (instanceLayoutMatchesTheShader), PileLogicTests (PileSeg stride).
 
@@ -54,4 +54,9 @@ private func check<T>(_ text: String, _: T.Type, _ swift: [(String, Int?)]) {
     check(ShaderStructs.pileSeg, T.self, [("x0", MemoryLayout<T>.offset(of: \T.x0)), ("x1", MemoryLayout<T>.offset(of: \T.x1)), ("top0", MemoryLayout<T>.offset(of: \T.top0)), ("top1", MemoryLayout<T>.offset(of: \T.top1)),
                                           ("base0", MemoryLayout<T>.offset(of: \T.base0)), ("base1", MemoryLayout<T>.offset(of: \T.base1)), ("slope", MemoryLayout<T>.offset(of: \T.slope)), ("dragged", MemoryLayout<T>.offset(of: \T.dragged)),
                                           ("n0", MemoryLayout<T>.offset(of: \T.n0)), ("n1", MemoryLayout<T>.offset(of: \T.n1)), ("inset", MemoryLayout<T>.offset(of: \T.inset)), ("z", MemoryLayout<T>.offset(of: \T.z))])
+}
+
+@Test func occBufferHoldsEveryOccluderSlot() {   // Overlay.occ = 3 groups of slots + s + n float4s; the MSL array must match
+    let n = OccluderLayout.slots
+    #expect(ShaderStructs.occ.contains("float4 r[\(3 * n)];") && ShaderStructs.occ.contains("float4 s;") && ShaderStructs.occ.contains("float4 n;"))
 }

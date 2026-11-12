@@ -204,8 +204,8 @@ struct SettingsPane: View {
                     }
                     PrefBinding(.behindLarge, env.store) { b in
                         VStack(alignment: .leading, spacing: 2) {
-                            Toggle(isOn: b) { Label(tr("Atrás de janelas grandes"), systemImage: "macwindow") }.disabled(behind.wrappedValue)
-                            Text(behind.wrappedValue ? tr("Já incluído em Atrás das janelas.") : tr("Os flocos passam por trás de janelas grandes.")).font(.caption).foregroundStyle(.secondary)
+                            Toggle(isOn: b) { Label(tr("Flocos distantes atrás das janelas"), systemImage: "macwindow") }.disabled(behind.wrappedValue)
+                            Text(behind.wrappedValue ? tr("Já incluído em Atrás das janelas.") : tr("Os flocos distantes passam por trás das janelas.")).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
