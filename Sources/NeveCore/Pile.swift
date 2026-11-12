@@ -168,10 +168,13 @@ public struct Pile {
         }
         let lo = max(0, bin - Tuning.relaxReach), hi = min(heights.count - 1, bin + Tuning.relaxReach)
         for _ in 0..<Tuning.relaxPasses {
+            var moved = false
             for i in lo...hi where open(i) && (mound.isEmpty || mound[i] <= 0.5) {   // hidden bins are frozen: no flow out of them (nor into them, see relax); a pushed heap is left to `settle` (a local relax of its steep flank would cut a cliff at the edge of the window)
-                if relax(i, i - 1) { changed = true }
-                if relax(i, i + 1) { changed = true }
+                if relax(i, i - 1) { moved = true }
+                if relax(i, i + 1) { moved = true }
             }
+            guard moved else { break }   // a pass that moves nothing leaves the state as it was: every later pass would do the same
+            changed = true
         }
         for i in max(lo - 1, 0)...min(hi + 1, heights.count - 1) {   // relaxation reaches one bin past the window
             let over = heights[i] - max(limit(i), 0)
