@@ -502,6 +502,7 @@ extension SnowField {
                 if surfaces[si].pile.heights[max(i - 1, 0)...min(e + 1, n - 1)].reduce(0, +) != before { pilesDirty = true }
                 i = e + 1
             }
+            if (surfaces[si].pile.mound.max() ?? 0) <= 0.5 { surfaces[si].pile.mound = [] }   // the heap has slumped flat: back to "no mound" (else this scan runs forever)
         }
     }
 
