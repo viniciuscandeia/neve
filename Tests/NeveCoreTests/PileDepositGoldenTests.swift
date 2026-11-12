@@ -1,5 +1,6 @@
 // AGENT HEADER - Tests/NeveCoreTests/PileDepositGoldenTests.swift
 // Pins Pile.deposit's output (heights + spill) for a seeded sequence of deposits (powder and flakes, one pushed heap): the relax loop stops early on a pass that moves nothing, which must not change any result.
+// Hash re-pinned when Tuning.speckStick went 0.04 -> 0.2 (first snow sooner): bare-bin powder now sticks 5x more, so heights differ; deposit rules otherwise unchanged.
 // Related: Pile.swift (deposit, relax).
 
 import Foundation
@@ -18,5 +19,5 @@ import Testing
     }
     var h: UInt64 = 1469598103934665603
     for x in p.heights + [p.spillL, p.spillR] { h = (h ^ UInt64(x.bitPattern)) &* 1099511628211 }
-    #expect(h == 15576493709780719325)
+    #expect(h == 1534246845177366256)
 }

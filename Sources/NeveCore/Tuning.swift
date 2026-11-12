@@ -70,7 +70,7 @@ public enum Tuning {
     static let dustSlope: Float = 2.5      // extra step allowed onto a thin bin (fades to 0 as it fills to dustDepth): fresh snow stays in small mounds where it lands instead of a wide film
     static let dustDepth: Float = 6.0
     static let speckFloor: Float = 1.5      // below this a bin neither relaxes nor counts as built up: bare snow stays as isolated specks until later landings stack on it
-    static let speckStick: Float = 0.04     // share of a landing that sticks on a completely bare bin (rises to 1 as the bin reaches speckFloor)
+    static let speckStick: Float = 0.2     // share of a landing that sticks on a completely bare bin (rises to 1 as the bin reaches speckFloor)
     static let cornerInset: Float = 6       // piles taper to 0 this far from surface ends
     static let relaxReach = 8               // Pile.deposit relaxes this many bins either side of the landing (+1 for the trim) ...
     static let relaxPasses = 6              // ... in this many passes

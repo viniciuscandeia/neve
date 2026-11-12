@@ -1,4 +1,4 @@
-// AGENT HEADER - Tests/NeveCoreTests/SpeckTests.swift  (first snow on a bare 800 pt window is isolated specks at ~20 s and a continuous layer by ~60 s (Nevasca about twice as fast). Related: Tuning.speck*/dust*, Pile.deposit.)
+// AGENT HEADER - Tests/NeveCoreTests/SpeckTests.swift  (first snow on a bare 800 pt window is isolated specks at ~20 s and a continuous layer by ~60 s (Nevasca about twice as fast). The 30 s test pins the thin visible layer (speckStick 0.2). Related: Tuning.speck*/dust*, Pile.deposit.)
 
 import CoreGraphics
 import Testing
@@ -28,4 +28,10 @@ private func bareRun(_ seconds: Float, nevasca: Bool = false) -> ArraySlice<Floa
     #expect(late.filter { $0 > 0.3 }.count >= late.count * 9 / 10)
     let nv = bareRun(30, nevasca: true)
     #expect(nv.filter { $0 > 0.3 }.count >= nv.count * 9 / 10)
+}
+
+/// Item "first snow sooner": a bare window at Medium shows a thin but visible layer (most bins above 0.3 pt) after ~30 s.
+@Test func firstSnowIsVisibleWithin30Seconds() {
+    let l = bareRun(30)
+    #expect(l.filter { $0 > 0.3 }.count >= l.count * 8 / 10)
 }
