@@ -183,7 +183,7 @@ extension SnowField {
         for s in gone {
             let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }, tr = keptTree?.surface == s.id ? keptTree : nil
             guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty || tr != nil else { continue }
-            stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, mound: s.pile.mound, ice: iceWin.first { $0.id == s.id },
+            stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, age: s.pile.age, mound: s.pile.mound, ice: iceWin.first { $0.id == s.id },
                                   overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
                                   topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs, tree: tr)
         }
@@ -250,7 +250,7 @@ extension SnowField {
             if prev.pile.mound.count == numCols { pile.mound = prev.pile.mound }   // and so does a pushed heap
             for b in 0..<numCols {   // a lowered limit (Dock shrank / moved) sheds the excess as debris; hidden columns keep their snow
                 let keep = pile.visible[b] ? min(prev.pile.heights[b], pile.limit(b)) : prev.pile.heights[b], over = prev.pile.heights[b] - keep   // hidden snow stays as it was
-                pile.heights[b] = keep
+                pile.heights[b] = keep; pile.age[b] = prev.pile.age[b]
                 let x = (Float(b) + 0.5) * bw
                 // swept by a Dock end (or under the old end's rounded corner, which the end has since left behind): the blade pushes it ahead
                 var left = false, swept = false
@@ -343,7 +343,7 @@ extension SnowField {
                     let pc = c0 + b - shift, k = pc - prev.c0   // the column in the previous surface's coordinates
                     var h: Float, wasVisible = true
                     if k >= 0, k < prev.pile.heights.count {
-                        h = prev.pile.heights[k]; wasVisible = prev.pile.visible[k]; shown[b] = eased ? prev.pile.shown[k] : h
+                        h = prev.pile.heights[k]; pile.age[b] = prev.pile.age[k]; wasVisible = prev.pile.visible[k]; shown[b] = eased ? prev.pile.shown[k] : h
                         if !prev.pile.mound.isEmpty, prev.pile.mound[k] > 0 { if pile.mound.isEmpty { pile.mound = [Float](repeating: 0, count: pile.heights.count) }; pile.mound[b] = prev.pile.mound[k] }   // a pushed heap rides with its window
                     }
                     else if let o = oh[pc] { h = o; shown[b] = o }   // came back from past the screen edge
@@ -424,6 +424,7 @@ extension SnowField {
             stashBack.append((dx: Float(frame.minX) - e.minX, dy: Float(frame.maxY) - e.topY, x: Float(frame.minX)...Float(frame.maxX), e: e))
             if clock - e.stamp < 1800, e.heights.count == pile.heights.count {
             if e.mound.count == pile.heights.count { pile.mound = e.mound }
+            if e.age.count == pile.heights.count { pile.age = e.age }
             for b in pile.heights.indices { pile.heights[b] = pile.visible[b] ? min(e.heights[b], pile.limit(b)) : e.heights[b] }
             pile.shown = pile.heights
             let u0 = Int(((Float(frame.minX) - bw / 2) / bw).rounded(.up)), u1 = Int(((Float(frame.maxX) - bw / 2) / bw).rounded(.down)) + 1
@@ -439,9 +440,10 @@ extension SnowField {
         else if id == 0, !dockCarry.isEmpty, time <= dockCarryUntil {   // the Dock pile carried across a screen resize
             if dockMoundCarry.count == dockCarry.count { pile.mound = (0..<pile.heights.count).map { c0 + $0 >= 0 && c0 + $0 < dockCarry.count && dockMoundCarry[c0 + $0] > 0 ? max(0, dockCarry[c0 + $0] - pile.rawLimit($0)) : 0 } }   // heap allowance = carried height over the ceiling
             for b in pile.heights.indices where c0 + b >= 0 && c0 + b < dockCarry.count { pile.heights[b] = pile.visible[b] ? min(dockCarry[c0 + b], pile.limit(b)) : dockCarry[c0 + b] }
+            if dockAgeCarry.count == dockCarry.count { for b in pile.heights.indices where c0 + b >= 0 && c0 + b < dockCarry.count { pile.age[b] = dockAgeCarry[c0 + b] } }
             pile.shown = pile.heights
         }
-        if id == 0 { dockCarry = []; dockMoundCarry = [] }
+        if id == 0 { dockCarry = []; dockMoundCarry = []; dockAgeCarry = [] }
         return Surface(id: id, frame: frame, edgeY: edgeY, c0: c0, anchor: anchor, pile: pile, vel: vel, radius: Float(min(radius, frame.width / 2, frame.height / 2)),
                        cover: rects[0..<front].filter { $0.intersects(frame) })
     }

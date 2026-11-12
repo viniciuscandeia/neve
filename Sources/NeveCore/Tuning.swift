@@ -5,7 +5,7 @@
 //   drops caps, shed (a moved window sheds snow from shedStart to shedFull pt/s), snowman/ball sizes, pointer push radius, frame-rate floors (calmFloorFPS 30, economy 20), `interpolateCalm` (env NEVE_INTERP=1, default off: measured costlier).
 //   Drawn contour knobs (crestSlope, crestMaxStep, snowyMin, stretchGap, ownerGapMax, capBlend*, bridge*) and the Pile relax window (relaxReach, relaxPasses, moundReach) are here too.
 // `Intensity` (leve, media, forte, nevasca; UserDefaults key "intensity", Int raw value; multiplier on flake count, windGain; titles via tr()). `SimConfig` (Sendable): knobs the APP injects (snowman/ice/director speed, demo flags) so NeveCore never reads env.
-// Rules: constants only; behaviour lives elsewhere. Many are `static let` internal (tests use @testable import). Changing binWidth / slope / maxPileHeight shifts pile behaviour everywhere and invalidates tuned tests (PileLogicTests, SurfaceMapTests, WritePiles*).
+// Snow age (ageSlope, ageFull, ageFresh: Pile.age / reposeStep). Rules: constants only; behaviour lives elsewhere. Many are `static let` internal (tests use @testable import). Changing binWidth / slope / maxPileHeight shifts pile behaviour everywhere and invalidates tuned tests (PileLogicTests, SurfaceMapTests, WritePiles*).
 // Public surface used by the app target: flakes, plowFloor, interpolateCalm, dockGlass(fromAX:), windowRadius(for:), defaultWindowRadius, maxBalls, snowmanDepth, shedRefDt, Intensity, SimConfig.
 // Gotcha: the `dockGlassOffset` / `windowRadius` values were measured on macOS 26 (calibration knobs, not derived).
 
@@ -59,6 +59,9 @@ public enum Tuning {
     static let minRoom: Float = 4           // columns with less room under a front window take no deposits
     static let binWidth: Float = 2
     static let slope: Float = 0.7           // max height step between neighbouring bins (~19 degree repose)
+    static let ageSlope: Float = 1.1        // repose step of fully aged (compacted) snow: an old pile holds a steeper face than fresh (slope 0.7)
+    static let ageFull: Float = 600         // s for snow to reach ageSlope (age rises while a bin holds snow, up to this cap)
+    static let ageFresh: Float = 4          // weight of fresh snow when it lands on old snow: a dusting renews the surface faster than its volume share
     static let moundSlope: Float = 1.3      // extra step allowed inside a cursor-pushed heap (slope + this = ~2.0 per 2 pt bin, ~45 degrees): pushed snow is compacted, it settles little and slowly
     static let dustSlope: Float = 2.5      // extra step allowed onto a thin bin (fades to 0 as it fills to dustDepth): fresh snow stays in small mounds where it lands instead of a wide film
     static let dustDepth: Float = 6.0

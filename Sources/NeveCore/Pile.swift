@@ -5,6 +5,7 @@
 //   corners), cap (ceiling imposed by windows in front, inf = none), maxes (per-column max, ground bank beside the Dock), wobble (two long waves ~500 / ~150 pt, +-9 % / +-6 %, phases from the window id), boost (extra limit banked against a front window:
 //   drift), mound (extra allowance for cursor-pushed heaps; only `cap` bounds it), peel (seconds until a bin's excess over `limit` lets go as debris, -1 = none), walls (global x of each wall = visible bin next to a hidden one), hold (order-only change: existing snow pinned over the new limit), held (hidden only by a stacking-order change: `alive`).
 //   `limit(b) = max(min(rawLimit(b) + mound, cap), hold)`; `rawLimit` = (maxes or maxHeight) * wobble + boost, tapered to 0 over `inset` from x0 / x1 unless supportL / supportR (end faces a drift / seam: no taper, dip or spill).
+// Age: `age` per bin (s, cap Tuning.ageFull; ageStep twice a second from SnowField.step; deposit mixes in fresh snow with weight Tuning.ageFresh, relax / Seams mix flowed snow); `reposeStep(age:heap:)` = the step the donor bin holds (slope 0.7 fresh -> Tuning.ageSlope old; the larger of that and slope + moundSlope in a heap) inside `transfer`.
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes: Tuning.relaxReach / relaxPasses, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax allows Tuning.moundSlope extra step when either bin is inside a pushed heap (compacted snow, ~45 degrees); relax moves half the
 //   excess (the rule is `Pile.transfer`, shared with Seams.stepSeams) to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
 //   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts from the GEOMETRY of the higher windows over the pile (`hideTop`, no stacking order; limit rises to the front top at the wall for step <= maxDrift, also against the wobble) (the drawn bank / fillet is Contour.swift's slope limit across owner changes, not here);
@@ -38,6 +39,7 @@ public struct Pile {
     var mound: [Float] = []      // per bin: extra height allowed by snow the cursor pushed into a heap (only `cap` bounds it); empty = none
     var hold: [Float] = []       // per bin: snow kept over the new limit after a stacking-order-only change (limit never drops below it); cleared by the next real rebuild; empty = none
     var held: [Bool] = []        // per bin: hidden only by a stacking-order change (draw-only): physics still treats it as alive (`alive`); cleared by the next real rebuild; empty = none
+    var age: [Float] = []        // per bin: seconds the snow has lain (0 = fresh, capped at Tuning.ageFull): older snow holds a steeper face (`Pile.reposeStep`); mixes with what lands / flows in; travels wherever heights do
     var peel: [Float] = []       // per bin: seconds until its excess over `limit` lets go as debris (-1 = none); empty = nothing pending
     var peeling: Bool { !peel.isEmpty }
 
@@ -47,6 +49,7 @@ public struct Pile {
         heights = [Float](repeating: 0, count: columns)
         visible = [Bool](repeating: true, count: columns)
         base = [Float](repeating: 0, count: columns)
+        age = [Float](repeating: 0, count: columns)
         self.inset = inset
     }
 
@@ -68,7 +71,17 @@ public struct Pile {
         return r
     }
 
-    mutating func empty() { for b in heights.indices { heights[b] = 0 }; mound = [] }
+    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = [] }
+
+    /// Snow lies longer: every bin holding snow ages by `dt` (up to Tuning.ageFull); bare bins stay fresh.
+    mutating func ageStep(_ dt: Float) { for b in heights.indices { age[b] = heights[b] > 0 ? min(age[b] + dt, Tuning.ageFull) : 0 } }
+
+    /// Bin `b` gains `v` of snow of age `a` (0 = fresh): its age becomes the volume-weighted mean (fresh snow counts `Tuning.ageFresh` times; flowed-in snow its own weight, `w` 1).
+    @inline(__always) mutating func mixAge(_ b: Int, added v: Float, age a: Float, weight w: Float = 1) {
+        guard v > 0 else { return }
+        let h = heights[b] - v, wv = v * w
+        age[b] = h <= 0 ? a : (age[b] * h + a * wv) / (h + wv)
+    }
 
     /// Baseline follows the corner arcs within `radius` of each end.
     mutating func round(radius: Float, c0: Int, minX: Float, maxX: Float) {
@@ -155,6 +168,7 @@ public struct Pile {
         if powder, h0 < Tuning.speckFloor {
             let v = volume * softness(bin) * (Tuning.speckStick + (1 - Tuning.speckStick) * h0 / Tuning.speckFloor)
             heights[bin] = max(h0, min(h0 + v, limit(bin)))
+            mixAge(bin, added: heights[bin] - h0, age: 0, weight: Tuning.ageFresh)
             changed = heights[bin] != h0
         } else {
             for o in -1...1 {
@@ -163,7 +177,7 @@ public struct Pile {
                 guard cap[i] >= Tuning.minRoom else { continue }
                 let before = heights[i]
                 heights[i] = max(before, min(before + volume * softness(i) * (o == 0 ? 0.5 : 0.25), limit(i)))
-                if heights[i] != before { changed = true }
+                if heights[i] != before { changed = true; mixAge(i, added: heights[i] - before, age: 0, weight: Tuning.ageFresh) }
             }
         }
         let lo = max(0, bin - Tuning.relaxReach), hi = min(heights.count - 1, bin + Tuning.relaxReach)
@@ -260,11 +274,17 @@ public struct Pile {
         left ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth
     }
 
+    /// The step (pt per bin) snow of `age` s holds: Tuning.slope fresh, rising to Tuning.ageSlope as it compacts; inside a pushed heap the larger of that and slope + moundSlope wins.
+    static func reposeStep(age: Float, heap: Bool = false) -> Float {
+        let aged = Tuning.slope + (Tuning.ageSlope - Tuning.slope) * min(max(age / Tuning.ageFull, 0), 1)
+        return heap ? max(aged, Tuning.slope + Tuning.moundSlope) : aged
+    }
+
     /// THE transfer rule between two neighbouring bins (Pile.relax within a pile, Seams.stepSeams across a joint): the snow that moves from a bin of height `hf` whose absolute top is `drop` above the receiver's.
-    /// Half the excess over `Tuning.slope` (+ `moundSlope` inside a pushed heap `heap`, + `dustSlope` fading out as the receiver, of height `ht`, fills to `dustDepth`: fresh snow stays in small mounds; ht nil = past the end, no dust term),
+    /// Half the excess over `reposeStep(age:heap:)` (Tuning.slope fresh, up to ageSlope for the donor's `age`; the larger of that and slope + moundSlope inside a pushed heap `heap`), + `dustSlope` fading out as the receiver, of height `ht`, fills to `dustDepth`: fresh snow stays in small mounds; ht nil = past the end, no dust term),
     /// nothing from a bin at or under `speckFloor`, at most `hf`, and at most the room under the receiver's `toCap` (a roofed / under-Dock column takes no more than its room: nothing is lost there). 0 = no transfer.
-    static func transfer(drop: Float, from hf: Float, to ht: Float?, toCap: Float = .infinity, heap: Bool = false) -> Float {
-        let excess = drop - Tuning.slope - (heap ? Tuning.moundSlope : 0) - (ht.map { Tuning.dustSlope * max(0, 1 - $0 / Tuning.dustDepth) } ?? 0)
+    static func transfer(drop: Float, from hf: Float, to ht: Float?, toCap: Float = .infinity, heap: Bool = false, age: Float = 0) -> Float {
+        let excess = drop - reposeStep(age: age, heap: heap) - (ht.map { Tuning.dustSlope * max(0, 1 - $0 / Tuning.dustDepth) } ?? 0)
         guard excess > 0, hf > Tuning.speckFloor else { return 0 }
         var m = min(excess * 0.5, hf)
         if let ht, toCap.isFinite { m = min(m, max(toCap - ht, 0)) }
@@ -273,17 +293,17 @@ public struct Pile {
 
     /// Moves half the excess slope (on baseline + height) from bin i to lower neighbour j.
     /// A hidden j is a wall (no flow, nothing lost); past the ends the snow spills off as debris.
-    private mutating func relax(_ i: Int, _ j: Int) -> Bool {
+    mutating func relax(_ i: Int, _ j: Int) -> Bool {
         let inRange = j >= 0 && j < heights.count
         if !inRange && (continuesPastScreen(left: j < 0) || (j < 0 ? supportL : supportR)) { return false }
         if inRange && !open(j) { return false }
         let ok = inRange
         let tj = ok ? base[j] + heights[j] : base[i] - 4
         // Fresh snow on bare ground sticks where it lands (steeper step allowed onto an almost empty bin): a dusting of specks, not an instant wide film.
-        let m = Self.transfer(drop: base[i] + heights[i] - tj, from: heights[i], to: ok ? heights[j] : nil, toCap: ok ? cap[j] : .infinity, heap: !mound.isEmpty && (mound[i] > 0.5 || (ok && mound[j] > 0.5)))
+        let m = Self.transfer(drop: base[i] + heights[i] - tj, from: heights[i], to: ok ? heights[j] : nil, toCap: ok ? cap[j] : .infinity, heap: !mound.isEmpty && (mound[i] > 0.5 || (ok && mound[j] > 0.5)), age: age[i])
         guard m > 0 else { return false }
         heights[i] -= m
-        if ok { heights[j] += m } else if !inRange { if j < 0 { spillL += m } else { spillR += m } }
+        if ok { heights[j] += m; mixAge(j, added: m, age: age[i]) } else if !inRange { if j < 0 { spillL += m } else { spillR += m } }
         if !mound.isEmpty, mound[i] > 0 || (ok && mound[j] > 0) { trackMound(i); if ok { trackMound(j) } }   // heap snow keeps its allowance as it spreads
         return true
     }

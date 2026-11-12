@@ -50,10 +50,11 @@ extension SnowField {
             let tb = surfaces[j.b].edgeY + surfaces[j.b].pile.base[j.bb] + surfaces[j.b].pile.heights[j.bb]
             let (from, fb, to, tbn) = ta > tb ? (j.a, j.ab, j.b, j.bb) : (j.b, j.bb, j.a, j.ab)
             let hf = surfaces[from].pile.heights[fb], ht = surfaces[to].pile.heights[tbn]
-            let m = min(Pile.transfer(drop: abs(ta - tb), from: hf, to: ht, toCap: surfaces[to].pile.cap[tbn]), max(surfaces[to].pile.limit(tbn) - ht, 0))   // the shared rule, and never past the receiver's limit
+            let m = min(Pile.transfer(drop: abs(ta - tb), from: hf, to: ht, toCap: surfaces[to].pile.cap[tbn], age: surfaces[from].pile.age[fb]), max(surfaces[to].pile.limit(tbn) - ht, 0))   // the shared rule, and never past the receiver's limit
             guard m > 0.001 else { continue }
             surfaces[from].pile.heights[fb] = hf - m
             surfaces[to].pile.heights[tbn] = ht + m
+            surfaces[to].pile.mixAge(tbn, added: m, age: surfaces[from].pile.age[fb])
             for (s, b) in [(from, fb), (to, tbn)] {
                 if !surfaces[s].pile.mound.isEmpty { surfaces[s].pile.trackMound(b) }
                 surfaces[s].pile.settle(max(b - 3, 0), min(b + 3, surfaces[s].pile.heights.count - 1))

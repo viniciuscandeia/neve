@@ -10,7 +10,7 @@
 //   puffs, wind dust, glints, drips. The app drives it ~30/60 Hz from Overlay.tick (dt <= 0.06) and feeds windows at poll rate via `update(windows:)` (Surfaces.swift).
 // Presentation state kept here on purpose (testable): `pileVersion`/`pilesDirty`, `pileWritten`, `pileEasing`, `Pile.shown`; the renderer rewrites the pile buffer only when pileVersion changes or easing is active (`pilesSettled`).
 // Public flags the app sets each frame/pref change: pointer/optionHeld/music/calendarDay/timer, economy, snowmanEnabled/walkEnabled/visitorsEnabled/sleighEnabled/pointerPush/groundOnlyActors, frozen (still snow), setIntensity/setCalm/setLowPower.
-// Gotchas: `clear()` is THE contract for removing accumulated effects (keep it in sync when adding state); anything new that persists across Space switches must join `Stashed`; `fxRng` is separate so ice/avalanche never perturb `rng`.
+// Gotchas: pile `age` is carried wherever heights are (Stashed.age, dockAgeCarry, resize remap, carry, clear via Pile.empty); `clear()` is THE contract for removing accumulated effects (keep it in sync when adding state); anything new that persists across Space switches must join `Stashed`; `fxRng` is separate so ice/avalanche never perturb `rng`.
 //   `markStale` = Space switch protocol (no deposits on window surfaces until the next changed snapshot). Perf: `timer` (non-nil only with NEVE_PERF) wraps stepFlakes; stepFlakes is the per-frame hot path (hundreds-1200 flakes).
 
 import CoreGraphics
@@ -28,6 +28,7 @@ public struct BusyReasons: OptionSet, Sendable {
 /// A window's snow (and freeze progress) set aside while its window is on another Space.
 struct Stashed {
     var heights: [Float], stamp: Double
+    var age: [Float] = []              // snow age per bin (Pile.age)
     var mound: [Float] = []            // a pushed heap's extra allowance (Pile.mound), so it is not trimmed on return
     var ice: WinIce? = nil
     var overhang: [Int: Float] = [:]   // snow past the screen edge, by column relative to the old surface's c0
@@ -66,6 +67,7 @@ public final class SnowField {
     var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
     var sweepOwed: Float = 0     // cursor-dent volume (pt^2) not yet launched as debris
     var slumpClock: Float = 0    // seconds owed to `stepSlump` (fixed 1/60 s substeps, so the slump does not depend on the frame rate)
+    var ageClock: Float = 0       // accumulates dt toward the next Pile.ageStep (0.5 s)
     var sweptAt = -1.0           // `time` of the last cursor push (Surfaces.sweep): pushed heaps slump toward their repose slope once the blade has moved on
     var runV: SIMD2<Float> = .zero
     public var economy = false   // Economy mode: no glints
@@ -81,6 +83,7 @@ public final class SnowField {
     var goneGrace = Tuning.goneGrace   // s a window may be missing before its pile is knocked off (tests set 0 for the old immediate knock-off)
     var orderOnly = false   // the current rebuild only reorders the same windows (Cmd-Tab): buildSurface keeps all snow
     var dockCarryUntil = 0.0   // the carried Dock pile only applies to a rebuild within ~2 s of the resize (an auto-hidden Dock showing up later starts fresh)
+    var dockAgeCarry: [Float] = []     // ... and its snow age (by column)
     var dockMoundCarry: [Float] = []   // ... and its pushed-heap allowance
     var dockCarry: [Float] = []   // Resize.swift: Dock pile heights by (new) global column, waiting for the Dock surface to be rebuilt
     var dockTarget: CGRect?, dockCur: CGRect?, dockPrev: CGRect?   // DockPush.swift: read frame, animated frame, frame before this rebuild
@@ -290,7 +293,7 @@ public final class SnowField {
         figures.removeAll(keepingCapacity: true); fights.removeAll(keepingCapacity: true); shots.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         if !balls.isEmpty { balls.removeAll() }
         for i in surfaces.indices { surfaces[i].pile.empty() }
-        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []; dockCarry = []; dockMoundCarry = []
+        stash.removeAll(); overhang.removeAll(); spaceSwitchIDs = []; dockCarry = []; dockMoundCarry = []; dockAgeCarry = []
         windSlow = 0; stashBack.removeAll()
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
@@ -365,6 +368,8 @@ public final class SnowField {
         stepDockSpill(dt: dt)
         stepSlump(dt: dt)
         stepSeams(dt: dt)
+        ageClock += dt
+        if ageClock >= 0.5 { for i in surfaces.indices { surfaces[i].pile.ageStep(ageClock) }; ageClock = 0 }   // snow compacts slowly: twice a second is plenty
         stepPuffs(dt: dt)
         stepWindDust(dt: dt)
         stepGlints(dt: dt)
