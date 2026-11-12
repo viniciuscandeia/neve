@@ -102,7 +102,8 @@ public enum Tuning {
     static let nearFraction: Float = 0.02   // out-of-focus foreground flakes: share of the active sky count
     static let nearAlpha: Float = 0.28
     static let maxDebris = 1200
-    static let busyDebris = 24   // loose chunks alive before the frame rate goes up (steady Nevasca shedding peaks near 16)
+    static let busyDebris = 24   // loose chunks alive before the frame rate goes up (plain dots and small slabs count 1, impact / slab crumbs 1/2, volume-carrying dots 0: SnowField.busyReasons)
+    static let busySlab: Float = 24   // an intact slab at least this wide (pt) is an avalanche and wants 60 fps; narrower ones (fragile, break in the air) do not
     static let maxPuffs = 48
     // Frame rate (Util.swift FrameRate). Measure CPU, then pick.
     static let calmFloorFPS: Float = 30             // quiet rate (nothing fast for FrameRate.holdDown = 2.5 s after the last input / motion); 60 = smoothest, costliest

@@ -5,7 +5,7 @@
 //   slab (amp = seconds aloft + 1): breaks via `slabHit`/`breakSlab` on a hit, or randomly when fragile (size < 40, aloft > 0.15 s; not in calm). `delay` > 0 on an intact slab = held until the release ripple reaches it (sags, slides at 0.3x); on a plain shape-2 slab it is the aloft timer for splitSlab.
 // Window bodies are walls: `blockByWindows` (after the move) keeps a piece from entering the outline of a window in FRONT of its origin (`SnowField.occluders` index < `Flake.oz`, `Occluder.hides`) sideways: x back, vx 0, it slides down the wall.
 //   Origin z: `Flake.oz` is stamped by `addDebris(oz:)` / `put` from `spawnZ` (`withSpawnZ(originZ(si:)) { ... }` at the spawn sites: overflow, spill, eave, avalanche, impact crumbs, figure bursts, shed runs; chunks and powder of a broken slab inherit it). Default .max = ground / Dock / sweep / loose = blocked by all.
-// Removal is swap-with-last, iterating backwards (order not preserved). Hot when shedding / avalanches run: debris.count > Tuning.busyDebris (24) or any slab raises BusyReasons.debris (SnowField.busyReasons).
+// Removal is swap-with-last, iterating backwards (order not preserved). Hot when shedding / avalanches run: a weighted count over Tuning.busyDebris (24: plain dots and small slabs 1, crumbs (shape 1) 1/2, dots carrying volume (overflow lumps, sweep powder, end sheds) 0) or an intact slab >= Tuning.busySlab (24 pt) raises BusyReasons.debris (SnowField.busyReasons).
 
 import CoreGraphics
 import Foundation

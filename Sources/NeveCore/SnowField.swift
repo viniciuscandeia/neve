@@ -11,6 +11,7 @@
 //   puffs, wind dust, glints, drips. The app drives it ~30/60 Hz from Overlay.tick (dt <= 0.06) and feeds windows at poll rate via `update(windows:)` (Surfaces.swift).
 // Presentation state kept here on purpose (testable): `pileVersion`/`pilesDirty`, `pileWritten`, `pileEasing`, `Pile.shown`; the renderer rewrites the pile buffer only when pileVersion changes or easing is active (`pilesSettled`).
 // Public flags the app sets each frame/pref change: pointer/optionHeld/music/calendarDay/timer, economy, snowmanEnabled/walkEnabled/visitorsEnabled/sleighEnabled/pointerPush/groundOnlyActors, frozen (still snow), setIntensity/setCalm/setLowPower.
+// Benchmark: `lap` (internal hook, nil = free) is called with a section name after each step section; Tests/NeveCoreTests/StepBenchTests.swift (NEVE_BENCH=1) uses it for the headless per-section cost and busy / fps report.
 // Gotchas: pile `age` is carried wherever heights are (Stashed.age, dockAgeCarry, resize remap, carry, clear via Pile.empty); `clear()` is THE contract for removing accumulated effects (keep it in sync when adding state); anything new that persists across Space switches must join `Stashed`; `fxRng` is separate so ice/avalanche never perturb `rng`.
 //   `markStale` = Space switch protocol (no deposits on window surfaces until the next changed snapshot). Perf: `timer` (non-nil only with NEVE_PERF) wraps stepFlakes; stepFlakes is the per-frame hot path (hundreds-1200 flakes).
 
@@ -332,7 +333,12 @@ public final class SnowField {
         if !shots.isEmpty { r.insert(.shots) }
         if !fights.isEmpty { r.insert(.fights) }
         // Gentle shedding off window / pile ends (a dozen small chunks, always some in Nevasca) is fine at 30 fps; slabs and bursts are not.
-        if debris.count > Tuning.busyDebris || debris.contains(where: { $0.amp > 0 }) { r.insert(.debris) }
+        // Not counted: dots that carry volume (overflow lumps, sweep powder, window-end sheds: ~20 are aloft all the time in Nevasca). Impact / slab crumbs (shape 1) count half, a small slab (< Tuning.busySlab pt) one, a big slab is an avalanche by itself.
+        var load = 0
+        for d in debris {
+            if d.amp > 0, d.size >= Tuning.busySlab { load = Tuning.busyDebris * 2 + 1 } else if d.shape == 0 && d.vol > 0 { continue } else { load += d.shape == 1 ? 1 : 2 }
+            if load > Tuning.busyDebris * 2 { r.insert(.debris); break }
+        }
         if (introDur > 0 && introT < introDur) || (outro && outroRel < 1) { r.insert(.introOutro) }
         if figures.contains(where: { $0.kind != .snowman }) { r.insert(.figures) }
         if abs(gust) > 0.15, !figures.isEmpty { r.insert(.gust) }   // a gust only moves figures (flutter, shots, balls have their own reasons); flakes drift fine at 30 fps
@@ -343,11 +349,16 @@ public final class SnowField {
     /// The pile buffer written last is still the current picture (no version change, no easing left).
     public var pilesSettled: Bool { pileVersion == pileWritten && !pileEasing }
 
+    /// Profiling hook (benchmarks only, NEVE_BENCH): called with a section name after each step section; nil = free.
+    var lap: ((StaticString) -> Void)?
+
     public func step(dt: Float) {
         time += Double(dt)
         if scene != nil { stepScene(dt: dt) }
         stepBuilder(dt: dt)
+        lap?("Builder")
         stepDirector(dt: dt)
+        lap?("Director")
         if outro, outroRel < 1 {
             outroT += dt
             let to = min(1, outroT / outroSpread)
@@ -356,31 +367,54 @@ public final class SnowField {
         }
         if introDur > 0 { introT += dt }
         stepMelt(dt: dt)
+        lap?("Melt")
         stepBalls(dt: dt)
+        lap?("Balls")
         stepGifts(dt: dt)
+        lap?("Gifts")
         stepTree(dt: dt)
+        lap?("Tree")
         stepFigures(dt: dt)
+        lap?("Figures")
         stepCovered(dt: dt)
+        lap?("Covered")
         stepSplats(dt)
+        lap?("Splats")
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         stepMusic(dt: dt)
+        lap?("Music")
         wind = calm ? 0 : windGain * windShape() + musicKick
         windSlow += (wind - windSlow) * min(1, dt / 6)
         if let timer { let t0 = timer(); stepFlakes(dt: dt); flakeSeconds += timer() - t0; flakeSteps += 1 } else { stepFlakes(dt: dt) }
+        lap?("Flakes")
         stepPeel(dt: dt)
+        lap?("Peel")
         stepIce(dt: dt)
+        lap?("Ice")
         stepAvalanche(dt: dt)
+        lap?("Avalanche")
         stepDebris(dt: dt)
+        lap?("Debris")
         stepDock(dt: dt)
+        lap?("Dock")
         stepBank(dt: dt)
+        lap?("Bank")
         stepDockSpill(dt: dt)
+        lap?("DockSpill")
         stepSlump(dt: dt)
+        lap?("Slump")
         stepSeams(dt: dt)
+        lap?("Seams")
         ageClock += dt
         if ageClock >= 0.5 { for i in surfaces.indices { surfaces[i].pile.ageStep(ageClock) }; stepEaves(dt: ageClock); stepOverflow(); ageClock = 0 }   // snow compacts slowly: twice a second is plenty
+        lap?("age+overflow")
         stepPuffs(dt: dt)
+        lap?("Puffs")
         stepWindDust(dt: dt)
+        lap?("WindDust")
         stepGlints(dt: dt)
+        lap?("Glints")
         stepDrips(dt: dt)
+        lap?("Drips")
     }
 }

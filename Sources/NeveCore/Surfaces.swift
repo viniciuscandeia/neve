@@ -528,7 +528,7 @@ extension SnowField {
             let n = surfaces[si].pile.heights.count
             surfaces[si].pile.gapT -= dt
             let lo = max(0, surfaces[si].pile.gapLo - 12), hi = min(n - 1, surfaces[si].pile.gapHi + 12)
-            if lo <= hi { for _ in 0..<2 { surfaces[si].pile.settle(lo, hi) }; pilesDirty = true }
+            if lo <= hi { surfaces[si].pile.settle(lo, hi); pilesDirty = true }
         }
         guard time - sweptAt > 0.25 else { slumpClock = 0; return }
         slumpClock = min(slumpClock + dt, 2.0 / 60)   // at most 2 substeps a frame
