@@ -40,11 +40,13 @@ extension SnowField {
             _ = updateSurfaces(windows: w, only: dockIsolated(w, prev: prevDock) ? [0, Tuning.groundID] : nil)   // the bar and the ground are all that moves
             pollDt = keep
         }
-        guard dockSlump > 0, let c = dockCur, let g = index[Tuning.groundID] else { return }
+        guard dockSlump > 0, let c = dockCur, let g = index[Tuning.groundID] else { dockSlumpClock = 0; return }
         dockSlump -= dt
-        for x in [c.minX, c.maxX] {   // the bank relaxes (via deposit's local relax) around both ends: berm spreads, freed span fills
-            let b = column(Float(x - origin.x))
-            for _ in 0..<3 { for o in stride(from: -64, through: 64, by: 8) { if surfaces[g].pile.deposit(bin: min(max(b + o, 0), numCols - 1), volume: 0) { pilesDirty = true } } }   // dirty only on a real change
+        for _ in 0..<substeps(&dockSlumpClock, dt: dt) {   // by time, not per frame
+            for x in [c.minX, c.maxX] {   // the bank relaxes (via deposit's local relax) around both ends: berm spreads, freed span fills
+                let b = column(Float(x - origin.x))
+                for _ in 0..<3 { for o in stride(from: -64, through: 64, by: 8) { if surfaces[g].pile.deposit(bin: min(max(b + o, 0), numCols - 1), volume: 0) { pilesDirty = true } } }   // dirty only on a real change
+            }
         }
     }
 

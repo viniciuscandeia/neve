@@ -85,6 +85,8 @@ public final class SnowField {
     var dockCarry: [Float] = []   // Resize.swift: Dock pile heights by (new) global column, waiting for the Dock surface to be rebuilt
     var dockTarget: CGRect?, dockCur: CGRect?, dockPrev: CGRect?   // DockPush.swift: read frame, animated frame, frame before this rebuild
     var dockSlump: Float = 0
+    var dockSlumpClock: Float = 0   // fixed 1/60 s substeps of the bank relax (substeps), like slumpClock / seamClock
+    var seamClock: Float = 0
     var bankLevel: (l: Float, r: Float) = (Tuning.groundMaxHeight, Tuning.groundMaxHeight), bankT: Float = 0   // ground bank ramp level per Dock side, DockPush.swift
     /// Window moved (same size) in the last poll: the overlay may slide its pile layer with the mouse until the next poll.
     public internal(set) var draggingID: Int?
@@ -362,7 +364,7 @@ public final class SnowField {
         stepBank(dt: dt)
         stepDockSpill(dt: dt)
         stepSlump(dt: dt)
-        stepSeams()
+        stepSeams(dt: dt)
         stepPuffs(dt: dt)
         stepWindDust(dt: dt)
         stepGlints(dt: dt)

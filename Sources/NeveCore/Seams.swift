@@ -28,8 +28,20 @@ extension SnowField {
         seams.compactMap { dir > 0 ? ($0.left == id ? $0.right : nil) : ($0.right == id ? $0.left : nil) }
     }
 
-    func stepSeams() {
-        guard !seams.isEmpty, !quiet else { return }
+    /// Fixed 1/60 s substeps owed by `clock` after `dt` (at most 2 a frame): slow work that must not depend on the frame rate (stepSeams, the Dock bank's relax).
+    func substeps(_ clock: inout Float, dt: Float) -> Int {
+        clock = min(clock + dt, 2.0 / 60)
+        var n = 0
+        while clock >= 1.0 / 60 { clock -= 1.0 / 60; n += 1 }
+        return n
+    }
+
+    func stepSeams(dt: Float = 1.0 / 60) {
+        guard !seams.isEmpty, !quiet else { seamClock = 0; return }
+        for _ in 0..<substeps(&seamClock, dt: dt) { stepSeamsOnce() }
+    }
+
+    private func stepSeamsOnce() {
         for j in sset.joints {
             let ia = surfaces[j.a].id, ib = surfaces[j.b].id
             guard ia != draggingID, ib != draggingID, landable(j.a), landable(j.b) else { continue }
