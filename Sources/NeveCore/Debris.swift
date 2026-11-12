@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Debris.swift  (falling snow chunks)
-// Role: `addDebris(x:y:vx:fall:size:)` (false when Tuning.maxDebris 1200 is reached) and `stepDebris(dt:)`, the per-frame loop over `debris` (Flakes of kind .debris; `shape` 1 clump, 2 slab...). Snow accelerates (gravity 1400 pt/s^2, terminal
+// Role: `addDebris(x:y:vx:fall:size:vol:)` (false when Tuning.maxDebris 1200 is reached) and `stepDebris(dt:)`, the per-frame loop over `debris` (Flakes of kind .debris; `shape` 1 clump, 2 slab...). Snow accelerates (gravity 1400 pt/s^2, terminal
 //   1700), vx relaxes toward wind, and it lands through the shared `tryLand` (Flakes.swift: deposits `size*depositScale` volume; heavy falls there call Effects.impact) or vanishes past a side edge / below the bottom. Shape-2 slabs may `splitSlab`.
 // Flake fields used here: `phase` > 0 = freshly shed, cannot land yet (counts down by dt; shed paths set it, e.g. 0.5 in Avalanche); on a held slab phase < 0 = seconds since release (ramps the slide up over 0.15 s). `amp` > 0 = INTACT
 //   slab (amp = seconds aloft + 1): breaks via `slabHit`/`breakSlab` on a hit, or randomly when fragile (size < 40, aloft > 0.15 s; not in calm). `delay` > 0 on an intact slab = held until the release ripple reaches it (sags, slides at 0.3x); on a plain shape-2 slab it is the aloft timer for splitSlab.
@@ -11,9 +11,9 @@ import Foundation
 extension SnowField {
     /// `fall` is the current downward speed; `step` accelerates it. Heavy snow: bigger and brighter than sky flakes.
     @discardableResult
-    func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil) -> Bool {
+    func addDebris(x: Float, y: Float, vx: Float, fall: Float, size: Float? = nil, vol: Float = 0) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
-        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1))
+        debris.append(Flake(pos: [x, y], vx: vx, fall: max(fall, 0), phase: 0, amp: 0, freq: 0, size: size ?? Float.random(in: 3...5, using: &rng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, vol: vol))
         return true
     }
 

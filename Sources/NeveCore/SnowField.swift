@@ -177,6 +177,7 @@ public final class SnowField {
     public private(set) var outro = false                // outro: no new snow, flakes fade, nothing lands (see collapseAll)
     var melting = false                                  // idle melt (Melt.swift): no new snow, everything thaws away over meltDur
     var meltT: Float = 0, meltDur: Float = 1, meltRate: Float = 0
+    var meltRates: [Int: Float] = [:], meltEaveRates: [Int: Float] = [:]   // per surface id (Melt.swift)
     var quiet: Bool { outro || melting }
     var outroT: Float = 0, outroSpread: Float = 0, outroRel: Float = 1   // piles released so far: 0...1 of the spread (1 = all)
 

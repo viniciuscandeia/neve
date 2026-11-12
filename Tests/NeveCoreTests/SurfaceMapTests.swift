@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/SurfaceMapTests.swift  (the biggest suite: surfaces, visibility, carry-over, ground bank; defines the shared test helpers)
-// Shared helpers used by most test files: `makeField` (1000x800 field at origin 0, groundY 90 = Dock top, visibleTop 780), `win`, `pileUp` (direct deposits), `snowUntilPiled`, `pileOnLoneWindow`, `fillBankLevel`, and the windows `back` (x 100...400, top y 400)
+// Shared helpers used by most test files: `makeField` (1000x800 field at origin 0, groundY 90 = Dock top, visibleTop 780), `win`, `pileUp` (direct deposits; spill lumps from the build are dropped), `snowUntilPiled`, `pileOnLoneWindow`, `fillBankLevel`, and the windows `back` (x 100...400, top y 400)
 //   and `front` (x 200...500, y 300...600). Covers: front/back visibility by list order, clipping to the screen, windows off screen / in the menu-bar area / without headroom / at ground level get no surface, Dock surface only over the bar, slow move carries
 //   the pile without shedding, fast move sheds (`shedFraction`), narrower resize drops only the overhang, bounds changes, vanished window drops blocks (debris count truthful at the pool limit), Space-switch stash (restore, changed width restores nothing, cap 64
 //   and 30 min expiry, no debris), headroom / ceiling rules in `Pile.deposit`, ground pile and the bank beside a bottom Dock (rises to the Dock top, never inside the bar's rounded silhouette, merged contour, shrinking Dock sheds as debris), `DockDebounce`,
@@ -23,9 +23,11 @@ func win(_ n: Int, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> Wi
 }
 
 /// Builds window `id`'s pile directly (no snowfall): `rounds` deposits in every bin; hidden / roofed columns take none.
-func pileUp(_ f: SnowField, id: Int, rounds: Int = 12, volume: Float = 4) {
+func pileUp(_ f: SnowField, id: Int, rounds: Int = 12, volume: Float = 4, keepSpill: Bool = false) {
     let i = f.surfaces.firstIndex { $0.id == id }!
+    let d0 = f.debris.count
     for _ in 0..<rounds { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: volume) } }
+    if !keepSpill { f.debris.removeLast(f.debris.count - d0) }   // end spill lumps now carry their volume (`vol`): a fixture builds a pile, not a cloud of falling snow, so tests' volume ledgers start clean
 }
 
 /// Integration helper: steps a snowing field until window `id` carries a pile at least `height` tall.

@@ -66,8 +66,8 @@ private func trace(_ f: SnowField, seconds: Float, dt: Float = 1.0 / 60) -> [Flo
 @Test func resumeStartsFromTheTopWithNoFlakeOnScreen() {
     let f = snowy()
     advance(f, 3)
-    f.beginMelt(duration: 5)
-    advance(f, 5.1)
+    f.beginMelt(duration: 8)   // (was 5: window piles now last to 85 % of the run, so the last meltwater drops need the 15 % tail (> 0.9 s fall) to land before meltDone)
+    advance(f, 8.1)
     #expect(f.meltDone)
     f.beginIntro(duration: 2.5)
     #expect(f.activeFlakes == 0)

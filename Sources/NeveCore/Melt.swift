@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Melt.swift  (idle melt: snow thaws away)
 // Role: `beginMelt(duration:)` (Overlay.melt uses 12 s; Reduce Motion 0.6 s with no sag): sets melting, stops intro, snowmanCooldown = infinity, clears fights / carrots, marks icicles dying; `stepMelt(dt:)` (every pile bin sinks at a constant
-//   meltRate so thin edges vanish first and the contour keeps its shape; from 55 % of the run snowmen collapse (before that they sag and lose accessories); balls start melting at a hash-staggered 0-40 % of the run); `meltDone` = full time run AND
+//   per-surface rate (`meltRates` by surface id, tallest bin gone at 85 % of the run; `meltRate` = the max, for surfaces born mid-melt; cornices eaveL/R sink at `meltEaveRates`) so thin edges vanish first and the contour keeps its shape; from 55 % of the run snowmen collapse (before that they sag and lose accessories); balls start melting at a hash-staggered 0-40 % of the run); `meltDone` = full time run AND
 //   airborne debris / puffs / glints / drops finished (or hard cap `meltGrace` 2 s past the end) => the overlay may pause rendering; `finishMelt` calls clear() but keeps that airborne set; `isMelting`, `pileVolume` (pt^2), `fadeK` (speeds
 //   fade-outs of late starters so they finish; 1 outside a melt). Visitors fade in stepFigures, flakes fade in stepFlakes (`quiet` = outro || melting). `beginIntro` (SnowField.swift) ends a melt keeping the snow left.
 // Caller chain: AppController.startIdleMelt (Sources/Neve/main.swift) -> Overlay.melt -> field.beginMelt; the overlay polls meltDone each tick. Deterministic: sim time only. Tests: MeltTests. Units: sim seconds, pt^2 for pile volume.
@@ -33,9 +33,12 @@ extension SnowField {
         guard !melting else { return }
         melting = true; introDur = 0
         meltT = 0; meltDur = calm ? 0.6 : max(duration, 0.01)
-        var hmax: Float = 0
-        for s in surfaces { for h in s.pile.heights { hmax = max(hmax, h) } }
-        meltRate = hmax / (meltDur * 0.85)
+        meltRate = 0; meltRates.removeAll(); meltEaveRates.removeAll()
+        for s in surfaces {   // each surface thaws on its own schedule: its tallest bin / cornice is gone at 85 % of the run (a Dock bank or tall heap elsewhere must not empty the window piles early)
+            let h = s.pile.heights.max() ?? 0, e = max(s.pile.eaveL, s.pile.eaveR)
+            meltRates[s.id] = h / (meltDur * 0.85); meltEaveRates[s.id] = e / (meltDur * 0.85)
+            meltRate = max(meltRate, h / (meltDur * 0.85))
+        }
         snowmanCooldown = .infinity
         clearFights(); clearCarrots()
         for i in icicles.indices { icicles[i].dying = true }
@@ -53,10 +56,14 @@ extension SnowField {
         let p = meltT / meltDur
         var changed = false
         for si in surfaces.indices {
+            let rate = meltRates[surfaces[si].id] ?? meltRate   // a surface born mid-melt follows the fastest one
             for b in surfaces[si].pile.heights.indices where surfaces[si].pile.heights[b] > 0 {
-                surfaces[si].pile.heights[b] = max(0, surfaces[si].pile.heights[b] - meltRate * dt)
+                surfaces[si].pile.heights[b] = max(0, surfaces[si].pile.heights[b] - rate * dt)
                 changed = true
             }
+            let er = meltEaveRates[surfaces[si].id] ?? 0   // the cornice sinks with the snow under it (stepEaves does not run while quiet)
+            if surfaces[si].pile.eaveL > 0 { surfaces[si].pile.eaveL = max(0, surfaces[si].pile.eaveL - er * dt); changed = true }
+            if surfaces[si].pile.eaveR > 0 { surfaces[si].pile.eaveR = max(0, surfaces[si].pile.eaveR - er * dt); changed = true }
         }
         if changed { pilesDirty = true }
         var i = figures.count - 1

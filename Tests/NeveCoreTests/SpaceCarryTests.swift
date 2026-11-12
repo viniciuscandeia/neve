@@ -161,7 +161,7 @@ private func switchSpace(_ f: SnowField) { f.dropPiles(); f.markStale() }
 @Test func vanishingLongAfterTheSwitchWindowIsARealClose() {
     let f = makeField()
     f.update(windows: [back], now: 0)
-    pileUp(f, id: 1)
+    pileUp(f, id: 1, keepSpill: true)   // (the debris asserted below is the build's own spill lumps)
     switchSpace(f)
     f.update(windows: [back, win(9, 600, 300, 100, 100)], now: 7)   // past the window: ids are forgotten
     f.update(windows: [win(9, 600, 300, 100, 100)], now: 8)

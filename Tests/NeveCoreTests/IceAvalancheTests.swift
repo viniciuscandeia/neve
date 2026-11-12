@@ -90,11 +90,11 @@ private func stackedField(seed: UInt64) -> SnowField {
     #expect(f.triggerAvalanche(near: CGPoint(x: 480, y: 550)))
     #expect(!f.triggerAvalanche(near: CGPoint(x: 300, y: 550)))   // running
     for _ in 0..<(60 * 5) { f.step(dt: 1.0 / 60) }
-    pileUp(f, id: 1, rounds: 14)
+    pileUp(f, id: 1, rounds: 14, keepSpill: true)
     #expect(!f.avalancheActive)
     #expect(!f.triggerAvalanche(near: CGPoint(x: 480, y: 550)))   // cooldown
     advance(f, 61, fps: 30)
-    pileUp(f, id: 1, rounds: 14)
+    pileUp(f, id: 1, rounds: 14, keepSpill: true)
     #expect(f.triggerAvalanche(near: CGPoint(x: 480, y: 550)))
 }
 
