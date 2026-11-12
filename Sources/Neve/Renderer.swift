@@ -7,6 +7,7 @@
 //   `Occ` buffer = the 17 float4 occluder rects (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
 // `AppearanceWatcher` (@MainActor): mirrors the system light/dark appearance into Palette.darkTarget (fade ~0.5 s eased by Palette.tick per frame) and posts `changed` so paused (still) overlays wake.
 // Invariants: the MSL `struct Instance` is NeveCore ShaderStructs.instance, checked against NeveCore/Render.swift `Instance` by ShaderLayoutTests (field order, offsets, size); changing one without the other renders garbage silently. Y is up, units are screen-local points.
+// Flakes >= 5 pt are six-arm crystals when fragment buffer 0 = float2 (contrast, fx) has fx = 1.
 // Perf: flake fragment shader runs for every flake pixel at up to 60 fps on full-screen drawables: keep branches cheap. Callers: Overlay.swift (pipeline use), AppController (indirectly).
 
 import AppKit
@@ -125,14 +126,15 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.prof = float(k == 7u ? lit : pr);
     return o;
 }
-// `contrast` (Increase Contrast) = 1 darkens the flake edge.
+// `cf` = (contrast, fx): contrast (Increase Contrast) = 1 darkens the flake edge; fx = 1 draws flakes >= 5 pt as six-arm crystals (0 in economy / Low Power).
 // 1 inside the rect (minx, miny, maxx, maxy; screen coordinates) with a soft ~8pt edge; empty rects hide nothing.
 static float occMask(float2 p, float4 r) {
     if (r.z <= r.x) return 0.0;
     float d = min(min(p.x - r.x, r.z - p.x), min(p.y - r.y, r.w - p.y));
     return smoothstep(-4.0, 4.0, d);
 }
-fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[buffer(0)]], constant Occ &occ [[buffer(1)]]) {
+fragment float4 flakeFragment(VOut in [[stage_in]], constant float2 &cf [[buffer(0)]], constant Occ &occ [[buffer(1)]]) {
+    float contrast = cf.x, fx = cf.y;   // fx = 0 in economy / Low Power: round flakes
     float seed = fract(in.seed);
     float dark = occ.s.w;
     float hide = 0.0;
@@ -213,11 +215,17 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     }
     float d = length(u0);
     // Flakes >= ~5pt: faint 6-fold crystal hint + a little per-flake irregularity. Small ones stay round dots.
-    float big = smoothstep(3.5, 5.5, in.size);
+    float big = fx > 0.0 ? step(5.0, in.size) : smoothstep(3.5, 5.5, in.size);
     if (big > 0.0) {
         float th = atan2(u0.y, u0.x) + seed * 6.2832;
+        if (fx > 0.0) {   // six-arm crystal: arms (thin or fat by seed), a seed-sized core, optional short side tips between the arms
+            float k = 3.0 + 7.0 * fract(seed * 5.3), core = 0.30 + 0.12 * fract(seed * 11.7);
+            float r = core + (1.0 - core) * pow(abs(cos(3.0 * th)), k) + 0.28 * fract(seed * 3.7) * pow(abs(sin(3.0 * th)), 10.0);
+            d /= max(min(r, 1.0) * 0.92, 0.2);
+        } else {
         float wob = cos(6.0 * th) * 0.13 + cos(3.0 * th + seed * 17.0) * 0.07 * fract(seed * 7.0);
         d *= 1.0 - big * (wob + 0.04);
+        }
     }
     // Depth of field: the focus plane is a mid-size sky flake; further from it (smaller / background = far, bigger = near) the edge gets softer.
     float far = in.seed >= 2.0 ? 1.0 : 0.7 * clamp(abs(in.size - 4.5) / 3.0, 0.0, 1.0);

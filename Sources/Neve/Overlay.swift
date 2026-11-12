@@ -816,6 +816,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         t0 = Perf.now()
         if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
             var viewSize = field.size
+            let fx: Float = prefs.economy || lowPower ? 0 : 1   // visual extras (glitter, grain, crystals, window shadow) off in economy / Low Power, like the crest glints
             // Shaders always work in whole-screen coordinates; the viewport slides the screen under the (smaller) drawable.
             enc.setViewport(MTLViewport(originX: Double(-g.minX * scale), originY: Double(-(CGFloat(field.size.y) - g.maxY) * scale),
                                         width: Double(CGFloat(field.size.x) * scale), height: Double(CGFloat(field.size.y) * scale), znear: 0, zfar: 1))
@@ -852,7 +853,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
             var streakDt = frameDt * Self.slowmo   // streak length = distance per SIM frame, so it matches the (slowed) velocity
             enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
-            enc.setFragmentBytes(&contrast, length: MemoryLayout<Float>.size, index: 0)
+            var cf = SIMD2<Float>(contrast, fx)
+            enc.setFragmentBytes(&cf, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
             occ[16] = SIMD4(occStrength, (occStrength > 0 && (0..<4).contains { occ[$0].z > occ[$0].x }) || (4..<8).contains { occ[$0].z > occ[$0].x } ? 1 : 0, (8..<16).contains { occ[$0].z > occ[$0].x } ? 1 : 0, Palette.dark)   // rects 0-3 only mask with strength > 0; 4-7 always
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
