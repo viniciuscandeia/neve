@@ -545,7 +545,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let pr = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.poller.mcProbeTick() }
             }
-            pr.tolerance = 0.05
+            pr.tolerance = 0.15
             RunLoop.main.add(pr, forMode: .common)
             mcProbe = pr
         }
