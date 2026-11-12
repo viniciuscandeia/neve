@@ -1,12 +1,12 @@
 // AGENT HEADER - Sources/NeveCore/SnowField.swift  (the per-screen simulation: state + lifecycle + the step() order)
 // Role: `SnowField` (final class, one per screen, owned by an Overlay) holds ALL simulation state and `step(dt:)`; behaviour is split into `extension SnowField` across many files (Surfaces, SurfaceMap, SurfaceSet (the surface list and its derived structures live in the `sset` struct), Render, Flakes, Effects,
-//   Avalanche, Frost, Icicles, Drips, Melt, DockPush, DockSpill, Coverage, Resize, Figures*, Fights, Walk, Snowball, Snowman, Gifts, CursorThrow, EventDirector wiring, Scene). Also `BusyReasons` (why the frame rate must be 60) and `Stashed`.
+//   Avalanche, Frost, Icicles, Drips, Melt, DockPush, DockSpill, Coverage, Resize, Figures*, Fights, Walk, Snowball, Snowman, Gifts, Tree (+ Rig+Tree), CursorThrow, EventDirector wiring, Scene). Also `BusyReasons` (why the frame rate must be 60) and `Stashed`.
 //   Pure data/logic: no AppKit, no I/O, no wall clock; time = sum of dt (`time`) plus a monotonic `clock` the app feeds through update(now:); randomness = SplitMix64 `rng`/`fxRng` seeded in init => deterministic tests (DeterminismTests).
 // Coordinates/units: LOCAL to the screen, AppKit y-up, points. `origin` = screen.frame.origin (global AppKit); `groundY` = Dock-/visibleFrame-bottom height, `visibleTop` = under the menu bar. Pile columns are BINS of
 //   Tuning.binWidth (2 pt): `numCols` global columns across the screen width; a surface's `c0` is its first GLOBAL column, `pile.heights[b]` is LOCAL bin b (global = c0 + b). `column(x)`, `binCenter(c)` convert.
 // Pools: `flakes` is preallocated once for Nevasca (sky pool [0, skyCount) + background pool); intensity only changes `skyLimit/bgLimit` (active counts), `skyEnd/bgEnd` bound loops; dormant slots cost nothing. `debris`, glints, puffs, drops,
 //   icicles, figures, balls, fights, shots, splats, carrots, gifts are capped arrays (Tuning.max*). `capacity` = max instances the GPU buffer must hold.
-// step(dt) order: scene script -> snowman builder/director -> outro/intro/melt -> balls, gifts, figures, splats -> wind/music -> stepFlakes (landing -> deposit into piles) -> peel, ice, avalanche, debris, dock, bank, dock spill, slump, seams (Seams.stepSeams: snow exchange across touching windows),
+// step(dt) order: scene script -> snowman builder/director -> outro/intro/melt -> balls, gifts, tree, figures, splats -> wind/music -> stepFlakes (landing -> deposit into piles) -> peel, ice, avalanche, debris, dock, bank, dock spill, slump, seams (Seams.stepSeams: snow exchange across touching windows),
 //   puffs, wind dust, glints, drips. The app drives it ~30/60 Hz from Overlay.tick (dt <= 0.06) and feeds windows at poll rate via `update(windows:)` (Surfaces.swift).
 // Presentation state kept here on purpose (testable): `pileVersion`/`pilesDirty`, `pileWritten`, `pileEasing`, `Pile.shown`; the renderer rewrites the pile buffer only when pileVersion changes or easing is active (`pilesSettled`).
 // Public flags the app sets each frame/pref change: pointer/optionHeld/music/calendarDay/timer, economy, snowmanEnabled/walkEnabled/visitorsEnabled/sleighEnabled/pointerPush/groundOnlyActors, frozen (still snow), setIntensity/setCalm/setLowPower.
@@ -21,8 +21,8 @@ public struct BusyReasons: OptionSet, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
     public static let drag = BusyReasons(rawValue: 1), dock = BusyReasons(rawValue: 2), shots = BusyReasons(rawValue: 4), fights = BusyReasons(rawValue: 8), debris = BusyReasons(rawValue: 16)
-    public static let introOutro = BusyReasons(rawValue: 32), figures = BusyReasons(rawValue: 64), gust = BusyReasons(rawValue: 128), balls = BusyReasons(rawValue: 256)
-    public static let names: [(BusyReasons, String)] = [(.drag, "drag"), (.dock, "dock"), (.shots, "shots"), (.fights, "fights"), (.debris, "debris"), (.introOutro, "intro"), (.figures, "figures"), (.gust, "gust"), (.balls, "balls")]
+    public static let introOutro = BusyReasons(rawValue: 32), figures = BusyReasons(rawValue: 64), gust = BusyReasons(rawValue: 128), balls = BusyReasons(rawValue: 256), tree = BusyReasons(rawValue: 512)
+    public static let names: [(BusyReasons, String)] = [(.drag, "drag"), (.dock, "dock"), (.shots, "shots"), (.fights, "fights"), (.debris, "debris"), (.introOutro, "intro"), (.figures, "figures"), (.gust, "gust"), (.balls, "balls"), (.tree, "tree")]
 }
 
 /// A window's snow (and freeze progress) set aside while its window is on another Space.
@@ -34,6 +34,7 @@ struct Stashed {
     var topY: Float = 0                // ... and its top edge (the window may return at another height)
     var minX: Float = 0                // the window's left edge then: what stood on it is shifted by the move when it returns
     var balls: [Snowball] = [], figures: [Figure] = [], gifts: [Gift] = []   // what stood on it (user snowmen, resting balls, gifts)
+    var tree: Tree? = nil              // ... and the Christmas tree (Tree.swift)
 }
 
 public final class SnowField {
@@ -135,6 +136,10 @@ public final class SnowField {
     public var calendarDay: (month: Int, day: Int) = (0, 0)   // injected by the app (tests set Dec 24): picks the sleigh frequency
     var scene: SceneState?               // NEVE_SCENE script (Scene.swift): nil = a normal run
     var giftState = GiftState()          // gifts + confetti (Gifts.swift)
+    var tree: Tree?                      // the Christmas tree on this screen (Tree.swift); one in the whole app, AppController keeps it unique
+    var burst: Burst?                    // its warning gust: flakes respawned meanwhile appear around burst.x
+    var treeRng = SplitMix64(seed: 0x7EE_C0DE)   // own generator: placement, burst flakes, shaken snow, gifts (never `rng`)
+    public var treeEnabled = false { didSet { if !treeEnabled { tree = nil; burst = nil } } }   // the app sets it from Pref.christmasTree; tests opt in
     var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
     /// Profiling only (nil = free): seconds clock; time spent in `stepFlakes` accumulates in `flakeSeconds` (reader zeroes it) over `flakeSteps` calls.
     public var timer: (() -> Double)?
@@ -175,6 +180,7 @@ public final class SnowField {
         self.config = config
         rng = SplitMix64(seed: seed)
         fxRng = SplitMix64(seed: seed ^ 0x1CE1CEA7A1A)
+        treeRng = SplitMix64(seed: seed ^ 0x7EE_C0DE)
         director = EventDirector(seed: seed ^ 0xD1EC_7042, speed: config.directorSpeed)
         self.size = SIMD2(Float(size.width), Float(size.height))
         self.origin = origin
@@ -271,7 +277,7 @@ public final class SnowField {
     }
 
     /// The one clear contract: removes every accumulated effect (piles, balls, figures and their fights / shots / splats, debris, glints, puffs,
-    /// frost, icicles, gifts + confetti, meltwater drops). Snowfall (flakes, intensity), cooldowns and the event director are left alone.
+    /// frost, icicles, gifts + confetti, the tree and its burst, meltwater drops). Snowfall (flakes, intensity), cooldowns and the event director are left alone.
     public func clear() {
         carrots.removeAll(keepingCapacity: true)
         chain = AvaChain(); cursorThrow = CursorThrow()   // a front still sliding / a windup in flight would act on snow that is gone
@@ -286,6 +292,7 @@ public final class SnowField {
         debris.removeAll(keepingCapacity: true); glints.removeAll(keepingCapacity: true); puffs.removeAll(keepingCapacity: true)
         iceWin.removeAll(keepingCapacity: true); icicles.removeAll(keepingCapacity: true); drops.removeAll(keepingCapacity: true)
         giftState.gifts.removeAll(keepingCapacity: true); giftState.confetti.removeAll(keepingCapacity: true)
+        tree = nil; burst = nil
         pilesDirty = true
     }
 
@@ -317,6 +324,7 @@ public final class SnowField {
         if figures.contains(where: { $0.kind != .snowman }) { r.insert(.figures) }
         if abs(gust) > 0.15, !figures.isEmpty { r.insert(.gust) }   // a gust only moves figures (flutter, shots, balls have their own reasons); flakes drift fine at 30 fps
         if balls.contains(where: { $0.state != .resting }) { r.insert(.balls) }
+        if burst != nil || (tree?.state ?? .resting) != .resting { r.insert(.tree) }
         return r
     }
     /// The pile buffer written last is still the current picture (no version change, no easing left).
@@ -337,6 +345,7 @@ public final class SnowField {
         stepMelt(dt: dt)
         stepBalls(dt: dt)
         stepGifts(dt: dt)
+        stepTree(dt: dt)
         stepFigures(dt: dt)
         stepSplats(dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)

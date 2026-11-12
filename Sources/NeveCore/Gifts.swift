@@ -3,7 +3,7 @@
 //   `out` 1 -> 0 over 0.4 s on outro / second half of a melt), `Confetti`, `GiftState` (SnowField.giftState) and SnowField code. `dropGift` (called by stepSleigh; no-op while quiet), `stepGifts` (same fall integrator that Figures+Sleigh.giftTravel
 //   mirrors - keep both in sync; falls through a vanished pile), `openGift(at:)` (Option-click, from Overlay: pops the lid, 4 glints unless calm / economy / low power), `breakGifts` (a cursor sweep segment pops a gift: confetti + crumbs, called from
 //   Surfaces.swift's sweep), `transportGifts` (window moved: x shift, or falls when shed speed > 0.5), `writeGiftPrims` (Rig.gift / confetti quads, honours the drag `shift`).
-// Gifts are stashed across Space switches (Stashed.gifts) and removed by clear(). Uses `rng`. Tests: SleighTests (drop / open).
+// Gifts also come from the Christmas tree (Tree.swift: 2-4 around its foot, list may reach maxGifts + 4). Gifts are stashed across Space switches (Stashed.gifts) and removed by clear(). Uses `rng`. Tests: SleighTests (drop / open).
 
 import CoreGraphics
 import Foundation

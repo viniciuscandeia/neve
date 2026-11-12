@@ -1,10 +1,10 @@
 // AGENT HEADER - Sources/NeveCore/Surfaces.swift  (window list -> surfaces + piles; deposit, shed, cursor sweep)
 // Role: (also fills `occluders` / `zOf` / `groundZ` for the pile clip) turns the app's front-to-back [WindowInfo] snapshot into `surfaces` and keeps their piles alive across snapshots. `update(windows:dt:now:)` is THE entry point (poll rate, called by Overlay.update): ignores identical snapshots (only
 //   decays velocity), else `updateSurfaces` -> per-window `buildSurface` (columns c0..c1 clipped to the screen, visibility / ceiling / cap vs windows in FRONT (true occlusion), drift walls from the GEOMETRY of the higher windows over the pile (`Pile.hideTop`, any stacking), `cap` = lowest underside of ANY window whose body lies above the bin (geometry, not z; only windows in front HIDE bins), wobble, corner rounding) and `buildGround` (full-width ground pile,
-//   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Figures.
+//   bank beside the Dock). Surface ids: window number (> 0), 0 = Dock bar, Tuning.groundID (-1) = ground. Occluder-only windows hide piles but get no surface. It then rebuilds the column index and runs transportBalls / Gifts / Tree / Figures.
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
-//   gifts; cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
+//   gifts, the Christmas tree (Stashed.tree; knockOff of a window that never returns drops it); cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
@@ -161,6 +161,7 @@ extension SnowField {
         sset.install(built)
         transportBalls(before: before)
         transportGifts(before: before)
+        transportTree(before: before)
         transportFigures(before: before)
         restoreStashed()
         pilesDirty = true
@@ -176,12 +177,14 @@ extension SnowField {
         balls.removeAll { $0.state != .held && onIt($0.surfaceID) }
         let keptGifts = giftState.gifts.filter { onIt($0.surface) }
         giftState.gifts.removeAll { onIt($0.surface) }
+        let keptTree = tree.flatMap { onIt($0.surface) && $0.state == .resting ? $0 : nil }
+        if keptTree != nil { tree = nil }
         for s in gone {
-            let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }
-            guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty else { continue }
+            let fs = keptFigures.filter { $0.surfaceID == s.id }, bs = keptBalls.filter { $0.surfaceID == s.id }, gs = keptGifts.filter { $0.surface == s.id }, tr = keptTree?.surface == s.id ? keptTree : nil
+            guard s.pile.heights.contains(where: { $0 > 0 }) || !fs.isEmpty || !bs.isEmpty || !gs.isEmpty || tr != nil else { continue }
             stash[s.id] = Stashed(heights: s.pile.heights, stamp: clock, mound: s.pile.mound, ice: iceWin.first { $0.id == s.id },
                                   overhang: Dictionary(uniqueKeysWithValues: (overhang[s.id] ?? [:]).map { ($0.key - s.c0, $0.value) }),
-                                  topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs)
+                                  topY: Float(s.frame.maxY), minX: Float(s.frame.minX), balls: bs, figures: fs, gifts: gs, tree: tr)
         }
         while stash.count > 64, let k = stash.min(by: { $0.value.stamp < $1.value.stamp })?.key { stash[k] = nil }
     }
@@ -193,6 +196,7 @@ extension SnowField {
             for var b in e.balls where balls.lazy.filter({ !$0.melting }).count < Tuning.maxBalls { b.pos = SIMD2(cx(b.pos.x), b.pos.y + dy); balls.append(b) }
             for var f in e.figures where canSpawnFigure { f.foot.x = cx(f.foot.x); f.foot.y += dy; f.critter.fetchX = nil; f.at = f.surfaceID.map { .surface(id: $0, x: f.foot.x) } ?? .air; figures.append(f) }
             for var g in e.gifts where giftState.gifts.count < Tuning.maxGifts { g.pos = SIMD2(cx(g.pos.x), g.pos.y + dy); giftState.gifts.append(g) }
+            if var t = e.tree, tree == nil { t.pos = SIMD2(cx(t.pos.x), t.pos.y + dy); tree = t }
         }
         stashBack.removeAll()
     }
@@ -691,6 +695,7 @@ extension SnowField {
     /// A vanished surface's pile falls as a few intact blocks (`dropBlocks`), not as a spray: each run of snow is cut into ~60pt slabs.
     func knockOff(_ s: Surface, velocity v: SIMD2<Float> = .zero) -> Int {
         guard !silent else { return 0 }
+        if var t = stash[s.id]?.tree, tree == nil { t.state = .falling; t.surface = nil; t.vel = .zero; tree = t }   // its tree never came back: it falls from where it stood
         stash[s.id] = nil   // it left on its own: its snow falls, nothing to bring back
         var n = 0, b = 0
         let count = s.pile.heights.count

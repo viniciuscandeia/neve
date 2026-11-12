@@ -81,12 +81,14 @@ public enum Palette {
     public static let giftGreen = Tone(SIMD3(0.16, 0.55, 0.28), SIMD3(0.20, 0.50, 0.30))
     public static let giftInside = Tone(SIMD3(0.12, 0.07, 0.08), SIMD3(0.14, 0.09, 0.10))
     public static let frost = Tone(SIMD3(0.93, 0.96, 0.99), SIMD3(0.84, 0.88, 0.94))      // neutral icy white, a hint of cool
+    public static let treeGreen = Tone(SIMD3(0.10, 0.42, 0.22), SIMD3(0.16, 0.42, 0.26))  // Christmas tree branches
+    public static let treeShade = Tone(SIMD3(0.05, 0.27, 0.14), SIMD3(0.09, 0.28, 0.17))  // the half of each branch layer facing away from the light
     /// Every colour, for tests.
     public static let all: [(String, Tone)] = extras + [("snow", snow), ("lift", lift), ("flake", flake), ("shade", shade), ("deep", deep), ("shadow", shadow), ("shadowHC", shadowHC),
                                                ("glint", glint), ("dropFill", dropFill), ("dropEdge", dropEdge), ("speckle", speckle), ("ice", ice), ("iceEdge", iceEdge), ("iceShine", iceShine)]
     static let extras: [(String, Tone)] = [("carrot", carrot), ("red", red), ("stripe", stripe), ("twig", twig), ("coal", coal), ("rabbitFur", rabbitFur), ("earPink", earPink), ("trim", trim), ("rim", rim),
         ("penguinBack", penguinBack), ("penguinBelly", penguinBelly), ("fawn", fawn), ("robinBreast", robinBreast), ("robinWing", robinWing), ("robinBeak", robinBeak), ("gold", gold), ("skin", skin),
-        ("reins", reins), ("sack", sack), ("rudolph", rudolph), ("deerTail", deerTail), ("giftRed", giftRed), ("giftGreen", giftGreen), ("giftInside", giftInside), ("frost", frost)]
+        ("reins", reins), ("sack", sack), ("rudolph", rudolph), ("deerTail", deerTail), ("giftRed", giftRed), ("giftGreen", giftGreen), ("giftInside", giftInside), ("frost", frost), ("treeGreen", treeGreen), ("treeShade", treeShade)]
 
     // Scalars: (light, dark).
     public static let crestAlpha: Float = 0.9

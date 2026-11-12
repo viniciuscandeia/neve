@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Resize.swift  (screen size / scale change)
 // Role: `remapHeights(_:to:)` (heights carried to a new column count by x proportion, area-weighted mean per new column) and `SnowField.resize(size:origin:groundY:visibleTop:)`: window piles (surfaces with id > 0, and what stands on them) are stashed by
 //   window id (stashAway) and return with the windows; the ground keeps its heights and mounds by x proportion; the Dock pile waits in `dockCarry` / `dockMoundCarry` (only WHERE a heap stood; its allowance is recomputed from the carried heights on rebuild; applied only to a rebuild within ~2 s, `dockCarryUntil`); flakes / balls / figures /
-//   gifts keep their x proportion (x scaled by the width ratio); effects tied to the old geometry (debris, glints, puffs, drops, icicles, carrots, confetti, splats, fights, shots) and chain / dockTrickle / seams / dock animation state are dropped. The
+//   gifts and the Christmas tree (and its burst) keep their x proportion (x scaled by the width ratio); effects tied to the old geometry (debris, glints, puffs, drops, icicles, carrots, confetti, splats, fights, shots) and chain / dockTrickle / seams / dock animation state are dropped. The
 //   surfaces are reduced to the ground only; the next `update` rebuilds the rest (boundsDirty). Also resets the live region (liveX0/X1/liveTop) to the whole screen.
 // Caller: Overlay (rebuildGeometry, Sources/Neve/Overlay.swift). Tests: WindowClassTests (resize cases), SweepTests.
 
@@ -44,6 +44,7 @@ extension SnowField {
         for i in flakes.indices { flakes[i].pos.x *= k }
         for i in balls.indices { balls[i].pos.x *= k }
         for i in giftState.gifts.indices { giftState.gifts[i].pos.x *= k }
+        tree?.pos.x *= k; burst?.x *= k
         clearFights()
         for i in figures.indices {
             figures[i].foot.x *= k

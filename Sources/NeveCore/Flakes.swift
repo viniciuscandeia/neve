@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Flakes.swift  (the snowfall: Flake struct, spawn, stepFlakes, landing)
 // Role: `Flake` (plain-old-data shared by sky / background / near / debris / dormant: pos, vx, fall, phase/amp/freq sway, size, alpha, seed, fade, rot/spin, vol = carried snow area, delay (slab aloft timer, or puff/glint life left), shape,
 //   packed chunk profile `prof`, vel for motion streaks, wv wind inertia), `FlakeKind` (.sky and .background are the pooled snowfall; ONLY .sky flakes land in stepFlakes; .near = rare big out-of-focus foreground discs, never land;
-//   .debris lands through Debris.swift; .dormant = free slot) and SnowField `spawn`, `stepFlakes(dt:)` (THE per-frame hot path: gust LUT, per-flake sway with a bandGain notch near 0.2 Hz, wind, pointer push/swirl, live-region
+//   .debris lands through Debris.swift; .dormant = free slot) and SnowField `spawn` (during the Christmas tree's burst most respawns get their x around the tree, drawn from `treeRng` after the normal spawn: `rng` consumption is unchanged), `stepFlakes(dt:)` (THE per-frame hot path: gust LUT, per-flake sway with a bandGain notch near 0.2 Hz, wind, pointer push/swirl, live-region
 //   wrap for compact mode, intro / outro / melt fade rules, landing test per flake), `tryLand(x:prevY:newY:volume:fall:vol:span:)` (highest OPEN surface top crossed this frame (`Pile.open`: not hidden and not under another window's body, any stacking order; the wind-leeward hop may cross a seam onto the touching neighbour) -> `deposit`, heavy falls -> Effects.impact; returns false
 //   while `quiet`), `stepWindDust` (strong gusts: a puff + a sliver of crest volume moves one bin leeward, conserved), `edgeCalm` (Reduce Motion: slower / fewer flakes near the left / right 12 %), size / alpha / sway helpers,
 //   `introRank` / `slotKind` / `isActive` (pool bookkeeping: sky slots [0, skyCount), background after it, the first nearLimit sky slots are .near).
@@ -47,7 +47,14 @@ extension SnowField {
         return 0.3 + 0.7 * t * t * (3 - 2 * t)
     }
 
+    /// A new flake. During the Christmas tree's warning gust most respawns appear within `burstHalfWidth` of the tree's x (x drawn from `treeRng` AFTER the normal spawn, so `rng` is consumed exactly as without a burst).
     func spawn(_ kind: FlakeKind, anywhere: Bool) -> Flake {
+        var f = spawnPlain(kind, anywhere: anywhere)
+        if let b = burst, !anywhere, kind != .near, Float.random(in: 0..<1, using: &treeRng) < 0.85 { f.pos.x = b.x + Float.random(in: -Tuning.burstHalfWidth...Tuning.burstHalfWidth, using: &treeRng) }
+        return f
+    }
+
+    private func spawnPlain(_ kind: FlakeKind, anywhere: Bool) -> Flake {
         // Compact mode: new snow appears just above the live strip (behind the window); `anywhere` spans the whole screen.
         var x = anywhere ? Float.random(in: 0...size.x, using: &rng) : Float.random(in: liveX0...max(liveX0, liveX1), using: &rng)
         if calm {   // fewer flakes at the edges: rejection sampling against edgeCalm (3 redraws; the rare 4th is kept)
