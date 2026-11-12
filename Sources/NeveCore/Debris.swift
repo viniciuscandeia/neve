@@ -3,6 +3,7 @@
 //   1700), vx relaxes toward wind, and it lands through the shared `tryLand` (Flakes.swift: deposits `size*depositScale` volume; heavy falls there call Effects.impact) or vanishes past a side edge / below the bottom. Shape-2 slabs may `splitSlab`.
 // Flake fields used here: `phase` > 0 = freshly shed, cannot land yet (counts down by dt; shed paths set it, e.g. 0.5 in Avalanche); on a held slab phase < 0 = seconds since release (ramps the slide up over 0.15 s). `amp` > 0 = INTACT
 //   slab (amp = seconds aloft + 1): breaks via `slabHit`/`breakSlab` on a hit, or randomly when fragile (size < 40, aloft > 0.15 s; not in calm). `delay` > 0 on an intact slab = held until the release ripple reaches it (sags, slides at 0.3x); on a plain shape-2 slab it is the aloft timer for splitSlab.
+// Window bodies are walls: `blockByWindows` (after the move) keeps a piece from entering a window outline (`SnowField.occluders`, `Occluder.hides`) sideways: x back, vx 0, it slides down the wall.
 // Removal is swap-with-last, iterating backwards (order not preserved). Hot when shedding / avalanches run: debris.count > Tuning.busyDebris (24) or any slab raises BusyReasons.debris (SnowField.busyReasons).
 
 import CoreGraphics
@@ -17,13 +18,20 @@ extension SnowField {
         return true
     }
 
+    /// A piece that crossed INTO a window's outline sideways (its previous x was outside) stays at the wall with vx = 0 and slides down it; already inside (born there) or entering from above (tryLand) is left alone.
+    /// No z for debris, so every occluder counts (a piece of a front window brushing a back one is stopped too: ponytail, give Flake an origin z if that shows).
+    @inline(__always) func blockByWindows(_ f: inout Flake, prevX: Float) {
+        guard f.pos.x != prevX else { return }
+        for o in occluders where o.hides(x: f.pos.x, y: f.pos.y) && !o.hides(x: prevX, y: f.pos.y) { f.pos.x = prevX; f.vx = 0; return }
+    }
+
     func stepDebris(dt: Float) {
         let w = size.x
         var i = debris.count - 1
         while i >= 0 {
             var f = debris[i]
             if f.amp > 0, f.delay > 0 { f.delay -= dt; f.rot += f.spin * dt * 0.5; f.pos.y -= 8 * dt; f.pos.x += f.vx * 0.3 * dt; debris[i] = f; i -= 1; continue }   // the release ripple has not reached this chunk yet: it starts to sag and slide
-            let prevY = f.pos.y
+            let prevY = f.pos.y, prevX = f.pos.x
             f.fade = min(1, f.fade + dt * 2.5)
             f.phase -= dt   // swept-off snow cannot land back for a moment (see sweep)
             f.vx -= (f.vx - wind * 0.15) * 0.5 * dt
@@ -32,6 +40,7 @@ extension SnowField {
             f.pos.x += f.vx * dt * (f.amp > 0 ? 0.3 + 0.7 * min(1, -f.phase / 0.15) : 1)
             f.pos.y -= f.fall * dt
             f.rot += f.spin * dt
+            blockByWindows(&f, prevX: prevX)
             if f.amp > 0 {   // intact block: breaks only when it hits something
                 let top = slabHit(f, prevY: prevY)
                 f.amp += dt   // seconds aloft (+1)

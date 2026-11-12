@@ -4,7 +4,7 @@
 //   Figures+<Kind>.swift files). SnowField extension: `stepFigures` (visitors fade with melt/outro/dying, dispatch to stepRabbit/Robin/Penguin/Sleigh or the snowman body of `stepFigure`; then, only when walking and not calm/melting:
 //   startFights, stepFights, stepShots, stepCarrots, stepCursorThrow), `look(of:)` -> SnowmanLook for Rig, `anchors`, `addFigure`, `promote(bottomBall:)` / `demote` (stack of 3 balls <-> snowman), `shatter` (debris; `burst:` = cursor explosion, chunks carry the snowman's volume via fxRng; the auto snowman collapses
 //   and starts snowmanCooldown), `removeFigure` (ends its fight, tells EventDirector.ended for visitors), `lose`/`knockOff`/`transportFigures` (window moved: x shift, or knocked off when shed speed > 0.5), `dropWindowFigures` (Space switch).
-// Snowmen stand on the DRAWN snow (`meanShown`, eased `shown` heights; physics stays on `heights`) and fade out (`hide`, 0.2 s) while a window / the Dock covers the body. `snowmanCount < Tuning.maxFigures` gates spawning (`canSpawnFigure`);
+// Snowmen stand on the DRAWN snow (`meanShown`, eased `shown` heights; physics stays on `heights`) and fade out (`hide`, 0.2 s) while a window / the Dock covers the body (draw-only: `hide` also drops when the column is not `visible`, i.e. a window merely brought to front, while physics and `.hidden` stay on `alive`). `snowmanCount < Tuning.maxFigures` gates spawning (`canSpawnFigure`);
 //   visitors are capped by EventDirector. `active` = snowman, not hidden / collapsing / building / headless, stageAge >= 0.3 s. Auto snowman (`fromBalls == false`) builds itself; user stacks (`fromBalls`) are pickable.
 // Coordinates: foot = local AppKit pt, y up, y = pile top under it; `scale` = radii.x / 11.5 (SnowField.snowmanScale 1...1.5 by screen width). Tests: FigureTests, FigureHelpers, ActorFixesTests.
 // Adding a visitor: FigureKind case + EventDirector.spec row + SnowField.startVisitor case + Figures+<Kind>.swift step + Rig+<Kind>.swift look + a draw branch in Sources/Neve/Overlay.swift (calls field.look(of:) / penguinLook(of:) ...).
@@ -372,7 +372,9 @@ extension SnowField {
         f.at = .surface(id: sid, x: f.foot.x)
         let c2 = column(f.foot.x) - s.c0, fits = landed || f.motion.xfer != nil || !visible || c2 < 0 || c2 >= s.pile.cap.count || s.pile.cap[c2] - s.pile.heights[c2] >= Snowman.height * f.scale   // after walking: still under the Dock bar / a low window
         let wantHide = covered || !fits
-        f.hide = wantHide ? max(0, f.hide - dt / 0.2) : min(1, f.hide + dt / 0.2)   // eased in / out, drawn while it fades
+        var drawCovered = !s.pile.visible[min(max(c, 0), s.pile.visible.count - 1)]   // drawing follows `visible` (a window merely brought to front hides it too), physics follows `alive`
+        if !drawCovered, c0 <= c1 { for b in c0...c1 where !s.pile.visible[b] { drawCovered = true; break } }
+        f.hide = wantHide || drawCovered ? max(0, f.hide - dt / 0.2) : min(1, f.hide + dt / 0.2)   // eased in / out, drawn while it fades
         let phase: Phase = wantHide && f.hide <= 0 ? .hidden : f.built < Snowman.stageCount ? .building : f.motion.cheer > 0 ? .cheering
             : f.fight != nil ? .fighting : moving ? .walking : .idle
         if phase != f.phase { f.phase = phase; f.phaseT = 0 }

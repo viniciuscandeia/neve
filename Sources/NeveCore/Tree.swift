@@ -2,7 +2,7 @@
 // Role: Tuning tree constants, `Tree` (foot-centre `pos`, state held / falling / resting, `surface` it stands on, `land` seconds since touchdown, `snow` = 0...1 snow counter per branch layer (SIMD4, bottom layer first), `tilt`, `out` fade),
 //   `Burst` (x + seconds of the warning gust) and SnowField code. API: `dropTree()` (menu / auto timer: starts the ~2 s burst at a random x away from the edges, false when disabled, quiet or one already exists), `hasTree` (tree, burst or a tree
 //   stashed with a window: the uniqueness test AppController uses across screens), `pickTree(at:)` / `dragTree(to:dt:)` / `releaseTree(throwing:)` (Option-click pick-up, mirrors Snowball held / drop), `takeTree()` / `adoptTree(_:at:)` (the drag
-//   crosses to a neighbour screen's field), `treeUnder` (hitTest), `writeTreePrims` (Rig.tree, honours the drag `shift`).
+//   crosses to a neighbour screen's field), `treeUnder` (hitTest), `writeTreePrims` (Rig.tree, honours the drag `shift`; fade * `hide`, draw-only, see Snowball.swift `stepCovered`).
 // Simulation `stepTree` (SnowField.step, after gifts): burst timer -> `startTreeFall` (from above the top edge at the burst x) -> falls like a Gift (same integrator) and lands on `treeSupport` (highest surface whose three foot columns are all `open` and
 //   `landable`, so never on a covered bin) at `standY` (drawn snow) sunk `treeSink`; landing = `impact` crater + puffs + the branch snow shaken off as debris + 2-4 gifts around the foot (Gift list, may exceed Tuning.maxGifts, capped at +4).
 //   Resting: follows the drawn pile each frame; the support gone (closed / minimised window, any of the three foot columns hidden or off the pile and not continued across a seam: `footHolds`) = falls again. `transportTree` (window moved: x shift; a fast move only shakes the branches, it never knocks it down).
@@ -35,6 +35,7 @@ public struct Tree {
     var grab: SIMD2<Float> = .zero                         // foot minus cursor while held
     var age: Float = 0
     var shedT: Float = 0                                   // cooldown between two shakes
+    public internal(set) var hide: Float = 1               // drawing only: 1 -> 0 (0.2 s) while a window brought to front covers its surface (SnowField.stepCovered)
     var out: Float = 1
     public var height: Float { Tuning.treeHeight * scale }
     public var halfFoot: Float { Tuning.treeHalfFoot * scale }
@@ -243,8 +244,8 @@ extension SnowField {
 
     /// The tree as prims; `shift` gives the drag offset of a surface id.
     public func writeTreePrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
-        guard let t = tree else { return }
+        guard let t = tree, t.hide > 0.001 else { return }
         let sq: Float = t.state == .resting && t.land < 0.1 ? 1 : 0
-        Rig.tree(TreeLook(foot: t.pos + shift(t.surface), scale: t.scale, tilt: t.tilt, squash: sq, snow: t.snow, fade: t.fade, grounded: t.state == .resting), contrast: contrast, into: &w)
+        Rig.tree(TreeLook(foot: t.pos + shift(t.surface), scale: t.scale, tilt: t.tilt, squash: sq, snow: t.snow, fade: t.fade * t.hide, grounded: t.state == .resting), contrast: contrast, into: &w)
     }
 }

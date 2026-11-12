@@ -6,6 +6,7 @@
 // Simulation `stepBalls` (in SnowField.step): fall (gravity, side walls; lands on a resting ball of a different stack = stacks if radius <= below and |dx| <= 0.4 r and depth < 3, else slides off; hits figures via `hitFigures`, where a head that
 //   fits re-attaches to a headless body; else lands on the drawn snow via `supportTop` + standY), rest (follows the drawn pile, rolls aside when it does not fit under a low window), `follow` (stack children), promotion of three decreasing
 //   balls to a user `Figure` (Figures.swift `promote`), melt fade, `transportBalls` (window moved: x shift, or knocked off), `breakBalls` / `pop` (cursor sweep breaks a ball into debris). `supportTop` is also used by gifts and penguins (the tree has its own `treeSupport`, Tree.swift; `hitTest` also covers the tree).
+// `stepCovered` (called from SnowField.step) eases the draw-only `hide` of balls / gifts / the tree to 0 while their column is not `visible` (a window in front, even when only `held`); `writeBallPrims` draws with fade * hide.
 // Coordinates: local AppKit pt, y up. Balls on a dragged window ride with the drag (Overlay.writePrims shift). Tests: SnowballTests, SnowmanTests, SpaceCarryTests.
 
 import CoreGraphics
@@ -24,6 +25,7 @@ public struct Snowball: Equatable {
     public internal(set) var parent: Int?               // ball it sits on
     public internal(set) var face: Float = 0            // a loose head: ±1 = draws its face (facing), 0 = plain ball
     public internal(set) var fade: Float = 1            // 1 -> 0 while melting away
+    public internal(set) var hide: Float = 1            // drawing only: 1 -> 0 (0.2 s) while a window brought to front covers its surface (SnowField.stepCovered); physics ignores it
     var vel: SIMD2<Float> = .zero
     var spin: Float = 0                                 // rad/s of a flying head; keeps turning (decaying) after it lands
     var melting = false
@@ -90,6 +92,29 @@ extension SnowField {
         guard let sid, let si = index[sid] else { return true }
         let lc = column(x) - surfaces[si].c0
         return lc < 0 || lc >= surfaces[si].pile.heights.count || surfaces[si].pile.open(lc)
+    }
+
+    /// Whether the column under global x of surface `sid` is DRAWN (`visible`, so false under a window merely brought to front, where `alive` stays true for physics); true for no surface or an unknown one.
+    func shownAt(surface sid: Int?, x: Float) -> Bool {
+        guard let sid, let si = index[sid] else { return true }
+        let lc = column(x) - surfaces[si].c0
+        return lc < 0 || lc >= surfaces[si].pile.visible.count || surfaces[si].pile.visible[lc]
+    }
+
+    /// Eases the draw-only `hide` of balls, gifts and the tree toward 0 while their column is covered by a window in front (0.2 s, like the snowman's); nothing physical changes.
+    func stepCovered(dt: Float) {
+        func ease(_ h: inout Float, _ shown: Bool) { h = shown ? min(1, h + dt / 0.2) : max(0, h - dt / 0.2) }
+        for i in balls.indices { ease(&balls[i].hide, shownAt(surface: balls[i].surfaceID, x: balls[i].pos.x)) }
+        for i in giftState.gifts.indices { ease(&giftState.gifts[i].hide, shownAt(surface: giftState.gifts[i].surface, x: giftState.gifts[i].pos.x)) }
+        if tree != nil { ease(&tree!.hide, shownAt(surface: tree!.surface, x: tree!.pos.x)) }
+    }
+
+    /// Loose balls (drawn only where their column shows).
+    public func writeBallPrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
+        for b in balls where b.hide > 0.001 {
+            Rig.ball(center: b.pos + shift(b.surfaceID), radius: b.radius, rotation: b.rotation, fade: b.fade * b.hide, squash: 0, contrast: contrast,
+                     face: b.face != 0, facing: b.face == 0 ? 1 : b.face, into: &w)
+        }
     }
 
     private func pileUnder(_ q: SIMD2<Float>) -> (Int, Int)? {

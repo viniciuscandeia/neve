@@ -357,6 +357,7 @@ public final class SnowField {
         stepGifts(dt: dt)
         stepTree(dt: dt)
         stepFigures(dt: dt)
+        stepCovered(dt: dt)
         stepSplats(dt)
         windGain += (intensity.windGain - windGain) * min(1, dt * 0.5)
         stepMusic(dt: dt)

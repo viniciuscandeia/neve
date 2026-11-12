@@ -736,10 +736,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private func writePrims(_ w: inout PrimWriter) {
         let hc = contrast > 0
         func d(_ sid: Int?) -> SIMD2<Float> { sid != nil && sid == shiftID ? shift : .zero }
-        for b in field.balls {
-            Rig.ball(center: b.pos + d(b.surfaceID), radius: b.radius, rotation: b.rotation, fade: b.fade, squash: 0, contrast: hc,
-                     face: b.face != 0, facing: b.face == 0 ? 1 : b.face, into: &w)
-        }
+        field.writeBallPrims(&w, contrast: hc, shift: d)
         for f in field.figures where f.phase != .hidden {
             if f.kind == .sleigh { Rig.sleigh(field.sleighLook(of: f), contrast: hc, into: &w); continue }
             if f.kind == .rabbit {

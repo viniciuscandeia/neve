@@ -5,7 +5,7 @@
 //   `treeBulbs` (14 hanging bulbs on that spiral, inside the silhouette: LightsTests) + a low-alpha coloured ellipse on the pile at each bulb's x) and `lightCode(at:)` (lit flakes: a flake within `Lights.litRadius` of a bulb centre gets
 //   Instance.kind 7 | (colour index | strength 0...15 << 3) << 8; the flake shader mixes its colour toward Palette.lights[idx]. Only flakes in the top band and inside the tree's box are tested; the garland bulb is found by x, so no scan).
 // Pattern: the three modes (twinkle, chase, pulse) alternate every `Lights.cycle` s with a `fadeT` cross-fade; phase = `SnowField.time` (stops while frozen). `calm` (Reduce Motion) = every bulb steady at full level, so nothing blinks and a still screen never has to wake.
-//   Windows carry no lights. Colours: Palette.lights (Tones, light / dark). Ids: garland bulb i = i; tree bulb k = 1000 + k (colour = id % 5).
+//   Arcs hidden by a window outline (`garlandArcHidden`: start / middle / end inside an occluder) are skipped whole (cable, bulbs, lit flakes). Windows carry no lights. Colours: Palette.lights (Tones, light / dark). Ids: garland bulb i = i; tree bulb k = 1000 + k (colour = id % 5).
 // Prims: garland ~ (6 cable + 4 x (2 + rings)) per 110 pt arc; tree ~ 30 wire + 14 x (2 + rings) + 14 pile tints. Randomness: none (pure function of time). No allocation (static tables, loops). Tests: LightsTests. Units: local pt, y up.
 
 import Foundation
@@ -55,6 +55,11 @@ extension SnowField {
     func garlandPoint(arc: Int, u: Float) -> SIMD2<Float> {
         SIMD2(garlandOffset + (Float(arc) + u) * Lights.span, visibleTop - 2 - Lights.sag * 4 * u * (1 - u))
     }
+    /// An arc whose start, middle or end lies inside a window outline (`occluders`, any z: a window reaching the menu bar hides the cable and bulbs behind it) is skipped whole.
+    func garlandArcHidden(_ arc: Int) -> Bool {
+        guard !occluders.isEmpty else { return false }
+        return [0, 0.5, 1].contains { u in let p = garlandPoint(arc: arc, u: Float(u)); return occluders.contains { $0.hides(x: p.x, y: p.y) } }
+    }
     /// Where bulb `i` hangs from the cable and the unit direction it hangs along (the cable's normal blended with gravity).
     func garlandHang(_ i: Int) -> (anchor: SIMD2<Float>, dir: SIMD2<Float>) {
         let u = (Float(i % Lights.perArc) + 0.5) / Float(Lights.perArc)
@@ -69,7 +74,7 @@ extension SnowField {
         let t = Float(time), cableA = Rig.a(Rig.c4(Palette.treeShade.now), 0.95), cableB = Rig.a(Rig.c4(Palette.treeGreen.now), 0.9), socket = Rig.c4(Palette.coal.now)
         let arcs = garlandArcs, ringN = economy || lowPower ? 1 : 3
         let steps = 6
-        for arc in 0..<arcs {   // cable: short capsules alternating two greens (the twist), a hair thicker than the old wire
+        for arc in 0..<arcs where !garlandArcHidden(arc) {   // cable: short capsules alternating two greens (the twist), a hair thicker than the old wire
             var prev = garlandPoint(arc: arc, u: 0)
             for s in 1...steps {
                 let q = garlandPoint(arc: arc, u: Float(s) / Float(steps))
@@ -86,7 +91,7 @@ extension SnowField {
             w.ellipse(center: ctr, radii: SIMD2(1.6, 2.5) * size, rotation: atan2(-dir.x, dir.y), color: Rig.a(c, (0.4 + 0.6 * lv) * fade))
             w.capsule(from: anchor, to: anchor + dir * (1.9 * size), width: 2.1 * size, color: Rig.a(socket, 0.95 * fade))
         }
-        for i in 0..<(arcs * Lights.perArc) { let h = garlandHang(i); bulb(anchor: h.anchor, dir: h.dir, id: i, fade: 1, size: 1) }
+        for i in 0..<(arcs * Lights.perArc) where !garlandArcHidden(i / Lights.perArc) { let h = garlandHang(i); bulb(anchor: h.anchor, dir: h.dir, id: i, fade: 1, size: 1) }
         if let tr = tree, tr.fade > 0.01 {
             let foot = tr.pos + shift(tr.surface), wire = Rig.a(socket, 0.6 * tr.fade), dir = SIMD2(sin(tr.tilt), -cos(tr.tilt))
             var prev = Lights.place(foot: foot, scale: tr.scale, tilt: tr.tilt, Lights.treeWire[0])
@@ -118,7 +123,7 @@ extension SnowField {
         }
         if p.y > visibleTop - Lights.band {
             let n = garlandArcs * Lights.perArc, j = Int(((p.x - garlandOffset) / (Lights.span / Float(Lights.perArc)) - 0.5).rounded())
-            for k in (j - 1)...(j + 1) where k >= 0 && k < n { test(garlandBulb(k), k) }
+            for k in (j - 1)...(j + 1) where k >= 0 && k < n && !garlandArcHidden(k / Lights.perArc) { test(garlandBulb(k), k) }
         }
         if let tr = tree, tr.fade > 0.5, abs(p.x - tr.pos.x) < 40 * tr.scale, p.y > tr.pos.y - 4, p.y < tr.pos.y + 126 * tr.scale {
             for k in Lights.treeBulbs.indices { test(Lights.treeBulb(foot: tr.pos, scale: tr.scale, tilt: tr.tilt, k), Lights.treeBase + k) }

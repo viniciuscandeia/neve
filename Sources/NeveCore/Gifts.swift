@@ -2,7 +2,7 @@
 // Role: Tuning gift constants (<= 3 gifts, 9 pt box x snowmanScale, sinks 30 % into the pile, rests 90 s then fades over 1 s, lid 0.7 s, <= 28 confetti), `Gift` (falls like a loose ball, rests on a surface standing on the DRAWN snow via standY,
 //   `out` 1 -> 0 over 0.4 s on outro / second half of a melt), `Confetti`, `GiftState` (SnowField.giftState) and SnowField code. `dropGift` (called by stepSleigh; no-op while quiet), `stepGifts` (same fall integrator that Figures+Sleigh.giftTravel
 //   mirrors - keep both in sync; falls through a vanished pile), `openGift(at:)` (Option-click, from Overlay: pops the lid, 4 glints unless calm / economy / low power), `breakGifts` (a cursor sweep segment pops a gift: confetti + crumbs, called from
-//   Surfaces.swift's sweep), `transportGifts` (window moved: x shift, or falls when shed speed > 0.5), `writeGiftPrims` (Rig.gift / confetti quads, honours the drag `shift`).
+//   Surfaces.swift's sweep), `transportGifts` (window moved: x shift, or falls when shed speed > 0.5), `writeGiftPrims` (Rig.gift / confetti quads, honours the drag `shift`; gifts fade by `hide`, set by `stepCovered` in Snowball.swift, while a window in front covers their column).
 // Gifts also come from the Christmas tree (Tree.swift: 2-4 around its foot, list may reach maxGifts + 4). Gifts are stashed across Space switches (Stashed.gifts) and removed by clear(). Uses `rng`. Tests: SleighTests (drop / open).
 
 import CoreGraphics
@@ -30,7 +30,8 @@ public struct Gift {
     public internal(set) var land: Float = 1              // seconds since touching down (squash + bounce for the first 0.27 s)
     public var scale: Float = 1                           // snowman scale at drop time
     public var size: Float { Tuning.giftSize * scale }
-    var out: Float = 1                                    // 1 -> 0 over 0.4 s when the snow goes (outro, half-way through a melt)
+    public internal(set) var hide: Float = 1              // drawing only: 1 -> 0 (0.2 s) while a window brought to front covers its surface (SnowField.stepCovered)
+    var out: Float = 1                                   // 1 -> 0 over 0.4 s when the snow goes (outro, half-way through a melt)
     public var fade: Float { min(max(1 - (rest - Tuning.giftLife), 0), 1) * out }
     public var falling: Bool { surface == nil }
 }
@@ -168,7 +169,7 @@ extension SnowField {
 
     /// Gifts and confetti as prims; `shift` gives the drag offset of a surface id.
     public func writeGiftPrims(_ w: inout PrimWriter, contrast: Bool = false, shift: (Int?) -> SIMD2<Float>) {
-        for g in giftState.gifts { Rig.gift(g, offset: shift(g.surface), contrast: contrast, into: &w) }
+        for g in giftState.gifts where g.hide > 0.001 { var g = g; g.out *= g.hide; Rig.gift(g, offset: shift(g.surface), contrast: contrast, into: &w) }
         for c in giftState.confetti { Rig.confetti(center: c.pos, rot: c.rot, color: c.color, alpha: min(1, c.life * 3), into: &w) }
     }
 }
