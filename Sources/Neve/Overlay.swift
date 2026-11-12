@@ -168,6 +168,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         metalLayer.framebufferOnly = true
+        metalLayer.maximumDrawableCount = 2   // ~24 MB less per Retina screen; a missing drawable just skips the frame (CAMetalDisplayLink only calls back with one; skipSize/skipSlot guard the rest)
         metalLayer.isOpaque = false
         metalLayer.contentsScale = scale
         metalLayer.frame = bounds
