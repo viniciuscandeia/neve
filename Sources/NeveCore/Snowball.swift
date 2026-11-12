@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Snowball.swift  (user snowballs: scoop, roll, drop, stack into snowmen)
 // Role: `Snowball` (id, state held / falling / resting, pos, radius, parent link for stacks, vel, spin, face for a loose head, melting, fade, surfaceID) in `SnowField.balls`, and the interaction API the overlay calls while Option is held:
-//   `hitTest(point:)` (over a ball, figure, gift, the tree or visible snow => the panel becomes interactive), `pickSnowball(at:)` (nearest ball with nothing on top; also the top of a stacked / headless snowman, which `demote`s into balls),
+//   `hitTest(point:)` (over a ball, figure, gift, the tree or visible, uncovered snow (window piles from their top edge up; covered pile / gift / tree / figure ignored via `openAt`) => the panel becomes interactive), `pickSnowball(at:)` (nearest ball with nothing on top; also the top of a stacked / headless snowman, which `demote`s into balls),
 //   `scoop(at:)` (needs half a ballStart-radius disc of snow within +-8 columns, takes at most half of each column; radius Tuning.ballStart 5; above Tuning.maxBalls 6 the oldest free ball melts away), `drag(_:to:dt:)` (on a surface the ball
 //   rides on top, rolls, and grows by ballGrowth 0.1 per pt up to ballMax 20 by carving a groove with Pile.carve; velocity smoothed over 60 ms), `drop(_:throwing:)` (throw velocity capped at 600 pt/s; throwing: false = just let go).
 // Simulation `stepBalls` (in SnowField.step): fall (gravity, side walls; lands on a resting ball of a different stack = stacks if radius <= below and |dx| <= 0.4 r and depth < 3, else slides off; hits figures via `hitFigures`, where a head that
@@ -84,13 +84,21 @@ extension SnowField {
         return overFigure(q) || giftUnder(q) != nil || treeUnder(q) || pileUnder(q) != nil
     }
 
+    /// Whether the snow column under global x of surface `sid` is open (visible, not under a window); true for no surface (airborne) or an unknown one.
+    func openAt(surface sid: Int?, x: Float) -> Bool {
+        guard let sid, let si = index[sid] else { return true }
+        let lc = column(x) - surfaces[si].c0
+        return lc < 0 || lc >= surfaces[si].pile.heights.count || surfaces[si].pile.open(lc)
+    }
+
     private func pileUnder(_ q: SIMD2<Float>) -> (Int, Int)? {
         let c = column(q.x)
         var best: (Int, Int, Float)?
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
             let e = entries[k], s = Int(e.surface), lc = c - surfaces[s].c0
             let h = surfaces[s].pile.heights[lc], top = e.edgeY + h
-            if h >= 1.5, q.y >= e.edgeY - 4, q.y <= top + 10, top > (best?.2 ?? -.infinity) { best = (s, lc, top) }
+            guard surfaces[s].pile.open(lc) else { continue }   // covered snow is not grabbable
+            if h >= 1.5, q.y >= e.edgeY - (surfaces[s].id > 0 ? 0 : 4), q.y <= top + 10, top > (best?.2 ?? -.infinity) { best = (s, lc, top) }
         }
         return best.map { ($0.0, $0.1) }
     }

@@ -70,7 +70,7 @@ extension SnowField {
 
     /// Inside the tree's silhouette (a few points of slack).
     func treeUnder(_ q: SIMD2<Float>) -> Bool {
-        guard let t = tree, t.state != .held else { return false }
+        guard let t = tree, t.state != .held, openAt(surface: t.surface, x: t.pos.x) else { return false }
         let dy = (q.y - t.pos.y) / t.scale, dx = abs(q.x - t.pos.x) / t.scale
         guard dy >= -4, dy <= Tuning.treeHeight + 6 else { return false }
         return dx <= Rig.treeWidth(min(max(dy, 0), Tuning.treeHeight - 8)) + 6

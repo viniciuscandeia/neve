@@ -271,7 +271,7 @@ extension SnowField {
 
     /// Whether `q` is over any ball of a pickable figure.
     func overFigure(_ q: SIMD2<Float>) -> Bool {
-        for f in figures where pickable(f) {
+        for f in figures where pickable(f) && openAt(surface: f.surfaceID, x: f.foot.x) {
             let a = anchors(of: f)
             for k in 0..<ballCount(f) {
                 let (c, r) = circle(a, f, k), d = q - c

@@ -103,7 +103,7 @@ extension SnowField {
 
     /// Index of the resting, closed gift under `q` (within a few points of the box).
     func giftUnder(_ q: SIMD2<Float>) -> Int? {
-        for i in giftState.gifts.indices where !giftState.gifts[i].falling {
+        for i in giftState.gifts.indices where !giftState.gifts[i].falling && openAt(surface: giftState.gifts[i].surface, x: giftState.gifts[i].pos.x) {
             let d = q - giftState.gifts[i].pos
             if d.x * d.x + d.y * d.y <= (giftState.gifts[i].size / 2 + 4) * (giftState.gifts[i].size / 2 + 4) { return i }
         }

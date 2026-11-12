@@ -551,6 +551,7 @@ extension SnowField {
                 let t = min(max(((x - ax) * dx + (my - ay) * dy) / len2, 0), 1)
                 let qx = ax + t * dx, qy = ay + t * dy
                 guard abs(qx - x) <= r, abs(qy - my) <= r + h / 2 else { continue }
+                if surfaces[si].id > 0, qy < edgeY { continue }   // a window's snow is only worked from above its top edge (the title bar below it is not a plow)
                 let u = (x - qx) / r
                 let keep = min(max(qy - r - bottom, Tuning.plowFloor), h)   // snow below the cursor's lower edge stays, and a plow never scrapes the window bare (a thin layer stays)
                 let dh: Float

@@ -115,6 +115,7 @@ extension SnowField {
                 let (c, rad) = circle(a, f, k)
                 let t = min(max(((c.x - ax) * dx + (c.y - ay) * dy) / len2, 0), 1)
                 let ex = ax + t * dx - c.x, ey = ay + t * dy - c.y
+                if let sid = f.surfaceID, sid > 0, let si = index[sid], ay + t * dy < surfaces[si].edgeY { continue }   // on a window: only a cursor above its top edge bursts it
                 if ex * ex + ey * ey <= (r + rad) * (r + rad) { shatter(f.id, velocity: v, burst: true); break }
             }
         }

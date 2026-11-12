@@ -1,4 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/SweepTests.swift  (cursor sweep, Surfaces.sweep + pointer swirl)
+// Cursor on a window acts only from above its top edge (title bar removes no snow, does not burst a window snowman); hitTest ignores covered piles/figures and starts a window pile at its edge.
 // Window top y = 500, x 200...500, piles built by direct deposits (`pileField` full, `lightField` 3 rounds). A sweep clears only its path (the snow heaps ahead of the cursor, or to both sides for a vertical pass; nothing sprays at the cursor on a full pile),
 //   a sweep above the pile removes nothing, debris flies in the cursor direction from the run end, the dragged window's pile is not swept, falling flakes part around a still pointer and a distant pointer does nothing. "Soft dent": a swipe never pops a
 //   column, a push scoops to Tuning.plowFloor while a hover only sifts, volume is conserved between pile, debris and `sweepOwed`, Reduce Motion / pointerPush off leave piles alone, a heap respects the ceiling cap, grows with more pushing and is not trimmed by
@@ -372,4 +373,38 @@ private func heapPeak(_ f: SnowField) -> Float { f.pile(id: 1)!.heights.max() ??
     #expect(over >= 20)   // full scoops: a tall heap after a few strokes
     #expect(abs(volume(f) + carried(f) - v0) < 1)
     #expect(f.debris.count == d0)   // nothing sprays at the cursor
+}
+
+// Cursor acts on a window's snow only from ABOVE its top edge: on the title bar (below the edge) a push removes nothing, just above it removes as before.
+@Test func cursorOnTheTitleBarRemovesNoSnow() {
+    for y: CGFloat in [498, 490, 480] {   // window top edge is y = 500
+        let f = pileField()
+        let before = f.pile(id: 1)!.heights, d0 = f.debris.count
+        for _ in 0..<10 { f.sweep(from: CGPoint(x: 300, y: y), to: CGPoint(x: 400, y: y), dt: 1 / 30) }
+        #expect(f.pile(id: 1)!.heights == before)
+        #expect(f.debris.count == d0)
+    }
+    let g = pileField(), before = g.pile(id: 1)!.heights
+    g.sweep(from: CGPoint(x: 300, y: 502), to: CGPoint(x: 400, y: 502), dt: 1 / 30)
+    #expect(g.pile(id: 1)!.heights != before)
+}
+
+@Test func cursorOnTheTitleBarDoesNotBurstAWindowSnowman() {
+    let f = pileField()
+    let id = stand(f, x: 350, on: 1)
+    let y = f.anchors(of: fig(f, id)).ground
+    f.sweep(from: CGPoint(x: 330, y: 499), to: CGPoint(x: 370, y: 499), dt: 1 / 30)
+    #expect(f.figures.contains { $0.id == id && $0.phase != .collapsing })
+    f.sweep(from: CGPoint(x: 330, y: CGFloat(y) + 12), to: CGPoint(x: 370, y: CGFloat(y) + 12), dt: 1 / 30)
+    #expect(!f.figures.contains { $0.id == id && $0.phase != .collapsing })
+}
+
+// Option+click targets: a covered pile / gift / tree / snowman is not grabbable; on a window the pile starts at its top edge.
+@Test func coveredPileAndFiguresDoNotCaptureTheMouse() {
+    let f = pileField()
+    let top = f.pile(id: 1)!.heights[75]
+    #expect(f.hitTest(point: CGPoint(x: 350, y: 500 + CGFloat(top) / 2)))
+    #expect(!f.hitTest(point: CGPoint(x: 350, y: 497)))   // below the edge (title bar): not snow
+    f.update(windows: [win(2, 150, 280, 450, 300), win(1, 200, 300, 300, 200)])   // 2 is in front of 1 and covers it
+    #expect(!f.hitTest(point: CGPoint(x: 350, y: 505)))
 }
