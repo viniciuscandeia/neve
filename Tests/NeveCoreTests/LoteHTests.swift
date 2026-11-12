@@ -1,6 +1,6 @@
 // AGENT HEADER - Tests/NeveCoreTests/LoteHTests.swift  (state bugs found in the quality review, "Lote H")
 // Each test failed before its fix: a disabled tree stashed with a window does not return on a Space switch (B1); a frost-only window is stashed (B2); resize() drops the ghost windows (N2);
-//   the overflow debt `owedL/R` survives a window move / resize and a Space round trip (N3); slab crumbs carry volume (total snow before == after settling; the heavy-impact version is written but disabled, see its reason); `Pile.empty()` clears
+//   the overflow debt `owedL/R` survives a window move / resize and a Space round trip (N3); slab and heavy-impact crumbs carry volume (total snow before == after settling); a burst chunk born inside a pile is buried, and a fast piece lands before the bottom-of-screen removal (not lost); `Pile.empty()` clears
 //   the pending spill and peel; a ball under a window in front is not a mouse target; debris of a tree shake / popped gift / snowball spray / broken icicle carry their window's origin z.
 
 import CoreGraphics
@@ -68,8 +68,7 @@ private func everything(_ f: SnowField) -> Float {   // pile volume (height unit
     #expect(owed(f) == 65)
 }
 
-@Test(.disabled("blocked: crumbs with vol would expose a burst loss that the size-based crumb deposit hides (see Effects.swift Gotcha); fix the loss first"))
-func aHeavyImpactKeepsItsCrumbsInTheVolumeLedger() {
+@Test func aHeavyImpactKeepsItsCrumbsInTheVolumeLedger() {
     let f = makeField()
     f.update(windows: [win(1, 200, 300, 300, 200)])
     let si = f.index[1]!, top = f.surfaces[si].edgeY
@@ -142,3 +141,16 @@ func aHeavyImpactKeepsItsCrumbsInTheVolumeLedger() {
     }
 }
 
+
+@Test func aBurstOnTheGroundLosesNoVolume() {
+    let f = makeField()
+    f.update(windows: [])
+    let id = standAuto(f, x: 500)
+    func area() -> Float { f.surfaces.reduce(0) { $0 + ($1.pile.heights.reduce(0, +) + $1.pile.spillL + $1.pile.spillR + $1.pile.owedL + $1.pile.owedR) * Tuning.binWidth } }
+    let a0 = area()
+    f.shatter(id, velocity: .zero, burst: true)
+    let carried = f.debris.reduce(0) { $0 + $1.vol }
+    advance(f, 10)
+    let accounted = area() - a0 + f.bankRefused + f.debris.reduce(0) { $0 + $1.vol }
+    #expect(accounted >= carried * 0.98 && accounted <= carried * 1.02)
+}

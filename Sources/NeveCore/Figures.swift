@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/Figures.swift  (actors: Figure data model + snowman stepping core)
-// Origin z: `shatter` stamps its chunks with the figure's surface z (`originZ(id:)`, Debris.swift).
+// Origin z: `shatter` stamps its chunks with the figure's surface z (`originZ(id:)`, Debris.swift); burst chunks born inside a pile are lifted just above it (`liftOutOfPile`) and carry `phase` 0 (a chunk that crossed the floor while `phase` > 0 fell through it with its snow), so a burst loses no volume.
 // Role: `FigureKind` (snowman, rabbit, penguin, sleigh, robin), `Phase` (building, idle, walking, fighting, cheering, collapsing, hidden), `Attachment` (on surface id at x, or air), `Motion` (walk / fight bookkeeping), `Xfer` (hop between adjacent
 //   surfaces, ground <-> Dock), `Anchors` (ball centres, throwing hand, ground height) and `Figure` (ONE struct for every actor: `kind` selects behaviour; per-kind state RobinState / Critter / PenguinState / SleighState lives in the
 //   Figures+<Kind>.swift files). SnowField extension: `stepFigures` (visitors fade with melt/outro/dying, dispatch to stepRabbit/Robin/Penguin/Sleigh or the snowman body of `stepFigure`; then, only when walking and not calm/melting:
@@ -219,11 +219,11 @@ extension SnowField {
             let wSum = max(specs.reduce(0) { $0 + $1.w }, 1e-3)
             for s in specs {
                 let ang = Float.random(in: 0..<(2 * .pi), using: &fxRng), d = s.r * Float.random(in: 0...1, using: &fxRng).squareRoot()
-                let p = SIMD2(s.c.x + cos(ang) * d, s.c.y + sin(ang) * d)
+                let p = liftOutOfPile(SIMD2(s.c.x + cos(ang) * d, s.c.y + sin(ang) * d), size: 12)   // a chunk born inside a pile would fall through the floor with its snow
                 var u = p - mid; let l = max((u.x * u.x + u.y * u.y).squareRoot(), 1e-3); u /= l
                 let sp = Float.random(in: Tuning.burstSpeed...(Tuning.burstSpeed * 2), using: &fxRng) * (s.w < 1 ? 0.6 : 1)
                 let size: Float = s.w > 1 ? Float.random(in: 8...12, using: &fxRng) : s.w == 1 ? Float.random(in: 4...8, using: &fxRng) : Float.random(in: 2...3.5, using: &fxRng)
-                let fl = Flake(pos: p, vx: u.x * sp + v.x * 0.3, fall: -u.y * sp - 40 - v.y * 0.3, phase: 0.3, amp: 0, freq: 0,
+                let fl = Flake(pos: p, vx: u.x * sp + v.x * 0.3, fall: -u.y * sp - 40 - v.y * 0.3, phase: 0, amp: 0, freq: 0,
                                size: size, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng),
                                fade: 1, spin: Float.random(in: -4...4, using: &fxRng), vol: total * s.w / wSum, shape: 1)
                 _ = withSpawnZ(originZ(id: f.surfaceID)) { put(fl) }   // maxDebris 1200 >> ~600 chunks of a big snowman; a full pool only drops the rest
