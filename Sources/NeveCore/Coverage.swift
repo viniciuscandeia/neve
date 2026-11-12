@@ -104,6 +104,8 @@ extension SnowField {
 // Flake-shader occluder slots (Overlay.computeCover fills them, Renderer's `Occ` reads them): 8 compact + 8 background + 8 hard rects.
 public struct OccluderLayout: Equatable {
     public static let slots = 8
+    /// Overlay.occ / the MSL `Occ`: 3 groups of `slots` rects + s + n.
+    public static let bufferLength = 3 * slots + 2
     public var compact: [CGRect] = []   // mask every flake, faded by occStrength (maximized-window compact mode): the largest windows
     public var behind: [CGRect] = []    // hide only background flakes (seed >= 2): every front window (pref `behindLarge`)
     public var hard: [CGRect] = []      // always hide every flake: windows with no surface (top within `Tuning.minHeadroom` of the menu bar: zoomed / tiled, they hold no snow) first, then floating panels

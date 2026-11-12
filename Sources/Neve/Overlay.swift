@@ -4,7 +4,7 @@
 //   inFlight semaphore = 3, never blocks main: a skipped slot just drops the frame) and the three Metal passes (piles -> prims/actors -> flakes; shaders in PileShader/PrimShader/Renderer.swift).
 //   `InteractView` forwards mouse events; the panel ignores the mouse EXCEPT while Option is held over snow / a snowball (hitTest) or a drag is in progress (`pressing`, `held` snowball, `heldTree` = the overlay whose field holds the dragged Christmas tree: it moves to the neighbour screen's overlay (Overlay.all) when the cursor crosses; `dropTree()` / `hasTree` are the menu / uniqueness hooks).
 // Coordinates: simulation + all buffers are screen-LOCAL AppKit points, y-up, origin = screen.frame.origin (groundY = visibleFrame.minY - frame.minY, visibleTop likewise). Metal viewport slides the whole-screen
-//   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ[26] = shader occluder rects + strength / counts).
+//   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ (OccluderLayout.bufferLength float4) = shader occluder rects + strength / counts).
 // Frame loop (`tick`, main thread via RunLoop.main .common; the nonisolated delegate uses MainActor.assumeIsolated): dt = min(real dt, 0.06); Palette.tick; advanceCover; cursor sweep (one segment from last
 //   position, only if not near another screen); pointer velocity; MusicTap.shared.read(); field.step (optionally calm interpolation: Tuning.interpolateCalm); drag shift (pile/figure offset = mouse delta since poll);
 //   render(). Adaptive rate: 60 fps while anything fast (cursor near snow, held ball, field.isBusy) else 30 after FrameRate.holdDown; economy (or thermal fair+, FrameRate.economyFrames) / low power cap; still mode (Reduce Motion + stillSnow) sleeps the link
@@ -56,6 +56,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Removes any tree / burst this screen holds (the menu replaces it); a drag in progress ends with it.
     func removeTree() { field.removeTree(); if heldTree != nil { heldTree = nil; pressing = false }; wake() }
     private var lastDragTime: CFTimeInterval = 0
+    private var lostRelease: CFTimeInterval = 0   // seconds held with no button down
     private var dayChecked: CFTimeInterval = -1000
     private var pollMouse = NSEvent.mouseLocation
     private var lastCursor: CGPoint?
@@ -104,7 +105,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var coverPause = false                     // `covered`: nothing live, paused like a fullscreen app
     private var coverActive = false                    // compact mode entered (until the exit ramp ends)
     private var occStrength: Float = 0, occTarget: Float = 0   // flake occluders 0...1
-    private var occ = [SIMD4<Float>](repeating: .zero, count: 26)   // 8 compact rects (faded by strength), 8 hiding background flakes, 8 hard rects (surfaceless windows, floating panels), s, n (see Renderer `Occ`)
+    private var occ = [SIMD4<Float>](repeating: .zero, count: OccluderLayout.bufferLength)   // 8 compact rects (faded by strength), 8 hiding background flakes, 8 hard rects (surfaceless windows, floating panels), s, n (see Renderer `Occ`)
     private var occCount = (compact: 0, behind: 0, hard: 0)
     private var shrunk: CGRect?                        // live rect applied to panel + Metal layer (screen-local); nil = whole screen
 
@@ -323,6 +324,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let changed = windows != lastWindows
         if changed { lastWindows = windows; fastUntil = now + FrameRate.holdDown; wake() }
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
+        if stillPaused, NSEvent.modifierFlags.contains(.option) { wake() }   // ⌥ in still mode: the tick must run to make the panel interactive
         pollMouse = mouse ?? NSEvent.mouseLocation   // reference for the per-frame drag offset; the poll's real bounds win
         shift = .zero; shiftID = nil
         measureCover(covering ?? windows)
@@ -345,11 +347,11 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     // MARK: maximized window: snow only in the visible strip
 
     /// Windows -> coverage of the usable area, the live rect and the shader occluders (poll rate; cheap).
-    private var coverKey: (windows: [WindowInfo], vis: CGRect, behindLarge: Bool)?
+    private var coverKey: (windows: [WindowInfo], vis: CGRect, behind: Bool, behindLarge: Bool)?
     private func measureCover(_ windows: [WindowInfo]) {
         let vis = screen.visibleFrame
-        if coverKey == nil || coverKey! != (windows, vis, prefs.behindLarge) {   // identical snapshots (bursts, other screens' polls) reuse the last coverage / occluders
-            coverKey = (windows, vis, prefs.behindLarge)
+        if coverKey == nil || coverKey! != (windows, vis, prefs.behind, prefs.behindLarge) {   // identical snapshots (bursts, other screens' polls) reuse the last coverage / occluders
+            coverKey = (windows, vis, prefs.behind, prefs.behindLarge)
             computeCover(windows, vis)
         }
         advanceWhileIdle()
@@ -362,7 +364,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         coverFraction = c.fraction;
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
-        for i in 0..<24 { occ[i] = .zero }
+        for i in 0..<3 * OccluderLayout.slots { occ[i] = .zero }
         let l = occluderLayout(windows: windows, vis: vis, screen: frame, behindWindows: prefs.behind, behindFar: prefs.behindLarge)
         for (i, r) in l.compact.enumerated() { occ[i] = box(r) }
         for (i, r) in l.behind.enumerated() { occ[8 + i] = box(r) }
@@ -569,6 +571,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Every pause path: the display link stops and the panel stops catching the mouse (a paused tick can no longer let go of it).
     private func pauseLink() {
         link?.isPaused = true
+        if holding { mouseUp() }   // a paused tick can no longer let go of a held ball / tree
         pressing = false
         if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
     }
@@ -626,7 +629,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if holding, !option { mouseUp() }   // ⌥ released mid-drag: let go
         // Interactive only where there is snow or a snowball (and ⌥ is down): everywhere else clicks pass through.
         let buttons = NSEvent.pressedMouseButtons
-        if buttons == 0 { pressing = false }   // the release was lost (another app took it): never stay interactive
+        if buttons == 0 { pressing = false }
+        if holding, buttons == 0 { lostRelease += realDt; if lostRelease > 0.1 { mouseUp() } } else { lostRelease = 0 }   // mouse-up lost (the real one lands within a frame or two and keeps the throw)   // the release was lost (another app took it): never stay interactive
         let interactive = holding || pressing || (option && buttons == 0 && showing && !suspended && frame.contains(cursor) && field.hitTest(point: here))
         if window.ignoresMouseEvents == interactive { window.ignoresMouseEvents = !interactive }
         let prevCursor = lastCursor ?? cursor
@@ -680,7 +684,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if wantSlow != slow { slow = wantSlow; perf?.bump(.flips); link?.preferredFrameRateRange = frameRange }
         perf?.secSlow = slow
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
-        if still, !dirty, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }
+        if still, !dirty, !option, !holding, !pressing, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }
     }
 
     /// Tells the simulation today's date (sleigh frequency); re-read every 10 minutes so a Mac left on rolls over into December.
@@ -860,8 +864,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
             enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
             var cf = SIMD2<Float>(contrast, fx)
             enc.setFragmentBytes(&cf, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
-            occ[24] = SIMD4(occStrength, occStrength > 0 ? Float(occCount.compact) : 0, Float(occCount.hard), Palette.dark)   // compact rects only mask with strength > 0; behind / hard always
-            occ[25] = SIMD4(Float(occCount.behind), 0, 0, 0)
+            occ[3 * OccluderLayout.slots] = SIMD4(occStrength, occStrength > 0 ? Float(occCount.compact) : 0, Float(occCount.hard), Palette.dark)   // compact rects only mask with strength > 0; behind / hard always
+            occ[3 * OccluderLayout.slots + 1] = SIMD4(Float(occCount.behind), 0, 0, 0)
             occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
             enc.endEncoding()

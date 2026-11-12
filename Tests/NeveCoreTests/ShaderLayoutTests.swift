@@ -58,5 +58,6 @@ private func check<T>(_ text: String, _: T.Type, _ swift: [(String, Int?)]) {
 
 @Test func occBufferHoldsEveryOccluderSlot() {   // Overlay.occ = 3 groups of slots + s + n float4s; the MSL array must match
     let n = OccluderLayout.slots
+    #expect(OccluderLayout.bufferLength == 3 * n + 2)
     #expect(ShaderStructs.occ.contains("float4 r[\(3 * n)];") && ShaderStructs.occ.contains("float4 s;") && ShaderStructs.occ.contains("float4 n;"))
 }

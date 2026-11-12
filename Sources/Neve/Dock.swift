@@ -119,8 +119,9 @@ private func queryDockBar() -> DockQuery {
         guard AXUIElementCopyAttributeValue(k, kAXPositionAttribute as CFString, &pos) == .success,
               AXUIElementCopyAttributeValue(k, kAXSizeAttribute as CFString, &size) == .success else { return q }
         var p = CGPoint.zero, s = CGSize.zero
-        guard AXValueGetValue(pos as! AXValue, .cgPoint, &p), AXValueGetValue(size as! AXValue, .cgSize, &s),
-              s.width > s.height * 1.5 else { q.side = true; return q }
+        guard let pv = pos, let sv = size, CFGetTypeID(pv) == AXValueGetTypeID(), CFGetTypeID(sv) == AXValueGetTypeID(),
+              AXValueGetValue(pv as! AXValue, .cgPoint, &p), AXValueGetValue(sv as! AXValue, .cgSize, &s) else { return q }   // unreadable = an ordinary failure (rect nil, tolerance applies), not a side Dock
+        guard s.width > s.height * 1.5 else { q.side = true; return q }
         q.rect = Tuning.dockGlass(fromAX: CGRect(origin: p, size: s))   // the glass is offset from the AX list frame (see Tuning.dockGlassOffset)
         return q
     }

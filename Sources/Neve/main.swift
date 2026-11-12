@@ -213,7 +213,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Logger(subsystem: "io.github.viniciuscandeia.neve", category: "overlay").error("Metal overlay could not be created for a screen")
         }
         overlays += made
-        if poller.missionControl { made.forEach { $0.setSuspended(true) } }   // created during Mission Control: stay hidden
+        overlays.forEach { $0.setSuspended(poller.missionControl) }   // new and adopted overlays alike follow Mission Control (adopt's present() ran first; setSuspended is a no-op when unchanged)
         panel.metalMissing = overlays.isEmpty && !NSScreen.screens.isEmpty
         refreshRunState()
     }
