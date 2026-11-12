@@ -42,6 +42,7 @@ O app segue o idioma do sistema (português ou inglês).
 | ⌥ **Bolas de neve** | Pegue, role, solte e empilhe. Três bolas em ordem decrescente viram um boneco. |
 | 🚶 **Bonecos passeiam** | Andam sobre janelas, Dock e pé da tela, com pulinhos e balanço, e brigam com bolas de neve (a cabeça cai e gira com o rosto, o vencedor comemora de braços em V e o perdedor fica de braços caídos). O cachecol esvoaça. |
 | 🐇 **Visitantes** | Coelho ladrão, passarinho e pinguim aparecem de vez em quando (opção *Visitantes*); veja a seção abaixo. |
+| 🎄 **Árvore de Natal** | Uma árvore cai do alto depois de uma rajada de aviso, pousa sobre uma janela, o Dock ou o chão e solta presentes. Pegue-a com ⌥ + clique (opção *Árvore de Natal*; *Soltar árvore* no menu). |
 | 🎁 **Trenó e presentes** | O trenó do Papai Noel cruza a tela no alto e solta presentes sobre os montes (opção *Trenó*). |
 | 🎯 **Bola no cursor** | Com ⌥ e o cursor parado perto de um boneco, ele joga uma bola de neve em você. |
 | 🧊 **Estalactites** | Crescem sob as janelas congeladas (cheias de neve por ~3 min), com geada na borda, e quebram em placas finas se a janela for arrastada, redimensionada ou varrida. |
@@ -95,7 +96,7 @@ O ícone de floco ❄️ fica na barra de menus e abre um menu nativo (com o bot
 Todo o resto fica em **Ajustes**, uma janela no estilo dos Ajustes do Sistema, com abas na barra de ferramentas (a última aberta é lembrada) e o botão **Restaurar padrões** na aba Sistema:
 
 - **Geral:** *Quantidade*, *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
-- **Bonecos:** *Boneco de neve*, *Andam e brigam*, *Visitantes* (coelho, passarinho e pinguim) e *Trenó do Papai Noel*.
+- **Bonecos:** *Boneco de neve*, *Andam e brigam*, *Visitantes* (coelho, passarinho e pinguim), *Trenó do Papai Noel* e *Árvore de Natal*.
 - **Desempenho:** *Modo econômico* (20 fps com a neve calma, 30 com movimento; só a tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso), *Neve dança com a música*, *Cursor empurra os flocos* (os flocos no ar e a neve acumulada: o cursor passa como um limpa-neve e empurra a neve para a frente em um monte arredondado, ou para os dois lados em passadas verticais; só o que passa da borda cai; desligado, o cursor não mexe nela) e *Neve parada* (só com Reduzir Movimento).
 - **Sistema:** *Aparecer em capturas de tela* (nem todo app de captura respeita esta opção: no macOS 15.4 ou mais novo o ScreenCaptureKit a ignora, então alguns apps de captura mostram a neve mesmo assim), *Permitir Acessibilidade…* (só quando falta), *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento) e *Restaurar padrões*.
 

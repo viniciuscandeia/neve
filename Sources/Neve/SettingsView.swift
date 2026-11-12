@@ -51,7 +51,8 @@ private struct Option { let pref: Pref; let title: String; let symbol: String }
 private let figures = [Option(pref: .snowman, title: tr("Boneco de neve"), symbol: "figure.stand"),
                        Option(pref: .walk, title: tr("Andam e brigam"), symbol: "figure.walk"),
                        Option(pref: .visitors, title: tr("Visitantes"), symbol: "pawprint"),
-                       Option(pref: .sleigh, title: tr("Trenó do Papai Noel"), symbol: "gift")]
+                       Option(pref: .sleigh, title: tr("Trenó do Papai Noel"), symbol: "gift"),
+                       Option(pref: .christmasTree, title: tr("Árvore de Natal"), symbol: "tree")]
 private let economyOpt = Option(pref: .economy, title: tr("Modo econômico"), symbol: "leaf")
 private let ambientOpt = Option(pref: .ambient, title: tr("Modo ambiente"), symbol: "sun.max")
 private let musicOpt = Option(pref: .music, title: tr("Neve dança com a música"), symbol: "music.note")
