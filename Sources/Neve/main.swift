@@ -15,7 +15,7 @@
 //   "behind windows" mode passes no surfaces. Fullscreen app on a screen => that overlay keeps its piles untouched (settleUntil: 1 s of ignored visibleFrame changes).
 // Screens: syncOverlays reconciles wantedScreens ("snowOn" default key: all|main|<displayID>; economy forces main) with overlays; unplugged displays are parked 1.5 s (`parked`) so piles survive KVM/wake flaps.
 // Side effects: UserDefaults keys via Pref raw values + snowOn, ajustesOpened, firstLaunchMenuShown (takeOnce), SettingsTab.key, intensity (Intensity.saved); NSWorkspace / DistributedNotificationCenter observers (screen lock,
-//   screensaver didstart/didstop with a 5 s fallback timer on the engine process); AXUIElementSetMessagingTimeout 0.25 s globally; MusicTap start/stop (syncMusic: off under Reduce Motion, economy, Low Power, scenes).
+//   screensaver didstart/didstop with a 5 s fallback timer on the engine process); AXUIElementSetMessagingTimeout 0.25 s globally; MusicTap start/stop (syncMusic via NeveCore.musicWanted: off under Reduce Motion, economy, Low Power, scenes and whenever the snow is not rendering: Nevar off, idle, lock, sleep; called from refreshRunState).
 // Env vars: NEVE_INSTANCE, NEVE_IDLE_SECS, NEVE_SCENARIO=heavy (re-stages a heavy load every 20 s), NEVE_SCENE=demo|fight (+ NEVE_SCENE_WAIT, NEVE_SCENE_MARK; `sceneKind` is defined in NeveCore/Scenario.swift;
 //   scene mode fixes the options, ignores the real cursor, SceneStage.swift supplies the demo windows, polled via a 60 Hz timer). NEVE_REDUCE_MOTION / NEVE_PERF are read elsewhere.
 // Gotchas: all user-visible strings go through tr() with keys in BOTH pt-BR and en Localizable.strings (NeveCore/Resources). Never kill Neve by name. AXObserver skips our own pid, so the Ajustes window posts its own NSWindow
@@ -271,7 +271,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The tap runs only while the option is on and nothing asks for calm: Reduce Motion, economy, Low Power. Off = tap destroyed.
     private func syncMusic() {
         let calm = economy || ProcessInfo.processInfo.isLowPowerModeEnabled
-        let want = flag(.music) && !reduceMotion && !calm && sceneKind == nil
+        let go = run.rendering(enabled: enabled, hot: hot, userIdle: idle.userIdle)
+        let want = musicWanted(pref: flag(.music), reduceMotion: reduceMotion, calm: calm, scene: sceneKind != nil, rendering: go)
         if want, !MusicTap.shared.running {
             // The cause is unknown (permission, output device or aggregate creation can all fail): say so neutrally.
             panel.musicNote = MusicTap.shared.start() ? "" : (MusicTap.supported ? tr("Sem acesso ao áudio. Veja Privacidade e Segurança e a saída de som.") : tr("Precisa do macOS 14.2 ou mais novo."))
@@ -505,6 +506,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let go = run.rendering(enabled: enabled, hot: hot, userIdle: idle.userIdle)
         for o in overlays { o.setRun(go); o.setThermalWarm(ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.fair.rawValue) }
         if go { armTree() }
+        syncMusic()
         scheduleTimers()
         if polling {
             refreshDock()

@@ -3,8 +3,8 @@
 //   device clocked by the default output device, with an IOProc that feeds `BeatDetector` (NeveCore/Music.swift; no allocation on the audio thread) and publishes level/bass/beat (3 x 16-bit, quantised to 0...65535)
 //   into ONE UInt64 (`word`, an OSAllocatedUnfairLock<UInt64>): writer = audio thread (+ start/stop reset on main), reader = Overlay.tick via read() -> MusicInput.
 // API: start() -> Bool (false on old macOS / permission refused / no output device / any Core Audio failure; it then tears everything down via fail()); stop() destroys IOProc, aggregate and tap (zero cost off); running; supported.
-// Permission: NSAudioCaptureUsageDescription (Info.plist written by scripts/make-app.sh). Callers: AppController.syncMusic (main.swift) decides when it may run (option on, not Reduce Motion / economy / Low Power / scene).
-// Gotcha: never retain anything the IOProc block allocates per call; the output format is assumed Float32 interleaved/first buffer only. If the default output device changes the tap is NOT rebuilt until stop()/start().
+// Permission: NSAudioCaptureUsageDescription (Info.plist written by scripts/make-app.sh). Callers: AppController.syncMusic (main.swift) decides when it may run (option on, snow rendering, not Reduce Motion / economy / Low Power / scene).
+// Gotcha: never retain anything the IOProc block allocates per call; the output format is assumed Float32 interleaved/first buffer only. A listener on the default system output device (main queue, installed while running, removed in stop()) restarts the capture (debounced 0.3 s) when the output changes.
 
 import CoreAudio
 import AudioToolbox
@@ -27,7 +27,28 @@ final class MusicTap: @unchecked Sendable {
     private var sampleRate: Float = 48000
     var running: Bool { procID != nil }
 
+    private var outListener: AudioObjectPropertyListenerBlock?
+    private var restartWork: DispatchWorkItem?
+    private static var outAddr: AudioObjectPropertyAddress { AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain) }
+
     private init() {}
+
+    /// The aggregate is clocked by the output device chosen at start(): when it changes, rebuild (debounced; stop() cancels a pending one).
+    private func watchOutput() {
+        let l: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self else { return }
+            self.restartWork?.cancel()
+            let w = DispatchWorkItem { [weak self] in
+                guard let self, self.running else { return }
+                self.stop(); self.start()
+            }
+            self.restartWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
+        }
+        outListener = l
+        var a = Self.outAddr
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, l)
+    }
 
     func read() -> MusicInput {
         let w = word.withLock { $0 }
@@ -92,12 +113,15 @@ final class MusicTap: @unchecked Sendable {
             publish()
         }
         guard AudioDeviceCreateIOProcIDWithBlock(&procID, aggID, nil, block) == noErr, let procID, AudioDeviceStart(aggID, procID) == noErr else { return fail() }
+        if outListener == nil { watchOutput() }
         return true
     }
 
     private func fail() -> Bool { stop(); return false }
 
     func stop() {
+        restartWork?.cancel(); restartWork = nil
+        if let l = outListener { var a = Self.outAddr; AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, l); outListener = nil }
         if let p = procID { AudioDeviceStop(aggID, p); AudioDeviceDestroyIOProcID(aggID, p); procID = nil }
         if aggID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggID); aggID = AudioObjectID(kAudioObjectUnknown) }
         if tapID != kAudioObjectUnknown, #available(macOS 14.2, *) { AudioHardwareDestroyProcessTap(tapID) }

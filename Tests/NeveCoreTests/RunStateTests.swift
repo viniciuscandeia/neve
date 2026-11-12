@@ -37,3 +37,18 @@ import Testing
     let calm = FrameRate.range(lowPower: false, economy: FrameRate.economyFrames(pref: false, thermalRaw: 1), shrunk: false, quiet: true)
     #expect(calm.preferred == 20)
 }
+
+@Test func musicWantedNeedsRunningSnow() {
+    func w(pref: Bool = true, rm: Bool = false, calm: Bool = false, scene: Bool = false, on: Bool = true) -> Bool {
+        musicWanted(pref: pref, reduceMotion: rm, calm: calm, scene: scene, rendering: on)
+    }
+    #expect(w())
+    #expect(!w(pref: false) && !w(rm: true) && !w(calm: true) && !w(scene: true))
+    var s = RunState()
+    #expect(!w(on: s.rendering(enabled: false, hot: false, userIdle: false)))   // Nevar off
+    #expect(!w(on: s.rendering(enabled: true, hot: false, userIdle: true)))     // idle
+    s.sessionInactive = true
+    #expect(!w(on: s.rendering(enabled: true, hot: false, userIdle: false)))    // locked
+    s = RunState(); s.screensAsleep = true
+    #expect(!w(on: s.rendering(enabled: true, hot: false, userIdle: false)))    // asleep
+}
