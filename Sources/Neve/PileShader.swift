@@ -3,7 +3,7 @@
 //   bit1 = bank-flagged (corner fill / bridge, no skirt), n0/n1 = continuous surface normals, inset = pt hidden under a window edge, z = its window's index in the front-to-back list). Vertex stage pads the quad (1 pt overlap in x, 8 pt below base, 4 pt above top).
 // Fragment draws body, lifted band, ~6 pt crest gradient, cool AO tint for deep snow, soft downward shadow skirt + faint halo, one-light shading (Palette.light), +-1 % dither, then multiplied by 0 inside every window in front of the slice's own (`PileOcc` list from SnowField.occluders, buffer 2/3; z < occN). `tone` = (increase contrast, Palette.dark blend).
 // Invariants: `struct PileSeg` is NeveCore ShaderStructs.pileSeg, checked against the Swift one byte for byte by ShaderLayoutTests (12 x 4-byte fields = 48 B); colours come from NeveCore Palette via \(Palette.msl(...)). Used with Gpu.piles in Renderer.swift, drawn by Overlay.render BEFORE prims and flakes.
-// Gotcha: edge cases (cliffs steeper than 2.5:1, overlap strips) are handled explicitly in the fragment; changing the quad padding changes overdraw cost on every pile bin (hot at 60 fps on full-screen).
+// Gotcha: edge cases (cliffs steeper than 2.5:1, overlap strips) are handled explicitly in the fragment; changing the quad padding changes overdraw cost on every pile bin (hot at 60 fps on full-screen). The fragment returns early when its alpha is below 0.001 and stops the occluder loop once vis hits 0.
 
 import NeveCore
 /// Snow piles: one instanced quad per `PileSeg` (see NeveCore/Render.swift). Appended to the flake shader source.
@@ -67,6 +67,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     rgb = mix(rgb, \(Palette.msl(Palette.flake)), \(Palette.crestAlpha) * (1.0 - smoothstep(0.0, 6.0, -dTop)) * steep);   // smooth ~6pt gradient, no hard band
     rgb *= 1.0 + (fract(52.9829189 * fract(dot(in.position.xy, float2(0.06711056, 0.00583715)))) - 0.5) * 0.02;   // +-1% dither against banding
     float a = 0.97 * cover * smoothstep(0.3, 1.8, snow);   // thin-layer fade: a speck is faint but visible, never a hard line (specks are 1-2 bins wide, so no full-width film)
+    if (a + sa * (1.0 - a) < 0.001) return float4(0.0);   // invisible (below one 8-bit step): skip the occluder loop
     // Windows in front of this slice's own window hide it (the overlay sits above every window): rounded-rect SDF, ~1px edge.
     float vis = 1.0;
     for (uint j = 0; j < min(s.z, occN); j++) {
@@ -74,6 +75,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
         float2 q = abs(in.w - c) - (h - occ[j].r.x);
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - occ[j].r.x;
         vis *= smoothstep(-0.5, 0.5, d);
+        if (vis <= 0.0) break;   // fully hidden: later windows cannot bring it back
     }
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a)) * vis;
 }
