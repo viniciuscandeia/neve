@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/TreeTests.swift  (Tree.swift + Rig+Tree.swift)
 // Role: the Christmas tree: the burst warns ~2 s then it falls at that x; it lands on the ground, a window and the Dock bar sunk in the drawn snow with 2-4 gifts; never on a covered bin; follows a moved window (a fast move only sheds
 //   branch snow); falls again when its window vanishes; only one exists (dropTree refuses while a burst / tree / stashed tree exists); the burst leaves the simulation `rng` untouched (DeterminismTests relies on it); pick-up / drag / release and
-//   the hand-over to another field; the prim budget (<= 120) and snow on the branches growing with the counter; quiet fades it out; clear() removes it.
+//   the hand-over to another field; the prim budget (<= 160), the tree size (>= 1.6x the old 66 pt) and every bulb / bauble inside the silhouette and snow on the branches growing with the counter; quiet fades it out; clear() removes it.
 
 import CoreGraphics
 import Testing
@@ -171,7 +171,7 @@ private func land(_ f: SnowField, x: Float) {
         #expect(w.dropped == 0)
         return w.n
     }
-    #expect(count(1) <= 120 && count(0) < count(0.5) && count(0.5) < count(1))
+    #expect(count(1) <= 160 && count(0) < count(0.5) && count(0.5) < count(1))
     let f = field()
     land(f, x: 400)
     f.tree!.snow = .zero
@@ -180,6 +180,25 @@ private func land(_ f: SnowField, x: Float) {
     var w = PrimWriter(.allocate(capacity: 200), capacity: 200)
     f.writeTreePrims(&w) { _ in .zero }
     #expect(w.n > 20)
+}
+
+@Test func theTreeIsBigAndEveryBulbAndBaubleLiesInsideItsSilhouette() {
+    #expect(Tuning.treeHeight >= 66 * 1.6 && Tuning.treeHeight <= 66 * 1.8)
+    #expect(Rig.treeTiers.map(\.t).max()! < Tuning.treeHeight - 6 && Rig.treeTiers.count >= 5)
+    #expect(Lights.treeBulbs.count >= 12)
+    for b in Lights.treeBulbs { #expect(abs(b.x) < Rig.treeWidth(b.y) && b.y > 12 && b.y < Tuning.treeHeight, "bulb \(b)") }
+    for b in Rig.treeBaubles { #expect(abs(b.fx) < 0.7 && Rig.treeWidth(b.y) > 3, "bauble \(b)") }
+    #expect(Lights.treeWire.allSatisfy { abs($0.x) < Rig.treeWidth($0.y) })
+    let f = field()
+    land(f, x: 400)
+    let t = f.tree!
+    #expect(t.height >= 118 && f.treeUnder(t.pos + [0, 100]) && !f.treeUnder(t.pos + [40, 100]) && f.treeUnder(t.pos + [30, 20]))
+}
+
+@Test func theTreeNeverStandsWhereTheMenuBarWouldCutIt() {
+    let f = field(windows: [win(1, 300, 600, 300, 170)])   // top edge 770: no room for 118 pt below visibleTop 780
+    let s = f.treeSupport(x: 450, fromY: 800, half: Tuning.treeHalfFoot)
+    #expect(s != nil && s?.si != f.index[1])
 }
 
 @Test func theSnowLeavingFadesTheTreeAndClearRemovesIt() {

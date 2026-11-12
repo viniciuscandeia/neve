@@ -9,17 +9,17 @@
 //   Snow on the branches grows with snowfall (full in ~50 s) and falls as debris when shaken (drag, fast window, landing). quiet (outro / melt) fades it out.
 // Randomness: ONLY `treeRng` (own generator) for the placement, the burst flake x and the debris / gift velocities; spawn() keeps consuming `rng` exactly as before (DeterminismTests), the burst just overrides the x afterwards.
 // Lifecycle: `clear()` removes tree + burst; Stashed.tree keeps it across a Space switch (knockOff of a window that never returns makes it fall); `resetWorld` via clear; Resize scales x. Busy: BusyReasons.tree while a burst, a fall or a hold lasts.
-// Coordinates: local AppKit pt, y up. Tests: TreeTests.
+// Size: Tuning.treeHeight 118 pt at scale 1 (x snowmanScale 1...1.5), halfFoot 30; geometry lives in Rig+Tree (treeTiers / treeWidth) so hit box, shed-snow origin and lights follow it. Coordinates: local AppKit pt, y up. Tests: TreeTests.
 
 import CoreGraphics
 import Foundation
 
 extension Tuning {
-    static let treeHeight: Float = 66          // pt at scale 1 (star tip)
-    static let treeHalfFoot: Float = 17        // half width of the foot that must stand on open snow
-    static let treeSink: Float = 1.5           // pt the trunk sinks into the drawn pile
+    static let treeHeight: Float = 118         // pt at scale 1 (star tip; was 66, ~1.75x)
+    static let treeHalfFoot: Float = 30        // half width of the foot that must stand on open snow
+    static let treeSink: Float = 2.6           // pt the trunk sinks into the drawn pile
     static let burstDur: Float = 2             // s of the warning gust
-    static let burstHalfWidth: Float = 36      // pt either side of the drawn x where the gust flakes appear
+    static let burstHalfWidth: Float = 56      // pt either side of the drawn x where the gust flakes appear
 }
 
 public struct Tree {
@@ -73,7 +73,7 @@ extension SnowField {
         guard let t = tree, t.state != .held else { return false }
         let dy = (q.y - t.pos.y) / t.scale, dx = abs(q.x - t.pos.x) / t.scale
         guard dy >= -4, dy <= Tuning.treeHeight + 6 else { return false }
-        return dx <= 22 * max(0.15, 1 - dy / Tuning.treeHeight) + 5
+        return dx <= Rig.treeWidth(min(max(dy, 0), Tuning.treeHeight - 8)) + 6
     }
 
     /// Option-click on the tree: it is held (the cursor keeps its offset to the foot).
@@ -116,13 +116,13 @@ extension SnowField {
 
     // MARK: simulation
 
-    /// Highest surface whose columns under the whole foot (x - half, x, x + half) are open snow ground and landable, with the foot at or above its edge.
+    /// Highest surface whose columns under the whole foot (x - half, x, x + half) are open snow ground and landable, with the foot at or above its edge (within the sink, so a 20 pt step never tunnels) and the whole tree (star included) below `visibleTop`.
     func treeSupport(x: Float, fromY: Float, half: Float) -> (si: Int, y: Float)? {
-        let c = column(x)
+        let c = column(x), height = Tuning.treeHeight * half / Tuning.treeHalfFoot
         var best: (si: Int, y: Float)?
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
             let e = entries[k], s = Int(e.surface)
-            guard fromY >= e.edgeY, landable(s) else { continue }
+            guard fromY + Tuning.treeSink * half / Tuning.treeHalfFoot >= e.edgeY, landable(s) else { continue }
             var ok = true
             for j in -1...1 {
                 let b = column(x + Float(j) * half) - surfaces[s].c0
@@ -130,6 +130,7 @@ extension SnowField {
             }
             guard ok else { continue }
             let y = standY(si: s, x: x)
+            if y + height > visibleTop { continue }   // the star would hide under the menu bar
             if y > (best?.y ?? -.infinity) { best = (s, y) }
         }
         return best
@@ -137,15 +138,15 @@ extension SnowField {
 
     /// Branch snow falls as debris chunks (a share `fraction` of every layer); uses `treeRng` only.
     func shakeTree(_ t: inout Tree, fraction: Float) {
-        let halves: [Float] = [20, 16, 12, 8], tops: [Float] = [26, 38, 50, 62]
         for i in 0..<4 {
+            let tier = Rig.treeTiers[Rig.treeCounterTier[i]]
             let amount = t.snow[i] * fraction
             guard amount > 0.04 else { continue }
             t.snow[i] -= amount
             guard !silent else { continue }
             for _ in 0..<(Int(amount * 3) + 1) {
-                let r = halves[i] * t.scale
-                _ = put(Flake(pos: SIMD2(t.pos.x + Float.random(in: -r...r, using: &treeRng) * 0.7, t.pos.y + tops[i] * t.scale * Float.random(in: 0.7...1, using: &treeRng)),
+                let r = tier.h * t.scale
+                _ = put(Flake(pos: SIMD2(t.pos.x + Float.random(in: -r...r, using: &treeRng) * 0.7, t.pos.y + tier.t * t.scale * Float.random(in: 0.7...1, using: &treeRng)),
                               vx: Float.random(in: -30...30, using: &treeRng) + t.vel.x * 0.2, fall: Float.random(in: 5...45, using: &treeRng) - t.vel.y * 0.1, phase: 0, amp: 0, freq: 0,
                               size: Float.random(in: 2.5...4.5, using: &treeRng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &treeRng), fade: 1,
                               spin: Float.random(in: -2...2, using: &treeRng), shape: 1))
@@ -158,14 +159,14 @@ extension SnowField {
         let fall = -t.vel.y
         t.state = .resting; t.surface = surfaces[si].id; t.vel = .zero; t.land = 0
         let bin = min(max(column(t.pos.x) - surfaces[si].c0, 0), surfaces[si].pile.heights.count - 1)
-        impact(surface: si, bin: bin, x: t.pos.x, top: y, fall: fall, vol: 14 + 24 * (t.snow.sum() / 4))
+        impact(surface: si, bin: bin, x: t.pos.x, top: y, fall: fall, vol: 24 + 40 * (t.snow.sum() / 4))
         shakeTree(&t, fraction: 1)
-        if !calm, !silent { for s: Float in [-1, 1] { addPuff(x: t.pos.x + s * t.halfFoot, y: y + 2) } }
+        if !calm, !silent { for s: Float in [-1, 1] { addPuff(x: t.pos.x + s * t.halfFoot, y: y + 3) } }
         // 2-4 gifts hop out around the foot and fall like any gift (they may take the list past maxGifts: the sleigh waits).
         let n = Int.random(in: 2...4, using: &treeRng)
         for k in 0..<n where giftState.gifts.count < Tuning.maxGifts + 4 {
             let side: Float = k % 2 == 0 ? -1 : 1
-            giftState.gifts.append(Gift(pos: SIMD2(t.pos.x + side * Float.random(in: 8...16, using: &treeRng), y + 6), vel: SIMD2(side * Float.random(in: 45...110, using: &treeRng), Float.random(in: 120...200, using: &treeRng)),
+            giftState.gifts.append(Gift(pos: SIMD2(t.pos.x + side * Float.random(in: 16...30, using: &treeRng), y + 6), vel: SIMD2(side * Float.random(in: 45...110, using: &treeRng), Float.random(in: 120...200, using: &treeRng)),
                                         surface: nil, rot: 0, spin: Float.random(in: -3...3, using: &treeRng), color: UInt8.random(in: 0...2, using: &treeRng), scale: snowmanScale))
         }
     }

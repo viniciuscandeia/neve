@@ -59,7 +59,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let buffers: [MTLBuffer]
-    private var primCapacity = 800   // ~700 prims / screen; grows (in update, never per frame) after a frame that dropped some
+    private var primCapacity = 1000   // ~700-900 prims (tree ~145, lights ~300) / screen; grows (in update, never per frame) after a frame that dropped some
     private var primBuffers: [MTLBuffer]
     private var primWant = 0
     // MARK: pile pass

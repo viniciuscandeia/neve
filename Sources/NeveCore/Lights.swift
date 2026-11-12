@@ -1,10 +1,12 @@
-// AGENT HEADER - Sources/NeveCore/Lights.swift  (Christmas lights: garland of arcs under the menu bar + bulbs on the Christmas tree)
-// Role: `Lights` (constants, `level(id, t, calm)` = brightness 0...1 of one bulb, `treeBulb` positions) and SnowField `lightsEnabled` (the app sets it from Pref.lights), `writeLightPrims` (Overlay.writePrims, after the figures: garland wire + bulbs
-//   (glow = larger low-alpha ellipse behind the dot, there is no additive blending), tree bulbs + a low-alpha coloured ellipse on the pile at each bulb's x) and `lightCode(at:)` (lit flakes: a flake within `Lights.litRadius` of a bulb gets
+// AGENT HEADER - Sources/NeveCore/Lights.swift  (Christmas lights: garland of arcs under the menu bar + a spiral of bulbs on the Christmas tree)
+// Role: `Lights` (constants, `level(id, t, calm)` = brightness 0...1 of one bulb, the tree spiral `treeWire` / `treeBulbs` / `treeBulb`) and SnowField `lightsEnabled` (the app sets it from Pref.lights), `writeLightPrims` (Overlay.writePrims, after the figures:
+//   garland cable = 6 short capsules per arc in two alternating greens (a twisted look) drooping in a catenary; every bulb = an elongated ellipse hanging from the cable along its normal (mostly down) with a dark socket cap, and a multi-ring glow (3 concentric
+//   low-alpha ellipses `Lights.rings`, intensity = level; 1 ring in economy / Low Power; there is no additive blending); the tree carries a wire that spirals up the tiers (`treeWire`, 30 segments, x = 0.55 of the silhouette half width `Rig.treeWidth` * sin) with
+//   `treeBulbs` (14 hanging bulbs on that spiral, inside the silhouette: LightsTests) + a low-alpha coloured ellipse on the pile at each bulb's x) and `lightCode(at:)` (lit flakes: a flake within `Lights.litRadius` of a bulb centre gets
 //   Instance.kind 7 | (colour index | strength 0...15 << 3) << 8; the flake shader mixes its colour toward Palette.lights[idx]. Only flakes in the top band and inside the tree's box are tested; the garland bulb is found by x, so no scan).
 // Pattern: the three modes (twinkle, chase, pulse) alternate every `Lights.cycle` s with a `fadeT` cross-fade; phase = `SnowField.time` (stops while frozen). `calm` (Reduce Motion) = every bulb steady at full level, so nothing blinks and a still screen never has to wake.
 //   Windows carry no lights. Colours: Palette.lights (Tones, light / dark). Ids: garland bulb i = i; tree bulb k = 1000 + k (colour = id % 5).
-// Randomness: none (pure function of time). No allocation (static tables, loops). Tests: LightsTests. Units: local pt, y up.
+// Prims: garland ~ (6 cable + 4 x (2 + rings)) per 110 pt arc; tree ~ 30 wire + 14 x (2 + rings) + 14 pile tints. Randomness: none (pure function of time). No allocation (static tables, loops). Tests: LightsTests. Units: local pt, y up.
 
 import Foundation
 
@@ -13,8 +15,18 @@ public enum Lights {
     static let litRadius: Float = 14, band: Float = 30          // lit flakes: reach of a bulb, height of the garland band tested
     static let cycle: Float = 12, fadeT: Float = 1.5            // seconds per mode, cross-fade length
     static let treeBase = 1000
-    /// Bulbs on the tree at scale 1, in the same local coordinates as Rig.tree (x across, y up from the foot); all inside the four branch layers.
-    static let treeBulbs: [SIMD2<Float>] = [[-13, 12], [12, 11], [0, 17], [-4, 24], [-10, 26], [10, 25], [0, 31], [-7, 38], [7, 39], [0, 45], [-4, 50], [4, 51]]
+    static let hang: Float = 4                                  // pt from the cable to the bulb centre (at scale 1)
+    static let rings: [(r: Float, a: Float)] = [(4.6, 0.16), (7.6, 0.10), (11, 0.06)]   // glow rings: radius pt, alpha at full level
+    static let treeBulbCount = 14
+
+    /// A point of the wire that spirals up the tree (scale 1, local coordinates of Rig.tree): s 0...1 = bottom to top, four turns, kept well inside the silhouette.
+    static func spiral(_ s: Float) -> SIMD2<Float> {
+        let y = 18 + 82 * s
+        return SIMD2(0.55 * Rig.treeWidth(y) * sin(s * 2 * .pi * 4.25), y)
+    }
+    static let treeWire: [SIMD2<Float>] = (0...30).map { spiral(Float($0) / 30) }
+    /// Bulb centres on the tree at scale 1: hanging `hang` below points along the spiral; all inside the silhouette.
+    static let treeBulbs: [SIMD2<Float>] = (0..<treeBulbCount).map { spiral((Float($0) + 0.5) / Float(treeBulbCount)) - SIMD2(0, hang) }
 
     static func pattern(_ m: Int, _ i: Int, _ t: Float) -> Float {
         switch m {
@@ -30,10 +42,11 @@ public enum Lights {
         let a = pattern(k % 3, i, t)
         return w > 0 ? a + (pattern((k + 1) % 3, i, t) - a) * w : a
     }
-    static func treeBulb(foot: SIMD2<Float>, scale: Float, tilt: Float, _ k: Int) -> SIMD2<Float> {
-        let b = treeBulbs[k], sn = sin(tilt), cs = cos(tilt), x = b.x * scale, y = b.y * scale
+    static func place(foot: SIMD2<Float>, scale: Float, tilt: Float, _ v: SIMD2<Float>) -> SIMD2<Float> {
+        let sn = sin(tilt), cs = cos(tilt), x = v.x * scale, y = v.y * scale
         return foot + SIMD2(x * cs - y * sn, x * sn + y * cs)
     }
+    static func treeBulb(foot: SIMD2<Float>, scale: Float, tilt: Float, _ k: Int) -> SIMD2<Float> { place(foot: foot, scale: scale, tilt: tilt, treeBulbs[k]) }
 }
 
 extension SnowField {
@@ -42,39 +55,52 @@ extension SnowField {
     func garlandPoint(arc: Int, u: Float) -> SIMD2<Float> {
         SIMD2(garlandOffset + (Float(arc) + u) * Lights.span, visibleTop - 2 - Lights.sag * 4 * u * (1 - u))
     }
-    func garlandBulb(_ i: Int) -> SIMD2<Float> {
-        var p = garlandPoint(arc: i / Lights.perArc, u: (Float(i % Lights.perArc) + 0.5) / Float(Lights.perArc))
-        p.y -= 3
-        return p
+    /// Where bulb `i` hangs from the cable and the unit direction it hangs along (the cable's normal blended with gravity).
+    func garlandHang(_ i: Int) -> (anchor: SIMD2<Float>, dir: SIMD2<Float>) {
+        let u = (Float(i % Lights.perArc) + 0.5) / Float(Lights.perArc)
+        let n = SIMD2(-Lights.sag * 4 * (1 - 2 * u), -Lights.span), m = n / (n.x * n.x + n.y * n.y).squareRoot() * 0.5 + SIMD2(0, -0.5)
+        return (garlandPoint(arc: i / Lights.perArc, u: u), m / (m.x * m.x + m.y * m.y).squareRoot())
     }
+    func garlandBulb(_ i: Int) -> SIMD2<Float> { let h = garlandHang(i); return h.anchor + h.dir * Lights.hang }
 
     /// Garland and tree lights as prims; `shift` gives the drag offset of a surface id (the tree rides with its window).
     public func writeLightPrims(_ w: inout PrimWriter, shift: (Int?) -> SIMD2<Float>) {
         guard lightsEnabled else { return }
-        let t = Float(time), wire = Rig.a(Rig.c4(Palette.treeShade.now), 0.9)
-        let arcs = garlandArcs
-        for arc in 0..<arcs {
+        let t = Float(time), cableA = Rig.a(Rig.c4(Palette.treeShade.now), 0.95), cableB = Rig.a(Rig.c4(Palette.treeGreen.now), 0.9), socket = Rig.c4(Palette.coal.now)
+        let arcs = garlandArcs, ringN = economy || lowPower ? 1 : 3
+        let steps = 6
+        for arc in 0..<arcs {   // cable: short capsules alternating two greens (the twist), a hair thicker than the old wire
             var prev = garlandPoint(arc: arc, u: 0)
-            for s in 1...4 {
-                let q = garlandPoint(arc: arc, u: Float(s) / 4)
-                w.capsule(from: prev, to: q, width: 1, color: wire)
+            for s in 1...steps {
+                let q = garlandPoint(arc: arc, u: Float(s) / Float(steps))
+                w.capsule(from: prev, to: q, width: 1.4, color: s % 2 == 0 ? cableA : cableB)
                 prev = q
             }
         }
-        func bulb(_ p: SIMD2<Float>, id: Int, fade: Float, size: Float) {
-            let lv = Lights.level(id, t: t, calm: calm), c = Rig.c4(Palette.lights[id % 5].now)
-            w.ellipse(center: p, radii: SIMD2(repeating: 6.5 * size), color: Rig.a(c, 0.24 * lv * fade), soft: 3)
-            w.ellipse(center: p, radii: SIMD2(1.9, 2.4) * size, color: Rig.a(c, (0.4 + 0.6 * lv) * fade))
+        func bulb(anchor: SIMD2<Float>, dir: SIMD2<Float>, id: Int, fade: Float, size: Float) {
+            let lv = Lights.level(id, t: t, calm: calm), c = Rig.c4(Palette.lights[id % 5].now), ctr = anchor + dir * (Lights.hang * size)
+            for k in 0..<ringN {   // glow: concentric low-alpha ellipses (economy: only the middle one, a little stronger)
+                let ring = ringN == 1 ? (r: Lights.rings[1].r, a: Lights.rings[1].a * 1.4) : Lights.rings[k]
+                w.ellipse(center: ctr, radii: SIMD2(repeating: ring.r * size), color: Rig.a(c, ring.a * lv * fade), soft: 3)
+            }
+            w.ellipse(center: ctr, radii: SIMD2(1.6, 2.5) * size, rotation: atan2(-dir.x, dir.y), color: Rig.a(c, (0.4 + 0.6 * lv) * fade))
+            w.capsule(from: anchor, to: anchor + dir * (1.9 * size), width: 2.1 * size, color: Rig.a(socket, 0.95 * fade))
         }
-        for i in 0..<(arcs * Lights.perArc) { bulb(garlandBulb(i), id: i, fade: 1, size: 1) }
+        for i in 0..<(arcs * Lights.perArc) { let h = garlandHang(i); bulb(anchor: h.anchor, dir: h.dir, id: i, fade: 1, size: 1) }
         if let tr = tree, tr.fade > 0.01 {
-            let foot = tr.pos + shift(tr.surface)
+            let foot = tr.pos + shift(tr.surface), wire = Rig.a(socket, 0.6 * tr.fade), dir = SIMD2(sin(tr.tilt), -cos(tr.tilt))
+            var prev = Lights.place(foot: foot, scale: tr.scale, tilt: tr.tilt, Lights.treeWire[0])
+            for j in 1..<Lights.treeWire.count {
+                let q = Lights.place(foot: foot, scale: tr.scale, tilt: tr.tilt, Lights.treeWire[j])
+                w.capsule(from: prev, to: q, width: 1.1 * tr.scale, color: wire)
+                prev = q
+            }
             for k in Lights.treeBulbs.indices {
                 let p = Lights.treeBulb(foot: foot, scale: tr.scale, tilt: tr.tilt, k), id = Lights.treeBase + k
-                bulb(p, id: id, fade: tr.fade, size: tr.scale)
+                bulb(anchor: p - dir * (Lights.hang * tr.scale), dir: dir, id: id, fade: tr.fade, size: tr.scale)
                 if tr.state == .resting {   // coloured glow on the pile under the bulb
                     let lv = Lights.level(id, t: t, calm: calm)
-                    w.ellipse(center: SIMD2(p.x, foot.y + 0.5 * tr.scale), radii: SIMD2(8, 2.4) * tr.scale, color: Rig.a(Rig.c4(Palette.lights[id % 5].now), 0.16 * lv * tr.fade), soft: 2)
+                    w.ellipse(center: SIMD2(p.x, foot.y + 0.5 * tr.scale), radii: SIMD2(9, 2.6) * tr.scale, color: Rig.a(Rig.c4(Palette.lights[id % 5].now), 0.16 * lv * tr.fade), soft: 2)
                 }
             }
         }
@@ -94,7 +120,7 @@ extension SnowField {
             let n = garlandArcs * Lights.perArc, j = Int(((p.x - garlandOffset) / (Lights.span / Float(Lights.perArc)) - 0.5).rounded())
             for k in (j - 1)...(j + 1) where k >= 0 && k < n { test(garlandBulb(k), k) }
         }
-        if let tr = tree, tr.fade > 0.5, abs(p.x - tr.pos.x) < 24 * tr.scale, p.y > tr.pos.y - 4, p.y < tr.pos.y + 76 * tr.scale {
+        if let tr = tree, tr.fade > 0.5, abs(p.x - tr.pos.x) < 40 * tr.scale, p.y > tr.pos.y - 4, p.y < tr.pos.y + 126 * tr.scale {
             for k in Lights.treeBulbs.indices { test(Lights.treeBulb(foot: tr.pos, scale: tr.scale, tilt: tr.tilt, k), Lights.treeBase + k) }
         }
         let q = Int(best * 15)
