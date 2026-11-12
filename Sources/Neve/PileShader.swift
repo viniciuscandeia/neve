@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/Neve/PileShader.swift  (MSL source for snow piles; appended to the flake shader library)
 // Role: `pileShaderSource`, one instanced quad per `PileSeg` (NeveCore/Render.swift `PileSeg`: x0/x1 in screen-local pt, top/base heights at both ends, slope, dragged flags bit0 = rides the drag offset,
 //   bit1 = bank-flagged (corner fill / bridge, no skirt), n0/n1 = continuous surface normals, inset = pt hidden under a window edge, z = its window's index in the front-to-back list). Vertex stage pads the quad (1 pt overlap in x, 8 pt below base, 4 pt above top).
-// Fragment draws body, lifted band, ~6 pt crest gradient, cool AO tint for deep snow, soft downward shadow skirt + faint halo, one-light shading (Palette.light), +-1 % dither, then multiplied by 0 inside every window in front of the slice's own (`PileOcc` list from SnowField.occluders, buffer 2/3; z < occN). `tone` = (increase contrast, Palette.dark blend).
+// Fragment draws body, lifted band, ~6 pt crest gradient, cool AO tint for deep snow, soft downward shadow skirt + faint halo, one-light shading (Palette.light), +-1 % dither, then multiplied by 0 inside every window in front of the slice's own (`PileOcc` list from SnowField.occluders, buffer 2/3; z < occN). `tone` = float4 (increase contrast, Palette.dark blend, clock seconds, fx 1 = effects on / 0 = economy or Low Power). Effects (all x fx): crest glitter, body grain (1 pt cells of pre-drag in.p), warm tone on lit faces (Palette.warm), soft shadow of windows in front (from the occluder loop).
 // Invariants: `struct PileSeg` is NeveCore ShaderStructs.pileSeg, checked against the Swift one byte for byte by ShaderLayoutTests (12 x 4-byte fields = 48 B); colours come from NeveCore Palette via \(Palette.msl(...)). Used with Gpu.piles in Renderer.swift, drawn by Overlay.render BEFORE prims and flakes.
 // Gotcha: edge cases (cliffs steeper than 2.5:1, overlap strips) are handled explicitly in the fragment; changing the quad padding changes overdraw cost on every pile bin (hot at 60 fps on full-screen). The fragment returns early when its alpha is below 0.001 and stops the occluder loop once vis hits 0.
 
@@ -27,9 +27,9 @@ vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], consta
     o.id = iid;
     return o;
 }
-fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buffer(0)]], constant float2 &tone [[buffer(1)]],
+fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buffer(0)]], constant float4 &tone [[buffer(1)]],
                            constant PileOcc *occ [[buffer(2)]], constant uint &occN [[buffer(3)]]) {
-    float contrast = tone.x, dark = tone.y;
+    float contrast = tone.x, dark = tone.y, time = tone.z, fx = tone.w;   // fx = 0 in economy / Low Power: no glitter, grain, warmth or window shadow
     PileSeg s = segs[in.id];
     float dx = max(s.x1 - s.x0, 1e-3);
     float t = (in.p.x - s.x0) / dx;   // not clamped: the quad overlaps its neighbours by 1pt and extends its own edge lines there (no x stair-steps on steep slopes)
@@ -64,19 +64,34 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
     float tintLen = clamp(0.4 * max(top - tref, 1.0), 4.0, 40.0);
     rgb = mix(rgb, rgb * \(Palette.msl(Palette.deep)), 0.6 * tall * (1.0 - smoothstep(0.0, tintLen, depth)));
     rgb = lk < 0.0 ? mix(rgb, rgb * \(Palette.msl(Palette.shade)), -lk * 0.7) : rgb + 0.04 * lk;
+    rgb = mix(rgb, rgb * \(Palette.msl(Palette.warm)), fx * max(lk, 0.0));   // lit faces: a faint warm tone
+    // Grain on the body: 1pt cells of in.p (pre-drag coordinates, so it rides the window and a drag does not make it swim), +-1.5 %, only below the crest zone.
+    float2 cell = floor(in.p);
+    float gh = fract(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+    rgb *= 1.0 + fx * (gh - 0.5) * 0.03 * smoothstep(1.0, 5.0, -dTop);
     rgb = mix(rgb, \(Palette.msl(Palette.flake)), \(Palette.crestAlpha) * (1.0 - smoothstep(0.0, 6.0, -dTop)) * steep);   // smooth ~6pt gradient, no hard band
+    // Glitter on the crest: ~1 cell in 60 of a 3pt grid sparkles, each at its own rate; a white core in dark mode, in light mode a faint dimmer ring (white on white would not show).
+    float2 gc = floor(in.p / 3.0);
+    float g1 = fract(sin(dot(gc, float2(127.1, 311.7))) * 43758.5453), g2 = fract(g1 * 91.7);
+    float tw = pow(max(sin(time * (1.5 + 3.0 * g2) + g1 * 400.0), 0.0), 12.0);
+    float gd = length(in.p - (gc + 0.2 + 0.6 * float2(g2, fract(g1 * 33.3))) * 3.0);
+    float gz = fx * step(0.985, g1) * tw * steep * (1.0 - smoothstep(0.0, 4.0, -dTop)) * step(0.0, -dTop + 1.0);
+    rgb += gz * (1.0 - smoothstep(0.3, 1.1, gd)) * dark * 0.3;
+    rgb *= 1.0 - gz * (smoothstep(0.3, 1.1, gd) - smoothstep(1.1, 2.4, gd)) * (1.0 - dark) * 0.05;
     rgb *= 1.0 + (fract(52.9829189 * fract(dot(in.position.xy, float2(0.06711056, 0.00583715)))) - 0.5) * 0.02;   // +-1% dither against banding
     float a = 0.97 * cover * smoothstep(0.3, 1.8, snow);   // thin-layer fade: a speck is faint but visible, never a hard line (specks are 1-2 bins wide, so no full-width film)
     if (a + sa * (1.0 - a) < 0.001) return float4(0.0);   // invisible (below one 8-bit step): skip the occluder loop
     // Windows in front of this slice's own window hide it (the overlay sits above every window): rounded-rect SDF, ~1px edge.
-    float vis = 1.0;
+    float vis = 1.0, wsh = 0.0;   // wsh: soft shadow of a window in front, on the snow banked against it
     for (uint j = 0; j < min(s.z, occN); j++) {
         float2 c = 0.5 * (occ[j].rect.xy + occ[j].rect.zw), h = 0.5 * (occ[j].rect.zw - occ[j].rect.xy);
         float2 q = abs(in.w - c) - (h - occ[j].r.x);
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - occ[j].r.x;
         vis *= smoothstep(-0.5, 0.5, d);
+        wsh = max(wsh, (1.0 - smoothstep(0.0, 7.0, d)) * (1.0 - smoothstep(0.0, 10.0, in.w.y - occ[j].rect.w)));   // light from above: none well over the window's top edge
         if (vis <= 0.0) break;   // fully hidden: later windows cannot bring it back
     }
+    rgb *= 1.0 - 0.13 * fx * wsh;   // neutral darkening
     return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a)) * vis;
 }
 """

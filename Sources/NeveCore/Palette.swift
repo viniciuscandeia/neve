@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Palette.swift  (the one colour palette, light + dark)
 // Role: `Tone` (light/dark SIMD3 pair; `now` blends by `Palette.dark`) and `Palette` (static `dark` 0...1, `darkTarget`, eased over ~0.5 s by `tick(now:)` with an ABSOLUTE clock so several overlays ticking in one frame do not speed it up; `stepDt` capped at 1/30 s; `resetClock`; `isBlending`;
-//   `light` = the single light vector (-0.15, 0.99 normalised, x right y up) used by piles, clumps, chunks, figures and icicles; named tones: Christmas lights (lightRed...lightPink, `lights`), snow, lift, flake, shade, deep, shadow, shadowHC (Increase Contrast), glint, drop*, ice*, carrot, red, twig, coal, rabbit/penguin/robin/sleigh colours...).
+//   `light` = the single light vector (-0.15, 0.99 normalised, x right y up) used by piles, clumps, chunks, figures and icicles; named tones: warm (lit faces), Christmas lights (lightRed...lightPink, `lights`), snow, lift, flake, shade, deep, shadow, shadowHC (Increase Contrast), glint, drop*, ice*, carrot, red, twig, coal, rabbit/penguin/robin/sleigh colours...).
 // Consumers: shaders get colours baked in via `Palette.msl(tone)` string interpolation when the Metal source is built (Sources/Neve/*Shader.swift, Renderer.swift), and Rig reads `Tone.now` on the CPU. Adding/changing a colour needs no shader edit unless a new uniform is wanted. Appearance input: Renderer.swift AppearanceWatcher sets `darkTarget`; Overlay.swift calls `Palette.tick(now:)` every frame; state is main-thread only (nonisolated(unsafe)). Tests: PaletteTests.
 
 import Foundation
@@ -48,6 +48,7 @@ public enum Palette {
     public static let deep = Tone(SIMD3(0.90, 0.94, 1.0), SIMD3(0.86, 0.90, 0.98))        // cool tint in the lower part of deep snow (multiplier)
     public static let shadow = Tone(SIMD3(0, 0, 0.02), SIMD3(0, 0, 0.02))                 // neutral, never blue
     public static let shadowHC = Tone(SIMD3(0.05, 0.08, 0.16), SIMD3(0, 0, 0.02))         // Increase Contrast outline
+    public static let warm = Tone(SIMD3(1.0, 0.975, 0.93), SIMD3(1.0, 0.97, 0.92))        // multiplier for snow facing the light (faint warm)
     public static let glint = Tone(SIMD3(1, 1, 1), SIMD3(1, 1, 1))
     public static let dropFill = Tone(SIMD3(0.62, 0.80, 0.97), SIMD3(0.66, 0.82, 0.98))
     public static let dropEdge = Tone(SIMD3(0.25, 0.40, 0.65), SIMD3(0.30, 0.45, 0.70))
@@ -92,7 +93,7 @@ public enum Palette {
     public static let lights = [lightRed, lightAmber, lightGreen, lightBlue, lightPink]
     /// Every colour, for tests.
     public static let all: [(String, Tone)] = extras + [("snow", snow), ("lift", lift), ("flake", flake), ("shade", shade), ("deep", deep), ("shadow", shadow), ("shadowHC", shadowHC),
-                                               ("glint", glint), ("dropFill", dropFill), ("dropEdge", dropEdge), ("speckle", speckle), ("ice", ice), ("iceEdge", iceEdge), ("iceShine", iceShine)]
+                                               ("glint", glint), ("warm", warm), ("dropFill", dropFill), ("dropEdge", dropEdge), ("speckle", speckle), ("ice", ice), ("iceEdge", iceEdge), ("iceShine", iceShine)]
     static let extras: [(String, Tone)] = [("carrot", carrot), ("red", red), ("stripe", stripe), ("twig", twig), ("coal", coal), ("rabbitFur", rabbitFur), ("earPink", earPink), ("trim", trim), ("rim", rim),
         ("penguinBack", penguinBack), ("penguinBelly", penguinBelly), ("fawn", fawn), ("robinBreast", robinBreast), ("robinWing", robinWing), ("robinBeak", robinBeak), ("gold", gold), ("skin", skin),
         ("reins", reins), ("sack", sack), ("rudolph", rudolph), ("deerTail", deerTail), ("giftRed", giftRed), ("giftGreen", giftGreen), ("giftInside", giftInside), ("frost", frost), ("treeGreen", treeGreen), ("treeShade", treeShade), ("lightRed", lightRed), ("lightAmber", lightAmber), ("lightGreen", lightGreen), ("lightBlue", lightBlue), ("lightPink", lightPink)]

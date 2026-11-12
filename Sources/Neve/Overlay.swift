@@ -826,8 +826,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
                 enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
                 enc.setVertexBytes(&dragOffset, length: MemoryLayout<SIMD2<Float>>.size, index: 2)
                 enc.setFragmentBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
-                var tone = SIMD2<Float>(contrast, Palette.dark)   // (increase contrast, dark blend)
-                enc.setFragmentBytes(&tone, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
+                var tone = SIMD4<Float>(contrast, Palette.dark, Float(ProcessInfo.processInfo.systemUptime.truncatingRemainder(dividingBy: 1024)), fx)   // (increase contrast, dark blend, clock, effects)
+                enc.setFragmentBytes(&tone, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
                 pileOcc.removeAll(keepingCapacity: true)   // 2 x float4 per window in front-to-back order; the dragged one rides the mouse like its pile
                 for o in field.occluders {
                     var rc = o.rect
