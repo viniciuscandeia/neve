@@ -601,7 +601,7 @@ extension SnowField {
             for _ in 0..<n where puffs.count < Tuning.maxPuffs { addPuff(x: fx + Float.random(in: -r...r, using: &rng) * 0.5, y: fy - r * 0.5) }
         }
         guard owed > 0.01 else { return }
-        sweepOwed = min(sweepOwed + owed, 600)
+        sweepOwed += owed   // (no cap: a backlog goes out in growing pieces, see launchSweepDebris; the old 600 cap silently dropped snow)
         launchSweepDebris(x: ox / owed, y: oy / owed, v: v, speed: speed, r: r, dir: horizontal ? (v.x >= 0 ? 1 : -1) : (ox / owed >= ax ? 1 : -1))   // a parting spills outward at each end
     }
 

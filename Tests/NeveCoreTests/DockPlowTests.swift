@@ -39,7 +39,7 @@ private func maxStep(_ h: ArraySlice<Float>) -> Float { zip(h, h.dropFirst()).fi
         for (a, b) in zip(far, far0) { #expect(a <= b + 0.01) }
         #expect(g[(dir > 0 ? 160 : 500)..<(dir > 0 ? 200 : 540)].max()! > 25 || f.pile(id: 0)!.heights.reduce(0, +) > dockBefore)
         #expect(g.max()! <= dockTop + 1)
-        #expect(abs(vol(f) - before) < before * 0.04)
+        #expect(abs(vol(f) - before) < before * 0.005)
     }
 }
 
