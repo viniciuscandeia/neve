@@ -739,7 +739,7 @@ extension SnowField {
         let fast = speed > 120
         var spawned = 0
         while sweepOwed >= 1.5, spawned < 8 {
-            let grow = max(1, sweepOwed / 40)   // a big backlog goes out in bigger pieces: volume is carried, not dropped
+            let grow = max(1, sweepOwed / 40, Float(debris.count) / Tuning.sweepPieces)   // a big backlog, or many pieces already aloft (cost: each is stepped, blocked by windows and drawn), goes out in bigger pieces: volume is carried, not dropped
             let clump = fast && sweepOwed >= 6 && Float.random(in: 0..<1, using: &rng) < 0.3
             let area = (clump ? Float.random(in: 4...7, using: &rng) : Float.random(in: 1.2...2.2, using: &rng)) * grow
             let along = fast ? min(speed * 0.3, 360) * Float.random(in: 0.5...1.2, using: &rng) : Float.random(in: -10...10, using: &rng)
