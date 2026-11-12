@@ -2,7 +2,7 @@
 # AGENT HEADER - scripts/perf-suite.sh
 # Role: on-screen performance gate. Runs scripts/perf.sh over a fixed SCENARIOS table (Média/Nevasca x still cursor / --sweep over the piles / sweep over empty space with
 # pointer push off) and exits 1 if a budget breaks. Report: build/perf-report.md (markdown table); per-run logs in build/perf-logs/.
-# Usage: scripts/perf-suite.sh [--quick]. Env: SECS (30), RUNS (2), MAX_CPU (10 % of one core; the Nevasca sweep row has its own 11), MAX_HITCH (5 ms/s), MAX_MEM (150 MB), NEVE_LOCK_TIMEOUT.
+# Usage: scripts/perf-suite.sh [--quick]. Env: SECS (30), RUNS (2), MAX_CPU (10 % of one core; the Nevasca sweep row has its own 15 (user decision 2026-11-12: pointer push + lights cost)), MAX_HITCH (5 ms/s), MAX_MEM (150 MB), NEVE_LOCK_TIMEOUT.
 # Scenario row format: "title|perf.sh args|awk check on fps/cpu/base|why[| cpu limit]"; the check compares against BASE = fps of the first scenario. perf.sh prints a
 #   `SUMMARY k=v ...` line that this script parses via eval (keys cpu fps step flakesim gpu hitch power wspower memMB ws idlew fastps).
 # Side effects: builds its own dev bundle (NEVE_DEV=perf-<hash>), moves the REAL cursor and opens/hides Finder windows (done inside perf.sh, restored on exit), holds the screen lock
@@ -18,13 +18,13 @@ BIN="$ROOT/build/Neve-$NAME.app/Contents/MacOS/Neve-dev-$NAME"
 # name | perf.sh args | extra check (awk condition on fps / fastps (frames/s the cursor itself asked for 60 fps) / cpu / base = fps of the first scenario; empty = CPU budget only) | what the check means
 # Verdict also fails when hitch > MAX_HITCH ms/s (5) or memory > MAX_MEM MB (150: three full-screen drawables plus Metal are ~100 MB).
 # Optional 5th field: this scenario's own CPU limit. The Nevasca sweep is a worst case (cursor cutting through the piles nonstop for the whole run;
-# the snow it throws up keeps 60 fps), so it gets 11% instead of MAX_CPU.
+# the snow it throws up keeps 60 fps), so it gets 15% instead of MAX_CPU.
 SCENARIOS=(
   "Média, cursor parado|media --no-figures|fps <= 40|calm snow runs mostly at 30 fps (gusts and spills raise it briefly)"
   "Média, mouse sobre os montes|media --no-figures --sweep --pointer on||"
   "Média, mouse no vazio, empurrão desligado|media --no-figures --sweep --pointer off --segs 300,1100,620|fastps <= 0.5|a fast cursor away from any snow never asks for 60 fps when the push is off (fps itself also rises with busy bursts: avalanches, spills)"
   "Nevasca, cursor parado|nevasca --no-figures||"
-  "Nevasca, mouse sobre os montes|nevasca --no-figures --sweep --pointer on||| 11"
+  "Nevasca, mouse sobre os montes|nevasca --no-figures --sweep --pointer on||| 15"
 )
 
 REPORT="$ROOT/build/perf-report.md"; FAIL=0; BASE=""
