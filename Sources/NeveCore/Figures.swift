@@ -195,31 +195,39 @@ extension SnowField {
 
     /// Breaks a figure into debris thrown along `velocity` (a few dozen chunks per ball). The auto snowman fades its
     /// accessories for 0.4 s first (and starts the rebuild cooldown); a user-built one is gone at once.
-    /// `burst` (moving cursor): radial explosion whose chunks carry the snowman's real volume (`vol`) so the snow lands around it again.
+    /// `burst` (moving cursor): radial explosion of Tuning.burstChunks x more chunks (clumps, chunks, powder) carrying the balls' full disc volume x Tuning.burstVolume, so more snow lands around it than the auto snowman scooped.
     public func shatter(_ id: Int, velocity v: SIMD2<Float> = .zero, burst: Bool = false) {
         guard let j = figureIndex(id), figures[j].phase != .collapsing else { return }
         if figures[j].kind != .snowman { if !quiet { removeFigure(j) }; return }   // in the outro / melt visitors fade (stepFigures)
         let f = figures[j], a = anchors(of: f)
         if !silent, burst {
-            // Volume: what scoop took (auto) or the balls' disc areas (user stack); split evenly over the chunks. fxRng only.
-            var total: Float = 0, count = 0
-            for k in 0..<ballCount(f) { let (_, r) = circle(a, f, k); total += f.fromBalls ? .pi * r * r : 0; count += Int(r * 1.5) + 4 }
-            if !f.fromBalls { total = f.vol }
-            let per = total / Float(count), mid = circle(a, f, min(1, ballCount(f) - 1)).0
+            // Volume: the balls' full disc areas x Tuning.burstVolume, for the auto snowman too (its `vol` is only what scoop took, so this
+            // adds snow on purpose: the explosion lands what it visibly was). Split by chunk weight (clump 3, chunk 1, powder 0.25). fxRng only.
+            // Chunks: Tuning.burstChunks x (1.5 r + 4) per ball, 15 % clumps, 45 % chunks, 40 % powder (every other powder grain dropped in economy / Low Power, its snow moved to the rest).
+            var total: Float = 0, specs: [(c: SIMD2<Float>, r: Float, w: Float)] = []
+            let mid = circle(a, f, min(1, ballCount(f) - 1)).0, thin = economy || lowPower
             for k in 0..<ballCount(f) {
                 let (c, r) = circle(a, f, k)
-                for _ in 0..<(Int(r * 1.5) + 4) {
-                    let ang = Float.random(in: 0..<(2 * .pi), using: &fxRng), d = r * Float.random(in: 0...1, using: &fxRng).squareRoot()
-                    let p = SIMD2(c.x + cos(ang) * d, c.y + sin(ang) * d)
-                    var u = p - mid; let l = max((u.x * u.x + u.y * u.y).squareRoot(), 1e-3); u /= l
-                    let sp = Float.random(in: Tuning.burstSpeed...(Tuning.burstSpeed * 2), using: &fxRng)
-                    let fl = Flake(pos: p, vx: u.x * sp + v.x * 0.3, fall: -u.y * sp - 40 - v.y * 0.3, phase: 0.3, amp: 0, freq: 0,
-                                   size: Float.random(in: 4...8, using: &fxRng), alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng),
-                                   fade: 1, spin: Float.random(in: -4...4, using: &fxRng), vol: per, shape: 1)
-                    _ = put(fl)
+                total += .pi * r * r * Tuning.burstVolume
+                for i in 0..<Int((r * 1.5 + 4) * Tuning.burstChunks) {
+                    let m = i % 20, w: Float = m < 3 ? 3 : m < 12 ? 1 : 0.25
+                    if w < 1, thin, i % 2 == 0 { continue }
+                    specs.append((c, r, w))
                 }
             }
-            for _ in 0..<6 { addPuff(x: mid.x + Float.random(in: -20...20, using: &fxRng), y: mid.y + Float.random(in: -20...20, using: &fxRng)) }
+            let wSum = max(specs.reduce(0) { $0 + $1.w }, 1e-3)
+            for s in specs {
+                let ang = Float.random(in: 0..<(2 * .pi), using: &fxRng), d = s.r * Float.random(in: 0...1, using: &fxRng).squareRoot()
+                let p = SIMD2(s.c.x + cos(ang) * d, s.c.y + sin(ang) * d)
+                var u = p - mid; let l = max((u.x * u.x + u.y * u.y).squareRoot(), 1e-3); u /= l
+                let sp = Float.random(in: Tuning.burstSpeed...(Tuning.burstSpeed * 2), using: &fxRng) * (s.w < 1 ? 0.6 : 1)
+                let size: Float = s.w > 1 ? Float.random(in: 8...12, using: &fxRng) : s.w == 1 ? Float.random(in: 4...8, using: &fxRng) : Float.random(in: 2...3.5, using: &fxRng)
+                let fl = Flake(pos: p, vx: u.x * sp + v.x * 0.3, fall: -u.y * sp - 40 - v.y * 0.3, phase: 0.3, amp: 0, freq: 0,
+                               size: size, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng),
+                               fade: 1, spin: Float.random(in: -4...4, using: &fxRng), vol: total * s.w / wSum, shape: 1)
+                _ = put(fl)   // maxDebris 1200 >> ~600 chunks of a big snowman; a full pool only drops the rest
+            }
+            for _ in 0..<Tuning.burstPuffs { addPuff(x: mid.x + Float.random(in: -30...30, using: &fxRng), y: mid.y + Float.random(in: -30...30, using: &fxRng)) }
         } else if !silent {
             for k in 0..<ballCount(f) {
                 let (c, r) = circle(a, f, k)
