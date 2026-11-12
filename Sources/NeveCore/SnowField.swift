@@ -64,6 +64,8 @@ public final class SnowField {
     var iceWin: [WinIce] = []   // Frost.swift: per-window freeze progress
     var chain = AvaChain()       // Avalanche.swift
     var fxRng: SplitMix64        // icicles / avalanches: kept apart from `rng` so they never perturb the other sequences
+    var spawnZ: UInt16 = .max    // origin z stamped on debris by `put` / `addDebris` (set by `withSpawnZ`; see Debris.swift)
+    var runZ: UInt16 = .max      // origin z of the pending `runBins`
     var runBins: [RunBin] = []   // consecutive snow columns being released, grouped into one slab (Effects.swift)
     var sweepOwed: Float = 0     // cursor-dent volume (pt^2) not yet launched as debris
     var slumpClock: Float = 0    // seconds owed to `stepSlump` (fixed 1/60 s substeps, so the slump does not depend on the frame rate)

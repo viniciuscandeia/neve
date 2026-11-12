@@ -345,7 +345,7 @@ extension SnowField {
                 let a = Float.random(in: 0..<(2 * .pi), using: &rng), d = b.radius * Float.random(in: 0...1, using: &rng).squareRoot()
                 let ox = cos(a) * d, oy = sin(a) * d
                 addDebris(x: b.pos.x + ox, y: b.pos.y + oy, vx: ox * 3 + v.x * 0.3 + Float.random(in: -10...10, using: &rng),
-                          fall: Float.random(in: 0...40, using: &rng) - oy * 2 - v.y * 0.3, size: Float.random(in: 4...7, using: &rng))
+                          fall: Float.random(in: 0...40, using: &rng) - oy * 2 - v.y * 0.3, size: Float.random(in: 4...7, using: &rng), oz: originZ(id: b.surfaceID))
             }
         }
         balls.remove(at: i)

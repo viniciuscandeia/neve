@@ -209,9 +209,9 @@ extension SnowField {
         guard !silent else { return }
         let y = standY(si: si, x: x) + 1
         for _ in 0..<3 {
-            _ = put(Flake(pos: [x + Float.random(in: -8...8, using: &rng), y], vx: Float.random(in: -30...30, using: &rng), fall: Float.random(in: 10...40, using: &rng),
+            _ = withSpawnZ(originZ(si: si)) { put(Flake(pos: [x + Float.random(in: -8...8, using: &rng), y], vx: Float.random(in: -30...30, using: &rng), fall: Float.random(in: 10...40, using: &rng),
                           phase: 0.4, amp: 0, freq: 0, size: Float.random(in: 3...4, using: &rng), alpha: 0.95, kind: .debris,
-                          seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), vol: removed / 3, shape: 1))
+                          seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -2...2, using: &rng), vol: removed / 3, shape: 1)) }
         }
     }
 

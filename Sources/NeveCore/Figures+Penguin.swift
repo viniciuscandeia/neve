@@ -137,7 +137,7 @@ extension SnowField {
         if p.puffD >= 6 { p.puffD = 0; addPuff(x: front, y: top + Float.random(in: 0...2, using: &rng)) }
         while p.spray >= Tuning.penguinPuff {
             let size = Tuning.penguinPuff / (Tuning.depositScale * Tuning.binWidth)   // lands as exactly the area it took
-            guard addDebris(x: front, y: top, vx: d * (max(p.speed, 0) * 0.7 + Float.random(in: 20...90, using: &rng)), fall: Float.random(in: 0...15, using: &rng), size: size) else { break }
+            guard addDebris(x: front, y: top, vx: d * (max(p.speed, 0) * 0.7 + Float.random(in: 20...90, using: &rng)), fall: Float.random(in: 0...15, using: &rng), size: size, oz: originZ(si: si)) else { break }
             addPuff(x: front, y: top)
             p.spray -= Tuning.penguinPuff
         }

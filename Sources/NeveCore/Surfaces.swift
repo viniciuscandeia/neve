@@ -44,9 +44,9 @@ extension SnowField {
                 guard owed >= Self.overflowMin else { continue }
                 let take = min(owed, 80), sign: Float = left ? -1 : 1, seed = si &* 7919 &+ Int(time * 997) &+ (left ? 1 : 2)
                 func u(_ k: Int) -> Float { Float(noise(seed &* 31 &+ k) + 1) * 0.5 }
-                guard put(Flake(pos: [Float(left ? surfaces[si].c0 : surfaces[si].c0 + last + 1) * Tuning.binWidth, surfaces[si].edgeY + p.base[left ? 0 : last]],
+                guard withSpawnZ(originZ(si: si), { put(Flake(pos: [Float(left ? surfaces[si].c0 : surfaces[si].c0 + last + 1) * Tuning.binWidth, surfaces[si].edgeY + p.base[left ? 0 : last]],
                                 vx: sign * (8 + 17 * u(1)), fall: 10 + 20 * u(2), phase: 0, amp: 0, freq: 0, size: 3 + 2 * u(3),
-                                alpha: 0.95, kind: .debris, seed: u(4), fade: 1, vol: take * Tuning.binWidth)) else { continue }
+                                alpha: 0.95, kind: .debris, seed: u(4), fade: 1, vol: take * Tuning.binWidth)) }) else { continue }
                 if left { surfaces[si].pile.owedL -= take } else { surfaces[si].pile.owedR -= take }
             }
         }
@@ -61,7 +61,7 @@ extension SnowField {
             let sign: Float = left ? -1 : 1
             // The lump carries the spilled volume (heights are pt, `vol` is pt^2) and lands again; when the debris cap refuses it the snow stays owed.
             guard addDebris(x: Float(left ? c0 : c0 + last + 1) * Tuning.binWidth, y: edgeY + surfaces[si].pile.base[left ? 0 : last],
-                            vx: sign * Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng), vol: amount * Tuning.binWidth) else { continue }
+                            vx: sign * Float.random(in: 8...25, using: &rng), fall: Float.random(in: 10...30, using: &rng), vol: amount * Tuning.binWidth, oz: originZ(si: si)) else { continue }
             if left { surfaces[si].pile.spillL = 0 } else { surfaces[si].pile.spillR = 0 }
         }
     }
@@ -714,7 +714,7 @@ extension SnowField {
                 for _ in 0..<n {
                     debris.append(Flake(pos: [(dir > 0 ? bar.lower - 2 : bar.upper + 2) + Float.random(in: -4...4, using: &rng), hy + Float.random(in: 4...10, using: &rng)],
                                         vx: Float(dir) * Float.random(in: 120...220, using: &rng), fall: -Float.random(in: 120...220, using: &rng), phase: 0.5, amp: 0, freq: 0,
-                                        size: per > 5 ? 4 : 3, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -3...3, using: &rng), vol: per, shape: per > 5 ? 1 : 0))
+                                        size: per > 5 ? 4 : 3, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -3...3, using: &rng), vol: per, shape: per > 5 ? 1 : 0, oz: spawnZ))
                     banked += per   // (appended past maxDebris on purpose: <= 6 chunks a call, dropping them would lose the snow)
                 }
                 if !economy, !lowPower { addPuff(x: dir > 0 ? bar.lower : bar.upper, y: bar.top + max(rise, 0) + 6) }

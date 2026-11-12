@@ -28,6 +28,12 @@ extension SnowField {
         guard h > 0.5, !silent else { return 0 }
         var n = 0
         if let last = runBins.last, col != last.col + 1 || runBins.count == 8 || v != runV { n = flushRuns() }
+        if runBins.isEmpty {   // origin: the window surface of this column whose top edge is the highest one at or below the snow (ground / Dock: none = .max)
+            var z = UInt16.max, best = -Float.infinity
+            let c = min(max(col, 0), offsets.count - 2)
+            for k in Int(offsets[c])..<Int(offsets[c + 1]) where entries[k].edgeY <= edgeY + from + 1 && entries[k].edgeY > best { best = entries[k].edgeY; z = originZ(si: Int(entries[k].surface)) }
+            runZ = z
+        }
         runBins.append(RunBin(col: col, y: edgeY + from, h: h))
         runV = v
         return n
@@ -39,6 +45,7 @@ extension SnowField {
         let k = runBins.count
         guard k > 0 else { return 0 }
         defer { runBins.removeAll(keepingCapacity: true) }
+        let old = spawnZ; spawnZ = runZ; defer { spawnZ = old }
         let bw = Tuning.binWidth, v = runV
         var sum: Float = 0, cy: Float = 0
         for b in runBins { sum += b.h; cy += (b.y + b.h / 2) * b.h }
@@ -69,6 +76,8 @@ extension SnowField {
 
     func put(_ f: Flake) -> Bool {
         guard debris.count < Tuning.maxDebris else { return false }
+        var f = f
+        if f.oz == .max { f.oz = spawnZ }
         debris.append(f)
         return true
     }
@@ -141,6 +150,7 @@ extension SnowField {
             let v = total * weight(o) / wsum
             if surfaces[s].id == 0 { deposit(dock: s, bin: bin + o, volume: v) } else { deposit(surface: s, bin: bin + o, volume: v) }
         }
+        let oldZ = spawnZ; spawnZ = originZ(si: s); defer { spawnZ = oldZ }
         for _ in 0..<Int.random(in: 3...6, using: &rng) {
             let sign: Float = Bool.random(using: &rng) ? 1 : -1
             _ = put(Flake(pos: [x + Float.random(in: -6...6, using: &rng), top + 1], vx: sign * Float.random(in: 20...60, using: &rng), fall: -Float.random(in: 80...150, using: &rng),
@@ -245,9 +255,9 @@ extension SnowField {
             let cx = (Float(s.c0 + a) + Float(cnt) / 2) * bw
             let lean = calm ? 0 : cx < originX ? Float.random(in: -14...0, using: &rng) : Float.random(in: 0...14, using: &rng)
             let hold = calm ? 0 : min(abs(cx - originX) / Tuning.rippleSpeed + Float.random(in: 0...0.08, using: &rng), 0.35)
-            guard put(Flake(pos: [cx, s.edgeY + base + top / 2], vx: vx0 + lean, fall: max(fall0 + (calm ? 0 : Float.random(in: -6...10, using: &rng)), 0), phase: 0, amp: 1, freq: 0,
+            guard withSpawnZ(originZ(id: s.id), { put(Flake(pos: [cx, s.edgeY + base + top / 2], vx: vx0 + lean, fall: max(fall0 + (calm ? 0 : Float.random(in: -6...10, using: &rng)), 0), phase: 0, amp: 1, freq: 0,
                             size: width, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, rot: calm ? 0 : Float.random(in: -0.06...0.06, using: &rng),
-                            spin: calm ? 0 : Float.random(in: -0.35...0.35, using: &rng), vol: sum * bw, delay: hold, shape: 2, prof: prof)) else { return n }
+                            spin: calm ? 0 : Float.random(in: -0.35...0.35, using: &rng), vol: sum * bw, delay: hold, shape: 2, prof: prof)) }) else { return n }
             n += 1
         }
         return n
@@ -273,6 +283,7 @@ extension SnowField {
     /// The chunk breaks into clumps (carrying its volume, which lands as usual) and powder. On impact (`top` = the surface) they burst up and out
     /// with puffs; in the air (`air`) they just fall apart where they are.
     func breakSlab(_ f: Flake, top: Float, air: Bool = false) {
+        let old = spawnZ; spawnZ = f.oz; defer { spawnZ = old }
         let k = air ? min(max(Int(f.size / 8), 2), 4) : min(max(Int(f.size / 9), 3), 8)
         let powder = calm ? 0 : min(Int(f.size / 8), 8, Int(f.vol * 0.3 / 0.8))
         let vol = (f.vol - Float(powder) * 0.8) / Float(k), y = air ? f.pos.y : top + 1.5
@@ -295,6 +306,7 @@ extension SnowField {
     /// Soft snow sheds crumbs and powder off its underside while it falls; they carry their volume out of the chunk.
     func trailPowder(_ f: inout Flake, dt: Float) {
         guard !calm, f.vol > 30, Float.random(in: 0..<1, using: &rng) < (3 + f.size / 12) * dt else { return }
+        let old = spawnZ; spawnZ = f.oz; defer { spawnZ = old }
         let crumb = Float.random(in: 0..<1, using: &rng) < 0.35, v: Float = crumb ? 2 : 0.8, t = f.blockThickness
         guard put(Flake(pos: [f.pos.x + Float.random(in: -0.5...0.5, using: &rng) * f.size, f.pos.y - t * Float.random(in: 0.2...0.5, using: &rng)], vx: f.vx + Float.random(in: -10...10, using: &rng), fall: f.fall * 0.85,
                         phase: 0, amp: 0, freq: 0, size: crumb ? Float.random(in: 2.8...4, using: &rng) : Float.random(in: 2.2...3.2, using: &rng), alpha: 0.95, kind: .debris,
@@ -339,9 +351,9 @@ extension SnowField {
         let r = Pile.eaveReach(e), th = Pile.eaveThickness(e), sign: Float = left ? -1 : 1
         let x = (left ? s.pile.x0 : s.pile.x1) + sign * r * 0.3
         func rnd(_ r: ClosedRange<Float>) -> Float { calm ? 0 : Float.random(in: r, using: &fxRng) }
-        _ = put(Flake(pos: [x, s.edgeY + th * 0.2], vx: sign * (6 + rnd(0...10)), fall: rnd(0...6), phase: 0, amp: 1, freq: 0, size: r * 2.6 + 4, alpha: 0.95, kind: .debris,
+        _ = withSpawnZ(originZ(id: s.id)) { put(Flake(pos: [x, s.edgeY + th * 0.2], vx: sign * (6 + rnd(0...10)), fall: rnd(0...6), phase: 0, amp: 1, freq: 0, size: r * 2.6 + 4, alpha: 0.95, kind: .debris,
                       seed: rnd(0...1), fade: 1, rot: rnd(-0.06...0.06), spin: sign * rnd(0...0.35), vol: e, delay: 0, shape: 2,
-                      prof: Flake.pack(thickness: max(th, 3), left: 0.8, mid: 0.9, right: 0.5)))
+                      prof: Flake.pack(thickness: max(th, 3), left: 0.8, mid: 0.9, right: 0.5))) }
         if left { surfaces[si].pile.eaveL = 0 } else { surfaces[si].pile.eaveR = 0 }
     }
 }

@@ -18,6 +18,26 @@ import Testing
     #expect(inside == 0)
 }
 
+/// Max x reached by a single piece launched at (x, y) with vx while it lives (`oz` = origin z: window list index, front = 0).
+private func reach(_ f: SnowField, x: Float, y: Float, vx: Float, oz: UInt16) -> Float {
+    f.addDebris(x: x, y: y, vx: vx, fall: 0, size: 4, oz: oz)
+    var mx = x
+    for _ in 0..<40 { f.step(dt: 1 / 60); if let p = f.debris.first { mx = max(mx, p.pos.x) } }
+    return mx
+}
+
+@Test func debrisLeavingAFrontWindowCrossesABackWindowOutline() {
+    let f = makeField()
+    f.update(windows: [win(1, 100, 200, 200, 150), win(2, 320, 100, 380, 300)])   // 1 in front (x 100...300), 2 behind and beside it (x 320...700)
+    #expect(reach(f, x: 302, y: 320, vx: 300, oz: 0) > 340)
+}
+
+@Test func debrisFromABackWindowStillStopsAtAFrontWindowWall() {
+    let f = makeField()
+    f.update(windows: [win(1, 320, 100, 380, 300), win(2, 100, 200, 200, 150)])   // 1 in front (x 320...700), 2 behind (x 100...300)
+    #expect(reach(f, x: 302, y: 320, vx: 300, oz: 1) < 320)
+}
+
 @Test func windowBroughtToFrontFadesFiguresButTheyStayPut() {
     let a = win(1, 100, 200, 600, 200), b = win(2, 150, 300, 200, 150)   // b in front covers part of a's top (y 400)
     let f = makeField()

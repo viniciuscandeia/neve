@@ -35,6 +35,7 @@ public struct Flake {
     var shape: UInt8 = 0
     var prof: UInt32 = 0    // falling chunk: packed top profile (Effects.swift `Flake.pack`)
     var vel: SIMD2<Float> = .zero   // sky/background: velocity of the last step (pt/s), for the motion streak
+    var oz: UInt16 = .max   // debris: z (index in the front-to-back window list = SnowField.occluders) of the window it came from; only occluders with a smaller index (in front of it) block it sideways. .max = ground / Dock / loose = behind every window
     var wv: Float = 0       // sky/background: lateral speed from the wind field, relaxing toward it (inertia grows with size)
 }
 

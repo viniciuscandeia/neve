@@ -225,7 +225,7 @@ extension SnowField {
                 let fl = Flake(pos: p, vx: u.x * sp + v.x * 0.3, fall: -u.y * sp - 40 - v.y * 0.3, phase: 0.3, amp: 0, freq: 0,
                                size: size, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &fxRng),
                                fade: 1, spin: Float.random(in: -4...4, using: &fxRng), vol: total * s.w / wSum, shape: 1)
-                _ = put(fl)   // maxDebris 1200 >> ~600 chunks of a big snowman; a full pool only drops the rest
+                _ = withSpawnZ(originZ(id: f.surfaceID)) { put(fl) }   // maxDebris 1200 >> ~600 chunks of a big snowman; a full pool only drops the rest
             }
             for _ in 0..<Tuning.burstPuffs { addPuff(x: mid.x + Float.random(in: -30...30, using: &fxRng), y: mid.y + Float.random(in: -30...30, using: &fxRng)) }
         } else if !silent {
@@ -237,7 +237,7 @@ extension SnowField {
                     let dx = cos(ang) * d, dy = sin(ang) * d
                     let size = f.fromBalls ? Float.random(in: 4...7, using: &rng) : Float.random(in: 5...8, using: &rng)
                     addDebris(x: c.x + dx, y: c.y + dy, vx: dx * 3 + v.x * 0.3 + Float.random(in: -10...10, using: &rng),
-                              fall: Float.random(in: 0...40, using: &rng) - dy * 2 - v.y * 0.3, size: size)
+                              fall: Float.random(in: 0...40, using: &rng) - dy * 2 - v.y * 0.3, size: size, oz: originZ(id: f.surfaceID))
                 }
             }
         }
