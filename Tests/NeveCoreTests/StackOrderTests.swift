@@ -46,7 +46,7 @@ func togglingTheStackingOrderNeverChangesTheSnow(top: Double, frontW: Double) {
     for b in q.heights.indices where q.visible[b] { #expect(q.heights[b] <= max(h0[b], q.rawLimit(b)) + 0.5) }
 }
 
-private func volume(_ f: SnowField) -> Float { f.surfaces.reduce(0) { $0 + $1.pile.heights.reduce(0, +) } }
+private func volume(_ f: SnowField) -> Float { f.surfaces.reduce(0) { $0 + $1.pile.heights.reduce(0, +) + ($1.pile.eaveL + $1.pile.eaveR) / Tuning.binWidth } }   // heights + cornices (snow that crept off the end bins over the ~10 s of the test)
 
 @Test func manyOrderSwapsLeaveSnowBallsGiftsSnowmanAndFrostUntouched() {
     let a = win(1, 100, 200, 600, 200), b = win(2, 150, 300, 200, 150)   // b (top 450) covers part of a's top (400) when in front
@@ -68,7 +68,7 @@ private func volume(_ f: SnowField) -> Float { f.surfaces.reduce(0) { $0 + $1.pi
     #expect(fig(f, fid).surfaceID == 1 && fig(f, fid).foot.x > 100 && fig(f, fid).foot.x < 700)
     #expect(f.balls.count == nb && ball(f, bid).surfaceID == 1)
     #expect(f.gifts.count == 1 && f.gifts[0].surface == 1)
-    #expect(abs(f.fillRatio(si: f.index[1]!) - fill) < 1e-4)
+    #expect(abs(f.fillRatio(si: f.index[1]!) - fill) < 2e-3)   // order swaps change nothing; only the cornice feed (0.5 s steps, time-driven) moves < 0.1 % of the fill off the end bins
 }
 
 @Test func aWindowMissingForOnePollKeepsItsPile() {
