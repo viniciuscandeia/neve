@@ -99,7 +99,7 @@ public enum Tuning {
     static let nearAlpha: Float = 0.28
     static let maxDebris = 1200
     static let busyDebris = 24   // loose chunks alive before the frame rate goes up (steady Nevasca shedding peaks near 16)
-    static let maxPuffs = 24
+    static let maxPuffs = 48
     // Frame rate (Util.swift FrameRate). Measure CPU, then pick.
     static let calmFloorFPS: Float = 30             // quiet rate (nothing fast for FrameRate.holdDown = 2.5 s after the last input / motion); 60 = smoothest, costliest
     static let calmFloorEconomyFPS: Float = 20      // same, Economy mode
@@ -132,6 +132,9 @@ public enum Tuning {
     static let ballGrowth: Float = 0.1                      // radius per pt rolled
     public static let maxBalls = 6
     static let burstSpeed: Float = 110                     // pt/s: slowest chunk of a snowman exploded by the cursor (up to 2x)
+    static let burstChunks: Float = 2.8                    // x the old chunk count (1.5 r + 4 per ball) in a burst
+    static let burstVolume: Float = 1.25                   // landed snow of a burst = sum of ball disc areas x this (adds snow on purpose for the auto snowman)
+    static let burstPuffs = 14                             // dust puffs in a burst (maxPuffs bounds them)
     static let snowmanCooldown: Float = 120                 // s of snowfall after a collapse
     static let pointerRadius: Float = 60     // falling snow avoids the cursor within this distance
     static let pointerPush: Float = 450      // pt/s radial speed at point blank (scaled by (1 - d/R)^2)
