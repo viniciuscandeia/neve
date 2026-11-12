@@ -369,7 +369,7 @@ public final class SnowField {
         stepSlump(dt: dt)
         stepSeams(dt: dt)
         ageClock += dt
-        if ageClock >= 0.5 { for i in surfaces.indices { surfaces[i].pile.ageStep(ageClock) }; ageClock = 0 }   // snow compacts slowly: twice a second is plenty
+        if ageClock >= 0.5 { for i in surfaces.indices { surfaces[i].pile.ageStep(ageClock) }; stepEaves(dt: ageClock); ageClock = 0 }   // snow compacts slowly: twice a second is plenty
         stepPuffs(dt: dt)
         stepWindDust(dt: dt)
         stepGlints(dt: dt)

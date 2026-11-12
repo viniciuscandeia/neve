@@ -6,6 +6,7 @@
 //   drift), mound (extra allowance for cursor-pushed heaps; only `cap` bounds it), peel (seconds until a bin's excess over `limit` lets go as debris, -1 = none), walls (global x of each wall = visible bin next to a hidden one), hold (order-only change: existing snow pinned over the new limit), held (hidden only by a stacking-order change: `alive`).
 //   `limit(b) = max(min(rawLimit(b) + mound, cap), hold)`; `rawLimit` = (maxes or maxHeight) * wobble + boost, tapered to 0 over `inset` from x0 / x1 unless supportL / supportR (end faces a drift / seam: no taper, dip or spill).
 // Age: `age` per bin (s, cap Tuning.ageFull; ageStep twice a second from SnowField.step; deposit mixes in fresh snow with weight Tuning.ageFresh, relax / Seams mix flowed snow); `reposeStep(age:heap:)` = the step the donor bin holds (slope 0.7 fresh -> Tuning.ageSlope old; the larger of that and slope + moundSlope in a heap) inside `transfer`.
+// Cornice: `eaveL` / `eaveR` (pt^2) = snow overhanging a bare window end (`eaveEnd`), fed / drained by SnowField.stepEaves (Effects.swift: released as a block `dropEave` at Tuning.eaveMax); drawn in Contour.swift; `empty()` clears it; kept by an unchanged-window rebuild, lost (falls) when the window moves / resizes.
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes: Tuning.relaxReach / relaxPasses, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax allows Tuning.moundSlope extra step when either bin is inside a pushed heap (compacted snow, ~45 degrees); relax moves half the
 //   excess (the rule is `Pile.transfer`, shared with Seams.stepSeams) to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
 //   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts from the GEOMETRY of the higher windows over the pile (`hideTop`, no stacking order; limit rises to the front top at the wall for step <= maxDrift, also against the wobble) (the drawn bank / fillet is Contour.swift's slope limit across owner changes, not here);
@@ -40,6 +41,8 @@ public struct Pile {
     var hold: [Float] = []       // per bin: snow kept over the new limit after a stacking-order-only change (limit never drops below it); cleared by the next real rebuild; empty = none
     var held: [Bool] = []        // per bin: hidden only by a stacking-order change (draw-only): physics still treats it as alive (`alive`); cleared by the next real rebuild; empty = none
     var age: [Float] = []        // per bin: seconds the snow has lain (0 = fresh, capped at Tuning.ageFull): older snow holds a steeper face (`Pile.reposeStep`); mixes with what lands / flows in; travels wherever heights do
+    var eaveL: Float = 0         // cornice store (pt^2) of snow overhanging each UNSUPPORTED window end (`eaveEnd`): fed by SnowField.stepEaves, capped by Tuning.eaveMax (released as a block), drawn by Contour.swift
+    var eaveR: Float = 0
     var peel: [Float] = []       // per bin: seconds until its excess over `limit` lets go as debris (-1 = none); empty = nothing pending
     var peeling: Bool { !peel.isEmpty }
 
@@ -71,7 +74,13 @@ public struct Pile {
         return r
     }
 
-    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = [] }
+    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = []; eaveL = 0; eaveR = 0 }
+
+    /// Whether that end is a bare, on-screen, uncovered window corner: the only place a cornice forms.
+    func eaveEnd(left: Bool) -> Bool { !heights.isEmpty && !(left ? supportL : supportR) && !continuesPastScreen(left: left) && open(left ? 0 : heights.count - 1) }
+    /// Drawn reach past the window edge (pt) and thickness (pt) of a cornice of `e` pt^2.
+    static func eaveReach(_ e: Float) -> Float { min(1.5 + 0.25 * e, 5) }
+    static func eaveThickness(_ e: Float) -> Float { e / (0.75 * eaveReach(e)) }
 
     /// Snow lies longer: every bin holding snow ages by `dt` (up to Tuning.ageFull); bare bins stay fresh.
     mutating func ageStep(_ dt: Float) { for b in heights.indices { age[b] = heights[b] > 0 ? min(age[b] + dt, Tuning.ageFull) : 0 } }
@@ -270,7 +279,7 @@ public struct Pile {
     }
 
     /// The window continues past the screen edge on that side, so the end of the pile there is not a drop-off.
-    private func continuesPastScreen(left: Bool) -> Bool {
+    func continuesPastScreen(left: Bool) -> Bool {
         left ? x0 < Float(c0 - 1) * Tuning.binWidth : x1 > Float(c0 + heights.count + 1) * Tuning.binWidth
     }
 

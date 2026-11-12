@@ -62,6 +62,10 @@ public enum Tuning {
     static let ageSlope: Float = 1.1        // repose step of fully aged (compacted) snow: an old pile holds a steeper face than fresh (slope 0.7)
     static let ageFull: Float = 600         // s for snow to reach ageSlope (age rises while a bin holds snow, up to this cap)
     static let ageFresh: Float = 4          // weight of fresh snow when it lands on old snow: a dusting renews the surface faster than its volume share
+    static let eaveMax: Float = 14          // pt^2 of cornice (overhang past an unsupported window end) that lets go as one block
+    static let eaveRate: Float = 0.5        // pt^2/s the end of a snowy window top feeds its cornice (full depth, calm air)
+    static let eaveWind: Float = 3          // extra feed factor when the sustained wind blows toward that end
+    static let eaveDepth: Float = 2         // mean depth (pt) of the snow 6-12 pt inside the end below which no cornice builds (and an existing one melts away)
     static let moundSlope: Float = 1.3      // extra step allowed inside a cursor-pushed heap (slope + this = ~2.0 per 2 pt bin, ~45 degrees): pushed snow is compacted, it settles little and slowly
     static let dustSlope: Float = 2.5      // extra step allowed onto a thin bin (fades to 0 as it fills to dustDepth): fresh snow stays in small mounds where it lands instead of a wide film
     static let dustDepth: Float = 6.0

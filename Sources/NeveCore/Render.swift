@@ -110,7 +110,7 @@ extension SnowField {
     // MARK: Piles
 
     /// Upper bound of the segments `writePiles` can emit for the current surfaces (one per bin pair, plus bridges): size the buffer from it when the window list changes.
-    public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count } + 4 * seams.count + 16 }
+    public var pileSegDemand: Int { surfaces.reduce(0) { $0 + $1.pile.heights.count + 12 } + 4 * seams.count + 16 }
 
     /// Writes one `PileSeg` per bin pair of every snowy stretch of every run (top edge: neighbour blur, stable per-column noise and the
     /// front-window ceiling clamp; the ground bank and the Dock pile are bridged where they meet). Heights come from the eased `shown`

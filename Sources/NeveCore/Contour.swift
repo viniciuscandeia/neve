@@ -7,7 +7,8 @@
 //   step, it replaces the old per-pile runs stitched with junction merges, blendCrest, liftSeam, seam bridges, tintRefs, drawHeights and the fillet. A pair of owners further apart than `maxStep` after the lift is not joined (the stretch just ends). Draw only: never changes `heights`.
 //   z per slice = the window the snow rests on (owner; across owners the one with the lower floor, i.e. the back one: the higher window's occluder clips what lies inside its body); drag = both ends dragged. Stretch rule as before: 3+ bare
 //   columns split, one bare column of the same owner closes each end. Order independent: nothing here reads the stacking order except the z numbers.
-// Tests: GroupContourTests, StackIndependenceTests, SliceZTests, WallBankTests, JunctionTests, OcclusionTests.
+//   A bare end with a cornice (`Pile.eaveL/R`, Effects.swift stepEaves) gets 5 extra slices past the real window edge (<= 5 pt, rounded underside; ahead of `Stretches`, drawn even when the end column is not snowy).
+// Tests: GroupContourTests, CorniceTests, StackIndependenceTests, SliceZTests, WallBankTests, JunctionTests, OcclusionTests.
 
 import CoreGraphics
 import Foundation
@@ -69,6 +70,28 @@ extension SnowField {
             for c in stride(from: m - 2, through: 0, by: -1) where snow(c) && snow(c + 1) {
                 let cand = min(top[c + 1] - slope, max(top[c], lim[c]), top[c] + Tuning.maxDrift)
                 if cand > top[c] { top[c] = cand }
+            }
+            // Cornice: a bare window end with an overhang store draws a rounded lump past the edge (top eased, underside curving up to the tip), as extra slices.
+            for si in group {
+                let s = surfaces[si], pile = s.pile
+                for left in [true, false] {
+                    let e = left ? pile.eaveL : pile.eaveR
+                    guard e > 0.3, pile.eaveEnd(left: left) else { continue }
+                    let r = Pile.eaveReach(e), th = Pile.eaveThickness(e), sign: Float = left ? -1 : 1, xe = left ? pile.x0 : pile.x1
+                    let rear = s.edgeY - min(0.5 * min(s.radius, 10), 3)
+                    var pts: [(x: Float, t: Float, b: Float)] = [(xe - sign * 0.5 * r, s.edgeY + 0.85 * th, rear)]   // inside the edge: sits on the pile
+                    for u: Float in [0, 0.25, 0.5, 0.75, 1] {
+                        let c = s.edgeY + 0.35 * th - 0.25 * th * u, w = 0.5 * th * max(1 - u * u, 0.04).squareRoot()
+                        pts.append((xe + sign * u * r, c + w, c - w))
+                    }
+                    if left { pts.reverse() }
+                    for k in 0..<(pts.count - 1) {
+                        guard n < capacity else { dropped?.pointee += 1; continue }
+                        let a = pts[k], b = pts[k + 1], sl = (b.t - a.t) / (b.x - a.x)
+                        p[n] = PileSeg(x0: a.x, x1: b.x, top0: a.t, top1: b.t, base0: a.b, base1: b.b, slope: sl, dragged: s.id == draggingID ? 1 : 0, n0: sl, n1: sl, inset: 1, z: zOf[s.id] ?? groundZ)
+                        n += 1
+                    }
+                }
             }
             // Stretches: snowy columns, 3+ bare ones split, one bare column of the same owner closes each end.
             c = 0

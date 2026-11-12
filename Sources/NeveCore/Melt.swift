@@ -19,11 +19,11 @@ extension SnowField {
     /// Speed-up of every fade-out while melting, so the latest one (a ball / snowman / gift starting at 40-55% of a short Reduce Motion melt)
     /// is still done when the melt ends. 1 for a normal melt, and outside melting.
     var fadeK: Float { melting ? max(1, 1.34 / meltDur) : 1 }
-    /// Total pile snow (pt^2), all surfaces.
+    /// Total pile snow (pt^2), all surfaces (heights + cornices).
     public var pileVolume: Float {
         var v: Float = 0
         for s in surfaces { for h in s.pile.heights { v += h } }
-        return v * Tuning.binWidth
+        return v * Tuning.binWidth + surfaces.reduce(0) { $0 + $1.pile.eaveL + $1.pile.eaveR }   // + the cornices (pt^2): snow that crept off the end bins
     }
 
     /// Melt: spawning stops, flakes fade as they fall, every pile sinks at a constant rate (thin edges vanish first, the contour keeps its shape),

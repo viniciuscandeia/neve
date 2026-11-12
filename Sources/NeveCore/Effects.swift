@@ -5,6 +5,7 @@
 //   then calls avalancheImpact). `addPuff`/`stepPuffs` (shape 3, `delay` = life Tuning.puffLife, rise 6 pt/s). `stepGlints` (sparkles on crests of piles >= 6 pt, <= Tuning.maxGlints, one per 2 s; off when calm / economy /
 //   lowPower / quiet (outro or melt): live ones fade). `dropBlocks` (vanished-window pile -> INTACT slabs, amp = 1, packed profile via `Flake.pack`, held `delay` so they release in a ripple at Tuning.rippleSpeed from originX), `slabHit`,
 //   `breakSlab`, `trailPowder` (stepDebris's helpers for those slabs), `put` (cap-checked append), `crestY`.
+// Cornice: `stepEaves` (every 0.5 s from SnowField.step: feeds / melts `Pile.eaveL/R` at bare window ends) and `dropEave` (the overflowing cornice falls as one block, fxRng).
 // Callers of shedBin/flushRuns/dropBlocks: Surfaces.swift, Avalanche, DockPush.berm, Figures+Robin. Units: pt, pt/s, `vol` = pt^2 (conserved: deposited where the debris lands). Uses `rng` (not fxRng). Rendering: Render.writeInstances.
 // Gotcha: a glint rides the DRAWN crest (`crestY` of eased `shown`); it stores the GLOBAL column in `phase` and the surface's frame.minX at birth in `vol`, so a window that moved without a drag fades it.
 
@@ -299,5 +300,48 @@ extension SnowField {
                         phase: 0, amp: 0, freq: 0, size: crumb ? Float.random(in: 2.8...4, using: &rng) : Float.random(in: 2.2...3.2, using: &rng), alpha: 0.95, kind: .debris,
                         seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: crumb ? Float.random(in: -3...3, using: &rng) : 0, vol: v, shape: crumb ? 1 : 0)) else { return }
         f.vol -= v
+    }
+}
+
+// MARK: Cornice
+
+extension SnowField {
+    /// Wind-drifted snow creeps over the bare ends of window tops and hangs there as a cornice (`Pile.eaveL/R`): the end region (6-12 pt inside the edge) feeds it
+    /// at `Tuning.eaveRate` * depth share (x `eaveWind` when the sustained wind blows toward that end), taking the volume out of those bins. At `Tuning.eaveMax` it drops as one block (`dropEave`);
+    /// where the snow is gone it melts away. Called every 0.5 s (`dt` = that interval) from SnowField.step; skips dragged and untrusted surfaces; uses fxRng only.
+    func stepEaves(dt: Float) {
+        let bw = Tuning.binWidth
+        for si in surfaces.indices where surfaces[si].id > 0 && surfaces[si].id != draggingID && landable(si) && !quiet {
+            for left in [true, false] {
+                let p = surfaces[si].pile, n = p.heights.count
+                guard n > 8 else { continue }
+                let e = left ? p.eaveL : p.eaveR
+                let bins = (3...5).map { left ? $0 : n - 1 - $0 }
+                let depth = p.eaveEnd(left: left) ? bins.reduce(0) { $0 + p.heights[$1] } / 3 : 0
+                var ne = e
+                if depth < Tuning.eaveDepth { ne = max(e - 0.5 * dt, 0) }
+                else {
+                    let toward: Float = (windSlow > 0) == !left ? min(abs(windSlow) / Tuning.windBiasRef, 1) : 0
+                    let v = min(Tuning.eaveRate * dt * min(depth / Tuning.eaveDepth / 2, 1) * (1 + Tuning.eaveWind * toward), depth * 3 * bw * 0.5)
+                    for b in bins { surfaces[si].pile.heights[b] -= v / (3 * bw) }
+                    ne = e + v; pilesDirty = true
+                }
+                if ne >= Tuning.eaveMax { if left { surfaces[si].pile.eaveL = ne } else { surfaces[si].pile.eaveR = ne }; dropEave(si, left: left); ne = 0 }
+                if left { surfaces[si].pile.eaveL = ne } else { surfaces[si].pile.eaveR = ne }
+            }
+        }
+    }
+
+    /// The cornice of surface `si`'s end falls as ONE intact block (same chunk kind as `dropBlocks`, its volume lands as usual) and the store empties.
+    func dropEave(_ si: Int, left: Bool) {
+        let s = surfaces[si], e = left ? s.pile.eaveL : s.pile.eaveR
+        guard e > 0, !silent else { return }
+        let r = Pile.eaveReach(e), th = Pile.eaveThickness(e), sign: Float = left ? -1 : 1
+        let x = (left ? s.pile.x0 : s.pile.x1) + sign * r * 0.3
+        func rnd(_ r: ClosedRange<Float>) -> Float { calm ? 0 : Float.random(in: r, using: &fxRng) }
+        _ = put(Flake(pos: [x, s.edgeY + th * 0.2], vx: sign * (6 + rnd(0...10)), fall: rnd(0...6), phase: 0, amp: 1, freq: 0, size: r * 2.6 + 4, alpha: 0.95, kind: .debris,
+                      seed: rnd(0...1), fade: 1, rot: rnd(-0.06...0.06), spin: sign * rnd(0...0.35), vol: e, delay: 0, shape: 2,
+                      prof: Flake.pack(thickness: max(th, 3), left: 0.8, mid: 0.9, right: 0.5)))
+        if left { surfaces[si].pile.eaveL = 0 } else { surfaces[si].pile.eaveR = 0 }
     }
 }
