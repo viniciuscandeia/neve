@@ -8,7 +8,7 @@
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
-//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
+//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); Push feel: scooped bins keep a `gapT` (Tuning.plowSlumpTime): `stepSlump` settles the gap's walls to repose even while the blade moves (snow spills back in); a push faster than 300 pt/s holds back up to 15 % of the scooped snow as powder (debris from the blade front, + puffs; none in economy / Low Power; calm never sweeps); against the Dock bar a push >= Tuning.dockOverSpeed with the heap at the bar's top throws a speed-scaled share as arcing chunks that land on the Dock pile (slower: only heaps up to 40 pt over the bar); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
 //   scene mode (NEVE_DEMO_VANISH) filters a window out here. Tests: SurfaceMapTests, DragOnlyRebuildTests, SpaceCarryTests, DockGapTests, SweepTests.
@@ -487,6 +487,12 @@ extension SnowField {
 
     /// Once the blade has moved on (0.25 s), every pushed heap keeps slumping a few relax passes per frame until its flanks are at the angle of repose (a mound, never a spike).
     func stepSlump(dt: Float) {
+        for si in surfaces.indices where surfaces[si].pile.gapT > 0 {   // walls of a scooped gap slump over plowSlumpTime (also while the blade is moving: the trail behind it collapses)
+            let n = surfaces[si].pile.heights.count
+            surfaces[si].pile.gapT -= dt
+            let lo = max(0, surfaces[si].pile.gapLo - 12), hi = min(n - 1, surfaces[si].pile.gapHi + 12)
+            if lo <= hi { for _ in 0..<2 { surfaces[si].pile.settle(lo, hi) }; pilesDirty = true }
+        }
         guard time - sweptAt > 0.25 else { slumpClock = 0; return }
         slumpClock = min(slumpClock + dt, 2.0 / 60)   // at most 2 substeps a frame
         guard slumpClock >= 1.0 / 60 else { return }
@@ -520,13 +526,14 @@ extension SnowField {
         let speed = len2.squareRoot() / dt, share = min(len2.squareRoot() / (1.33 * r), 1)
         let hover = speed < Tuning.plowSlowSpeed   // a hover barely marks (parabolic dent of plowHoverDepth); a push scoops everything under the blade down to the keep level
         let horizontal = abs(dx) >= abs(dy)
+        let powder: Float = !hover && !economy && !lowPower && speed > 300 ? min(0.04 + speed / 20000, 0.15) : 0   // share of a push's snow thrown as powder
         var owed: Float = 0, ox: Float = 0, oy: Float = 0, cx: Float = 0, cy: Float = 0, sum: Float = 0
         sweepFigures(ax, ay, Float(b.x), Float(b.y), r, v)
         breakBalls(ax, ay, Float(b.x), Float(b.y), r, v)
         breakGifts(ax, ay, Float(b.x), Float(b.y), r, v)
         breakIcicles(ax, ay, Float(b.x), Float(b.y), r, v)
         guard pointerPush, !calm, !silent else { return }   // Reduce Motion / silent: piles stay put (no overflow could fly off, so nothing may be cut)
-        sweptAt = time
+        sweptAt = time; sweepSpeed = speed
         defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
@@ -573,18 +580,27 @@ extension SnowField {
                 let nSides = horizontal ? 1 : 2   // horizontal: the leading side only; else left (-1) then right (+1)
                 for k in 0..<nSides {   // each leftover (nothing fits before the run ends) flies off at that run end, never at the cursor
                     let bx = horizontal ? (dx > 0 ? xr : xl) : (k == 0 ? xl : xr), dir = horizontal ? (dx > 0 ? 1 : -1) : (k == 0 ? -1 : 1)
-                    let part = removed / Float(nSides)
+                    let part = removed * (1 - powder) / Float(nSides)
                     let got = berm(si, atX: bx, dir: dir, area: part, lo: &lowK, hi: &highK, end: &ex, endY: &ey)
                     banked += got; ox += (part - got) * ex; oy += (part - got) * ey
                 }
+                if !hover { let p = surfaces[si].pile; surfaces[si].pile.gapLo = p.gapT > 0 ? min(p.gapLo, b0) : b0; surfaces[si].pile.gapHi = p.gapT > 0 ? max(p.gapHi, b1) : b1; surfaces[si].pile.gapT = Tuning.plowSlumpTime }   // (the copy is of 5 scalars' worth: no array write)
                 surfaces[si].pile.settle(max(lowK - 2, 0), min(highK + 2, surfaces[si].pile.heights.count - 1))   // round the groove and the lip: no 1-bin spikes
+                let thrown = removed * powder
+                if thrown > 0 { ox += thrown * (ax + dx); oy += thrown * (ay + dy) }   // powder leaves the front of the blade
                 owed += removed - banked; cx += wx; cy += wy; sum += removed
             }
         }
         guard sum > 0 else { return }
         if speed > 600, Float.random(in: 0..<1, using: &rng) < 0.3 { addPuff(x: cx / sum, y: cy / sum + 3) }   // fast swipe: a light powder puff as feedback
+        if powder > 0 {   // powder off the front of the blade, scaled by speed and the depth scooped (the flakes are the `powder` share held back from the berm: it flies as debris below, lands again)
+            let depth = sum / (2 * r * Tuning.binWidth)
+            let n = min(1 + Int(speed / 400 + depth / 8), 4)
+            let fx = ax + dx + (horizontal ? (dx > 0 ? r : -r) : 0), fy = ay + dy
+            for _ in 0..<n where puffs.count < Tuning.maxPuffs { addPuff(x: fx + Float.random(in: -r...r, using: &rng) * 0.5, y: fy - r * 0.5) }
+        }
         guard owed > 0.01 else { return }
-        sweepOwed = min(sweepOwed + owed, 600)
+        sweepOwed += owed   // (no cap: a backlog goes out in growing pieces, see launchSweepDebris; the old 600 cap silently dropped snow)
         launchSweepDebris(x: ox / owed, y: oy / owed, v: v, speed: speed, r: r, dir: horizontal ? (v.x >= 0 ? 1 : -1) : (ox / owed >= ax ? 1 : -1))   // a parting spills outward at each end
     }
 
@@ -659,16 +675,21 @@ extension SnowField {
             }
         }
         if hit, let bar, banked < area - 0.01 {   // bank the rest against the bar's side as a repose wedge up to the Dock top; what rises above goes onto the Dock's own pile
-            let top = bar.top
             var k = start + dir * m
             while wall(k) { k -= dir }
-            bankWedge(si, from: k, step: -dir, top: top, area: area, banked: &banked, last: &last, lo: &lo, hi: &hi, underWindows: false)
-            if banked < area - 0.01, let di = index[0] {   // "throw it on top of the Dock": heap it on the Dock pile from the near end inward
-                var dlo = Int.max, dhi = Int.min, e: Float = 0, ey: Float = 0
-                banked += berm(di, atX: dir > 0 ? bar.lower - 2 : bar.upper + 2, dir: dir, area: area - banked, lo: &dlo, hi: &dhi, end: &e, endY: &ey)
-                if dlo <= dhi { surfaces[di].pile.settle(max(dlo - 2, 0), min(dhi + 2, surfaces[di].pile.heights.count - 1)) }
-                if banked < area - 0.01 { end = e; endY = ey; return banked }   // (the Dock end spilled: the remainder flies off there)
+            let rise = surfaces[si].edgeY + surfaces[si].pile.base[k] + surfaces[si].pile.heights[k] - bar.top   // how far the heap against the bar already stands over its top
+            if sweepSpeed >= Tuning.dockOverSpeed, rise > -1 {   // fast and the heap is at the bar's top: a speed- and rise-scaled share crests over as a burst of chunks that land on the Dock pile (slower: it only heaps higher against the side)
+                let over = (area - banked) * min(1, 0.2 + (sweepSpeed - Tuning.dockOverSpeed) / (2 * Tuning.dockOverSpeed)) * min(1, 0.3 + max(rise, 0) / 20)
+                let n = min(6, Int(over / 3) + 1), per = over / Float(n), hy = bar.top + max(rise, 0)   // chunks leave from the crest of the heap
+                for _ in 0..<n {
+                    debris.append(Flake(pos: [(dir > 0 ? bar.lower - 2 : bar.upper + 2) + Float.random(in: -4...4, using: &rng), hy + Float.random(in: 4...10, using: &rng)],
+                                        vx: Float(dir) * Float.random(in: 120...220, using: &rng), fall: -Float.random(in: 120...220, using: &rng), phase: 0.5, amp: 0, freq: 0,
+                                        size: per > 5 ? 4 : 3, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -3...3, using: &rng), vol: per, shape: per > 5 ? 1 : 0))
+                    banked += per   // (appended past maxDebris on purpose: <= 6 chunks a call, dropping them would lose the snow)
+                }
+                if !economy, !lowPower { addPuff(x: dir > 0 ? bar.lower : bar.upper, y: bar.top + max(rise, 0) + 6) }
             }
+            bankWedge(si, from: k, step: -dir, top: bar.top + (sweepSpeed >= Tuning.dockOverSpeed ? 0 : 40), area: area, banked: &banked, last: &last, lo: &lo, hi: &hi, underWindows: false)   // the rest banks against the bar's side as a repose wedge (fast: up to its top, the excess went over; slow: up to 40 pt over its top)
         }
         end = binCenter(c + last); endY = surfaces[si].edgeY + surfaces[si].pile.base[last] + surfaces[si].pile.heights[last]
         return banked

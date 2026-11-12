@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/DockPlowTests.swift  (cursor plow vs the Dock bar as an obstacle; heaps settle to a mound)
 // 1440x900 field, Dock bar [400,1000) (top = edgeY of surface 0), ground snow 20 deep outside the span. A fast horizontal push along the ground toward the Dock never carries snow under the bar to the far side; it banks against the bar's side up to the
 //   Dock top and the excess lands on the Dock's own pile at the near end (volume conserved: ground + Dock pile + debris + sweepOwed). Repeated pushes at the screen end / the Dock side leave a mound (neighbour step <= ~2x Tuning.slope), not a spike.
-// Related: Surfaces.swift (sweep / berm), Pile.settle.
+// A fast push crests chunks over the bar onto the Dock pile, a slow one does not (slowPushNeverCrestsOverTheDock). Related: Surfaces.swift (sweep / berm), Pile.settle.
 
 import Testing
 import CoreGraphics
@@ -39,7 +39,7 @@ private func maxStep(_ h: ArraySlice<Float>) -> Float { zip(h, h.dropFirst()).fi
         for (a, b) in zip(far, far0) { #expect(a <= b + 0.01) }
         #expect(g[(dir > 0 ? 160 : 500)..<(dir > 0 ? 200 : 540)].max()! > 25 || f.pile(id: 0)!.heights.reduce(0, +) > dockBefore)
         #expect(g.max()! <= dockTop + 1)
-        #expect(abs(vol(f) - before) < before * 0.02)
+        #expect(abs(vol(f) - before) < before * 0.005)
     }
 }
 
@@ -53,7 +53,27 @@ private func maxStep(_ h: ArraySlice<Float>) -> Float { zip(h, h.dropFirst()).fi
         let g = f.index[Tuning.groundID]!
         for b in 0..<200 where b < 100 || b > 195 { f.surfaces[g].pile.heights[b] = max(f.surfaces[g].pile.heights[b], 20) }   // refill the plowed strip: plenty of snow to push
     }
+    for _ in 0..<180 { f.step(dt: 1 / 60) }   // the chunks that crested over land
     #expect(f.pile(id: 0)!.heights.reduce(0, +) > dockBefore + 20)
+}
+
+// A fast push crests over the bar (chunks arc onto the Dock pile); a slow push only heaps against its side.
+@Test func slowPushNeverCrestsOverTheDock() {
+    func run(step: CGFloat) -> Float {
+        let f = field()
+        let dockBefore = f.pile(id: 0)!.heights.reduce(0, +)
+        var x: CGFloat = 100
+        for _ in 0..<400 {
+            f.sweep(from: CGPoint(x: x, y: 14), to: CGPoint(x: x + step, y: 14), dt: 1 / 60)
+            x += step; if x > 390 { x = 100 }
+            let g = f.index[Tuning.groundID]!
+            for b in 0..<200 where b < 100 || b > 195 { f.surfaces[g].pile.heights[b] = max(f.surfaces[g].pile.heights[b], 20) }
+        }
+        for _ in 0..<180 { f.step(dt: 1 / 60) }
+        return f.pile(id: 0)!.heights.reduce(0, +) - dockBefore
+    }
+    #expect(run(step: 30) > 20)       // 1800 pt/s
+    #expect(run(step: 5) < 1, "slow push (300 pt/s) must not cross")
 }
 
 @Test func repeatedPushesAtTheScreenEndMakeAMoundNotASpike() {
