@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/Neve/WindowWatcher.swift  (event-driven window tracking via Accessibility observers)
 // Role: `WindowWatcher` (@MainActor) keeps one AXObserver per regular app (activationPolicy .regular, not our pid) subscribed to window moved / resized / miniaturized / deminiaturized / created, app hidden / shown, focused-window
 //   changed (+ per-window destroyed). AX says THAT something changed; the caller (AppController, main.swift) answers `onChange` with a PollScheduler-coalesced CGWindowList read (WindowList.swift) for order / numbers /
-//   bounds. Minimize / hide also fire `onSettle` (the animation outlasts the burst: one more read ~0.6 s later). Termination fires onChange.
+//   bounds. Minimize / hide / close (destroyed) / resize (zoom) also fire `onSettle` (the animation outlasts the burst: one more read PollScheduler.settleDelay = goneGrace + 0.25 s later, so a missing window's snow falls promptly). Termination fires onChange.
 // Threading: AX acquisition (AXObserverCreate, AddNotification, enumerate windows) can block up to the global AX timeout (0.25 s) per call on a hung app, so it runs on the serial utility queue `axQueue`; only the
 //   run-loop source install (MAIN run loop, .commonModes) and publishing happen on main. `AttachGate` (NeveCore/AttachRetry.swift) = per-pid tickets + generation: deactivation / detach drops queued work and sleeping retries.
 //   AttachRetry.classify turns step results into complete / transient (.cannotComplete: retried with backoff, whole acquisition redone) / incompatible (skipped). Callback `windowCallback` runs on main => MainActor.assumeIsolated.
@@ -130,7 +130,7 @@ final class WindowWatcher {
                 _ = AXObserverAddNotification(o, element, kAXUIElementDestroyedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())
             }
         }
-        if name == kAXWindowMiniaturizedNotification || name == kAXApplicationHiddenNotification { onSettle?() }
+        if name == kAXWindowMiniaturizedNotification || name == kAXApplicationHiddenNotification || name == kAXUIElementDestroyedNotification || name == kAXWindowResizedNotification { onSettle?() }   // close / zoom too: one read after Tuning.goneGrace lets the missing window's snow fall
         onChange?()
     }
 }

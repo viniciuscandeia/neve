@@ -191,8 +191,9 @@ private func starts(_ f: SnowField, hours: Float, onStart: (Double) -> Void = { 
     advance(f, 3)
     #expect(f.gifts.count == 1 && f.gifts[0].surface == 1)
     f.update(windows: [])
+    f.update(windows: [], dt: Float(Tuning.goneGrace) + 0.1)   // the read after the grace (production goneGrace here): the gift is released, not discarded
     advance(f, 3)
-    #expect(f.gifts.isEmpty || f.gifts[0].surface == Tuning.groundID)
+    #expect(f.gifts.count == 1 && f.gifts[0].surface == Tuning.groundID)
 }
 
 @Test func sleighTeamFitsThePrimBudget() {

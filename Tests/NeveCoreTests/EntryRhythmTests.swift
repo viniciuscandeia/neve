@@ -52,7 +52,8 @@ import Testing
     var s = PollScheduler()
     s.settleRead(now: 100)
     #expect(s.take(now: 100.3) == nil)
-    #expect(s.take(now: 100.6) == .windows)
+    #expect(s.take(now: 100.6) == nil)   // later than goneGrace: a closed window's snow is knocked off by this read
+    #expect(s.take(now: 100 + PollScheduler.settleDelay) == .windows)
     #expect(s.nextDue(now: 101) == nil)
 }
 

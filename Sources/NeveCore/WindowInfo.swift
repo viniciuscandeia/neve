@@ -149,8 +149,9 @@ public struct PollScheduler: Sendable {
         return ax && now - last >= Self.quietAfter ? Self.safetyGapQuiet : Self.safetyGap
     }
 
-    /// One extra read `settleDelay` after a minimize / hide: the animation outlasts the burst, and the pile would hang in the air until the safety poll.
-    public static let settleDelay = 0.6
+    /// One extra read `settleDelay` after a minimize / hide / close / zoom: the animation outlasts the burst, and a window that went missing is only knocked off (its snow falls) by a read at least `Tuning.goneGrace` after the one that
+    /// first missed it, so the delay is grace + margin; without it the snow would hang in the air until the safety poll (up to ~2.6 s).
+    public static let settleDelay = Tuning.goneGrace + 0.25
     public mutating func settleRead(now: Double) { extraAt = now + Self.settleDelay }
 
     /// `dragPlausible`: the press could start a window drag; if not, held-button movement asks for no reads until a frame actually moves.

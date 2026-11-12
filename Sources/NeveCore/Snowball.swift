@@ -53,6 +53,7 @@ extension SnowField {
         var best: (Int, Int, Float)?
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
             let e = entries[k], s = Int(e.surface), lc = c - surfaces[s].c0
+            guard landable(s), surfaces[s].pile.open(lc) else { continue }   // never on a covered bin or a stale window (as tryLand / treeSupport)
             let top = e.edgeY + surfaces[s].pile.heights[lc]
             if fromY >= e.edgeY, top > (best?.2 ?? -.infinity) { best = (s, lc, top) }
         }

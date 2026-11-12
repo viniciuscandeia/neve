@@ -176,6 +176,7 @@ final class WindowPoller {
             mouseDown = true
             let p = NSEvent.mouseLocation
             downOnDesktop = !lastRead.contains { $0.frame.contains(p) }   // click on the wallpaper = show-desktop: no AX event
+            if downOnDesktop { settlePoll() }   // windows slide away: one read after Tuning.goneGrace lets their snow fall
             drag.pressed(at: p, windows: lastRead)   // a press outside the exempt (dragged-offscreen) window ends its exemption
             if polling, !userIdle { sched.mouseDown(now: now, onDesktop: downOnDesktop, dragPlausible: dragPlausible(at: p, windows: lastRead, command: NSEvent.modifierFlags.contains(.command))) }
         case .leftMouseUp:

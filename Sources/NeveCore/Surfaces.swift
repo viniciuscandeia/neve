@@ -5,7 +5,7 @@
 // Pile carry-over: a surface with the same id keeps its heights shifted by whole columns (`anchor` difference, so rounding never accumulates); a moved window sheds snow by speed (`shedFraction` / `shed` -> debris, velocity low-passed with
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
 //   gifts, the Christmas tree (Stashed.tree; knockOff of a window that never returns drops it); cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
-// Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll is stashed (`pendingGone`) and knocked off only after `goneGrace` (0.6 s; tests via makeField set 0). Test: StackOrderTests.
+// Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll (close, minimise, hide, zoom up to the menu bar) stays in `surfaces` as a GHOST (`pendingGone`: pile, balls, gifts, figures, tree in place and drawn; it returns clean-or-not by simply reappearing) and is knocked off only after `goneGrace` (0.6 s; an expired ghost forces a rebuild even on an unchanged list; the app guarantees a read after the deadline via PollScheduler.settleRead; tests via makeField set 0). knockOff then lets transportBalls/Gifts/Tree/Figures release what stood on it. Tests: StackOrderTests, WindowGoneTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> debris), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
 //   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); Push feel: scooped bins keep a `gapT` (Tuning.plowSlumpTime): `stepSlump` settles the gap's walls to repose even while the blade moves (snow spills back in); a push faster than 300 pt/s holds back up to 15 % of the scooped snow as powder (debris from the blade front, + puffs; none in economy / Low Power; calm never sweeps); against the Dock bar a push >= Tuning.dockOverSpeed with the heap at the bar's top throws a speed-scaled share as arcing chunks that land on the Dock pile (slower: only heaps up to 40 pt over the bar); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
@@ -46,8 +46,7 @@ extension SnowField {
         // Each window's dt is its own time since its last sample (`stamps`, monotonic `now`; without it a clock advanced by `dt`).
         if let now { clock = now } else { clock += Double(dt) }
         pollDt = dt
-        var expired = 0
-        for (id, e) in pendingGone where clock - e.since >= goneGrace { pendingGone[id] = nil; pilesDirty = true; expired += knockOff(e.s) }   // still missing: really gone
+        if pendingGone.values.contains(where: { clock - $0.since >= goneGrace }) { boundsDirty = true }   // a ghost's deadline passed: the rebuild below knocks it off even when the list is unchanged
         defer { stamps.removeAll(keepingCapacity: true); for w in windows { stamps[w.number] = clock } }
         guard windows != lastWindows || boundsDirty else {
             if windowsStale, time >= staleUntil { windowsStale = false }   // an unchanged list right after a switch may be the pre-switch one: only a changed one settles it, or time
@@ -55,7 +54,7 @@ extension SnowField {
                 let v = surfaces[i].vel * exp(-windowDt(surfaces[i].id) / Tuning.velSmoothing)
                 surfaces[i].vel = v.x * v.x + v.y * v.y < 0.25 ? .zero : v
             }
-            return expired
+            return 0
         }
         boundsDirty = false
         let prev = lastWindows
@@ -63,7 +62,7 @@ extension SnowField {
         defer { windowsStale = false }
         orderOnly = !windowsStale && Self.sameWindowsReordered(windows, prev)
         defer { orderOnly = false }
-        return expired + updateSurfaces(windows: effective(windows), only: dragOnlyRebuild ? movedOnly(windows, prev: prev) : nil, settle: true)
+        return updateSurfaces(windows: effective(windows), only: dragOnlyRebuild ? movedOnly(windows, prev: prev) : nil, settle: true)
     }
 
     /// Same windows (ids, frames +-0.5 pt, radius, kind) in a different stacking order (Cmd-Tab): only the drawing may change, never the snow.
@@ -153,10 +152,14 @@ extension SnowField {
             spaceSwitchIDs.subtract(gone.map(\.id))
             old.removeAll { ids.contains($0.id) }
         }
-        for s in old {   // gone surfaces: a window absent for one poll (Mission Control, Stage Manager, minimise animation) keeps its snow stashed for Tuning.goneGrace before it is knocked off
-            if s.id > 0, !silent, goneGrace > 0, pendingGone[s.id] == nil { pendingGone[s.id] = (s, clock); stashAway([s]) } else { spawned += knockOff(s) }
+        var ghosts: Set<Int> = []
+        for s in old {   // gone surfaces: a window absent for one poll (Mission Control, Stage Manager, minimise animation, a close, a zoom up to the menu bar) stays as a GHOST (pile, figures, balls, gifts, tree in place and drawn) for Tuning.goneGrace, then falls
+            if s.id > 0, !silent, goneGrace > 0, pendingGone[s.id].map({ clock - $0.since < goneGrace }) ?? true {
+                if pendingGone[s.id] == nil { pendingGone[s.id] = (s, clock) }
+                built.append(s); ghosts.insert(s.id)
+            } else { pendingGone[s.id] = nil; spawned += knockOff(s) }
         }
-        pendingGone = pendingGone.filter { k, _ in !built.contains { $0.id == k } }   // back: buildSurface restored it from the stash
+        pendingGone = pendingGone.filter { k, _ in ghosts.contains(k) || !built.contains { $0.id == k } }   // rebuilt from a real window again: not missing any more
         overhang = overhang.filter { k, _ in built.contains { $0.id == k } }
         for i in built.indices where only?.contains(built[i].id) ?? true { built[i].runs = built[i].pile.visibleRuns(); built[i].aliveRuns = built[i].pile.held.isEmpty ? built[i].runs : built[i].pile.visibleRuns(alive: true) }
         sset.install(built)

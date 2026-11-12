@@ -5,7 +5,7 @@
 //   crosses to a neighbour screen's field), `treeUnder` (hitTest), `writeTreePrims` (Rig.tree, honours the drag `shift`).
 // Simulation `stepTree` (SnowField.step, after gifts): burst timer -> `startTreeFall` (from above the top edge at the burst x) -> falls like a Gift (same integrator) and lands on `treeSupport` (highest surface whose three foot columns are all `open` and
 //   `landable`, so never on a covered bin) at `standY` (drawn snow) sunk `treeSink`; landing = `impact` crater + puffs + the branch snow shaken off as debris + 2-4 gifts around the foot (Gift list, may exceed Tuning.maxGifts, capped at +4).
-//   Resting: follows the drawn pile each frame; the support gone (closed / minimised window, column hidden) = falls again. `transportTree` (window moved: x shift; a fast move only shakes the branches, it never knocks it down).
+//   Resting: follows the drawn pile each frame; the support gone (closed / minimised window, any of the three foot columns hidden or off the pile and not continued across a seam: `footHolds`) = falls again. `transportTree` (window moved: x shift; a fast move only shakes the branches, it never knocks it down).
 //   Snow on the branches grows with snowfall (full in ~50 s) and falls as debris when shaken (drag, fast window, landing). quiet (outro / melt) fades it out.
 // Randomness: ONLY `treeRng` (own generator) for the placement, the burst flake x and the debris / gift velocities; spawn() keeps consuming `rng` exactly as before (DeterminismTests), the burst just overrides the x afterwards.
 // Lifecycle: `clear()` removes tree + burst; Stashed.tree keeps it across a Space switch (knockOff of a window that never returns makes it fall); `resetWorld` via clear; Resize scales x. Busy: BusyReasons.tree while a burst, a fall or a hold lasts.
@@ -123,17 +123,27 @@ extension SnowField {
         for k in Int(offsets[c])..<Int(offsets[c + 1]) {
             let e = entries[k], s = Int(e.surface)
             guard fromY + Tuning.treeSink * half / Tuning.treeHalfFoot >= e.edgeY, landable(s) else { continue }
-            var ok = true
-            for j in -1...1 {
-                let b = column(x + Float(j) * half) - surfaces[s].c0
-                if b < 0 || b >= surfaces[s].pile.heights.count || !surfaces[s].pile.open(b) { ok = false; break }
-            }
-            guard ok else { continue }
+            guard footHolds(si: s, x: x, half: half, open: true) else { continue }
             let y = standY(si: s, x: x)
             if y + height > visibleTop { continue }   // the star would hide under the menu bar
             if y > (best?.y ?? -.infinity) { best = (s, y) }
         }
         return best
+    }
+
+    /// Whether the three foot columns (x - half, x, x + half) all hold snow on surface `si` (`open`: landing, snow open to the sky; else `alive`: resting, a column hidden only by the stacking order still holds).
+    /// A column past the pile end counts on the surface touching that end (`neighbor`, a seam), so a foot straddling two joined windows rests like on one.
+    func footHolds(si: Int, x: Float, half: Float, open: Bool) -> Bool {
+        let p = surfaces[si].pile
+        for j in -1...1 {
+            var pile = p, b = column(x + Float(j) * half) - surfaces[si].c0
+            if b < 0 || b >= p.heights.count {
+                guard let n = neighbor(si: si, dir: b < 0 ? -1 : 1) else { return false }
+                pile = surfaces[n.si].pile; b = n.bin
+            }
+            if !(open ? pile.open(b) : pile.alive(b)) { return false }
+        }
+        return true
     }
 
     /// Branch snow falls as debris chunks (a share `fraction` of every layer); uses `treeRng` only.
@@ -212,7 +222,7 @@ extension SnowField {
             else if t.pos.y < -t.height { relocate(&t) }
         case .resting:
             t.tilt = 0.07 * sin(t.land * 13) * exp(-t.land * 3.2)
-            guard let sid = t.surface, let si = index[sid], case let b = column(t.pos.x) - surfaces[si].c0, b >= 0, b < surfaces[si].pile.heights.count, surfaces[si].pile.alive(b) else {
+            guard let sid = t.surface, let si = index[sid], footHolds(si: si, x: t.pos.x, half: t.halfFoot, open: false) else {
                 t.state = .falling; t.surface = nil; t.vel = .zero   // the support is gone: it falls again
                 tree = t; return
             }
