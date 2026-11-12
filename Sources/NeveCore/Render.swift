@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Render.swift  (CPU side of the GPU buffers: Instance, Prim, PrimWriter, PileSeg, writeInstances, writePiles)
 // Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
-//   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
+//   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc, 7 flake lit by a Christmas light: colour index + strength in kind >> 8, see Lights.swift), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
 //   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (48 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
 //   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
@@ -14,7 +14,7 @@
 import CoreGraphics
 import Foundation
 
-/// GPU instance, 40 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc.
+/// GPU instance, 40 bytes (8-aligned); layout mirrors the Metal struct. kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc, 7 lit flake (kind >> 8 = colour index | strength << 3).
 public struct Instance {
     var pos: SIMD2<Float>
     var size: Float
@@ -80,13 +80,14 @@ extension SnowField {
     /// with lag = (1 - alpha) * lastStepDt (FrameRate.interpAlpha); used only with Tuning.interpolateCalm.
     public func writeInstances(to p: UnsafeMutablePointer<Instance>, lag: Float = 0) -> Int {
         var n = 0
+        let lit = lightsEnabled
         for i in 0..<(skyEnd + bgEnd) {
             let f = flakes[i < skyEnd ? i : skyCount + i - skyEnd]
             if f.kind != .dormant {
                 // Crystals (> 4pt) turn and sway like a pendulum; small dots stay round. Reduce Motion: fixed angle.
                 let rot: Float = f.size > 4 && f.kind != .near ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
                 let far = f.kind == .background   // atmospheric perspective: smaller and dimmer, draw side only
-                p[n] = Instance(pos: lag == 0 ? f.pos : f.pos - f.vel * lag, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : 0, vel: calm || f.kind == .near ? .zero : f.vel); n += 1
+                p[n] = Instance(pos: lag == 0 ? f.pos : f.pos - f.vel * lag, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : (lit ? lightCode(at: f.pos) : 0), vel: calm || f.kind == .near ? .zero : f.vel); n += 1
             }   // seed >= 2: background flake (shader occlusion by large windows)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading

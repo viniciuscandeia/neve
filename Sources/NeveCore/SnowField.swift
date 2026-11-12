@@ -139,6 +139,7 @@ public final class SnowField {
     var tree: Tree?                      // the Christmas tree on this screen (Tree.swift); one in the whole app, AppController keeps it unique
     var burst: Burst?                    // its warning gust: flakes respawned meanwhile appear around burst.x
     var treeRng = SplitMix64(seed: 0x7EE_C0DE)   // own generator: placement, burst flakes, shaken snow, gifts (never `rng`)
+    public var lightsEnabled = false   // Christmas lights (Lights.swift); the app sets it from Pref.lights
     public var treeEnabled = false { didSet { if !treeEnabled { tree = nil; burst = nil } } }   // the app sets it from Pref.christmasTree; tests opt in
     var cursorThrow = CursorThrow()      // snowman throws at the held-still cursor (CursorThrow.swift)
     /// Profiling only (nil = free): seconds clock; time spent in `stepFlakes` accumulates in `flakeSeconds` (reader zeroes it) over `flakeSteps` calls.

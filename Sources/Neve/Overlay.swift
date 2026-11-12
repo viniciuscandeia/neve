@@ -508,6 +508,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.visitorsEnabled = p.visitors
         field.sleighEnabled = p.sleigh
         field.treeEnabled = p.tree
+        field.lightsEnabled = p.lights
         refreshDay(force: true)
         field.groundOnlyActors = p.behind
         field.economy = p.economy
@@ -762,6 +763,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.writeGiftPrims(&w, contrast: hc, shift: d)
         field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
         field.writeIciclePrims(&w, contrast: hc, shift: d)
+        field.writeLightPrims(&w, shift: d)
     }
 
     private func render(_ drawable: CAMetalDrawable) {

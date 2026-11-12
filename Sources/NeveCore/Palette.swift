@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/NeveCore/Palette.swift  (the one colour palette, light + dark)
 // Role: `Tone` (light/dark SIMD3 pair; `now` blends by `Palette.dark`) and `Palette` (static `dark` 0...1, `darkTarget`, eased over ~0.5 s by `tick(now:)` with an ABSOLUTE clock so several overlays ticking in one frame do not speed it up; `stepDt` capped at 1/30 s; `resetClock`; `isBlending`;
-//   `light` = the single light vector (-0.15, 0.99 normalised, x right y up) used by piles, clumps, chunks, figures and icicles; named tones: snow, lift, flake, shade, deep, shadow, shadowHC (Increase Contrast), glint, drop*, ice*, carrot, red, twig, coal, rabbit/penguin/robin/sleigh colours...).
+//   `light` = the single light vector (-0.15, 0.99 normalised, x right y up) used by piles, clumps, chunks, figures and icicles; named tones: Christmas lights (lightRed...lightPink, `lights`), snow, lift, flake, shade, deep, shadow, shadowHC (Increase Contrast), glint, drop*, ice*, carrot, red, twig, coal, rabbit/penguin/robin/sleigh colours...).
 // Consumers: shaders get colours baked in via `Palette.msl(tone)` string interpolation when the Metal source is built (Sources/Neve/*Shader.swift, Renderer.swift), and Rig reads `Tone.now` on the CPU. Adding/changing a colour needs no shader edit unless a new uniform is wanted. Appearance input: Renderer.swift AppearanceWatcher sets `darkTarget`; Overlay.swift calls `Palette.tick(now:)` every frame; state is main-thread only (nonisolated(unsafe)). Tests: PaletteTests.
 
 import Foundation
@@ -83,12 +83,19 @@ public enum Palette {
     public static let frost = Tone(SIMD3(0.93, 0.96, 0.99), SIMD3(0.84, 0.88, 0.94))      // neutral icy white, a hint of cool
     public static let treeGreen = Tone(SIMD3(0.10, 0.42, 0.22), SIMD3(0.16, 0.42, 0.26))  // Christmas tree branches
     public static let treeShade = Tone(SIMD3(0.05, 0.27, 0.14), SIMD3(0.09, 0.28, 0.17))  // the half of each branch layer facing away from the light
+    // Christmas lights (Lights.swift; also baked into the flake shader for lit flakes): brighter in dark mode.
+    public static let lightRed = Tone(SIMD3(0.95, 0.20, 0.20), SIMD3(1.00, 0.35, 0.35))
+    public static let lightAmber = Tone(SIMD3(0.98, 0.70, 0.15), SIMD3(1.00, 0.78, 0.30))
+    public static let lightGreen = Tone(SIMD3(0.20, 0.78, 0.30), SIMD3(0.35, 0.90, 0.45))
+    public static let lightBlue = Tone(SIMD3(0.20, 0.50, 0.95), SIMD3(0.40, 0.65, 1.00))
+    public static let lightPink = Tone(SIMD3(0.92, 0.30, 0.75), SIMD3(1.00, 0.50, 0.85))
+    public static let lights = [lightRed, lightAmber, lightGreen, lightBlue, lightPink]
     /// Every colour, for tests.
     public static let all: [(String, Tone)] = extras + [("snow", snow), ("lift", lift), ("flake", flake), ("shade", shade), ("deep", deep), ("shadow", shadow), ("shadowHC", shadowHC),
                                                ("glint", glint), ("dropFill", dropFill), ("dropEdge", dropEdge), ("speckle", speckle), ("ice", ice), ("iceEdge", iceEdge), ("iceShine", iceShine)]
     static let extras: [(String, Tone)] = [("carrot", carrot), ("red", red), ("stripe", stripe), ("twig", twig), ("coal", coal), ("rabbitFur", rabbitFur), ("earPink", earPink), ("trim", trim), ("rim", rim),
         ("penguinBack", penguinBack), ("penguinBelly", penguinBelly), ("fawn", fawn), ("robinBreast", robinBreast), ("robinWing", robinWing), ("robinBeak", robinBeak), ("gold", gold), ("skin", skin),
-        ("reins", reins), ("sack", sack), ("rudolph", rudolph), ("deerTail", deerTail), ("giftRed", giftRed), ("giftGreen", giftGreen), ("giftInside", giftInside), ("frost", frost), ("treeGreen", treeGreen), ("treeShade", treeShade)]
+        ("reins", reins), ("sack", sack), ("rudolph", rudolph), ("deerTail", deerTail), ("giftRed", giftRed), ("giftGreen", giftGreen), ("giftInside", giftInside), ("frost", frost), ("treeGreen", treeGreen), ("treeShade", treeShade), ("lightRed", lightRed), ("lightAmber", lightAmber), ("lightGreen", lightGreen), ("lightBlue", lightBlue), ("lightPink", lightPink)]
 
     // Scalars: (light, dark).
     public static let crestAlpha: Float = 0.9

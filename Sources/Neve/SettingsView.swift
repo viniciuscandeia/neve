@@ -52,7 +52,8 @@ private let figures = [Option(pref: .snowman, title: tr("Boneco de neve"), symbo
                        Option(pref: .walk, title: tr("Andam e brigam"), symbol: "figure.walk"),
                        Option(pref: .visitors, title: tr("Visitantes"), symbol: "pawprint"),
                        Option(pref: .sleigh, title: tr("Trenó do Papai Noel"), symbol: "gift"),
-                       Option(pref: .christmasTree, title: tr("Árvore de Natal"), symbol: "tree")]
+                       Option(pref: .christmasTree, title: tr("Árvore de Natal"), symbol: "tree"),
+                       Option(pref: .lights, title: tr("Luzes de Natal"), symbol: "sparkles")]
 private let economyOpt = Option(pref: .economy, title: tr("Modo econômico"), symbol: "leaf")
 private let ambientOpt = Option(pref: .ambient, title: tr("Modo ambiente"), symbol: "sun.max")
 private let musicOpt = Option(pref: .music, title: tr("Neve dança com a música"), symbol: "music.note")

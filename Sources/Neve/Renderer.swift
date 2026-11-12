@@ -3,7 +3,7 @@
 //   The Metal library is compiled AT RUNTIME from source strings (flakeShaderSource + primShaderSource + pileShaderSource) because Command Line Tools have no `metal` compiler: Gpu.init? returns nil on any
 //   compile/pipeline failure (the controller then logs once and shows "Sem neve: este Mac não consegue desenhá-la").
 // `flakeShaderSource` (MSL in a Swift string; \(Palette.msl(...)) interpolations bake NeveCore Palette colours into the shader, so palette edits need no shader edit): instanced quads, one per `Instance`
-//   (kind: 0 flake, 1 clump, 2 slab/falling chunk (packed profile in kind>>8), 3 puff, 4 glint, 5 meltwater drop, 6 out-of-focus disc). Motion-streak stretch uses frameDt (set from the SIM frame, keeps slowmo consistent);
+//   (kind: 0 flake, 1 clump, 2 slab/falling chunk (packed profile in kind>>8), 3 puff, 4 glint, 5 meltwater drop, 6 out-of-focus disc, 7 flake lit by a Christmas light: colour index | strength << 3 in kind >> 8, mixed toward Palette.lights). Motion-streak stretch uses frameDt (set from the SIM frame, keeps slowmo consistent);
 //   `Occ` buffer = the 17 float4 occluder rects (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
 // `AppearanceWatcher` (@MainActor): mirrors the system light/dark appearance into Palette.darkTarget (fade ~0.5 s eased by Palette.tick per frame) and posts `changed` so paused (still) overlays wake.
 // Invariants: the MSL `struct Instance` is NeveCore ShaderStructs.instance, checked against NeveCore/Render.swift `Instance` by ShaderLayoutTests (field order, offsets, size); changing one without the other renders garbage silently. Y is up, units are screen-local points.
@@ -88,7 +88,8 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
     Instance i = inst[iid];
     uint k = i.kind & 255u;
-    uint pr = i.kind >> 8;   // falling chunk: packed profile (thickness in half-points + 3 height fractions), see Flake.pack
+    uint lit = k == 7u ? i.kind >> 8 : 0u;   // lit flake: colour index | strength << 3
+    uint pr = k == 7u ? 0u : i.kind >> 8;   // falling chunk: packed profile (thickness in half-points + 3 height fractions), see Flake.pack
     float aspect = pr > 0u ? min(float(pr & 511u) * 0.5 / i.size, 3.0) : 0.45;
     float2 l = corner * i.size * 0.5 * float2(1.0, k == 2 ? aspect : 1.0) * (pr > 0u ? 1.15 : 1.0);   // chunks: a margin for the soft, irregular edge
     float c = cos(i.rot), sn = sin(i.rot);
@@ -98,7 +99,7 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     float2 uv = corner, tail = float2(0.0);
     float alphaK = 1.0;
     float speed = length(i.vel);
-    float smear = ((k == 0u && speed >= 150.0) || k == 1u || k == 5u) ? min(speed * frameDt, i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
+    float smear = (((k == 0u || k == 7u) && speed >= 150.0) || k == 1u || k == 5u) ? min(speed * frameDt, i.size * (k == 5u ? 1.0 : 2.0)) : 0.0;
     if (smear >= 0.3) {
         float2 dir = i.vel / speed, perp = float2(-dir.y, dir.x);
         float h = i.size * 0.5 * (pr > 0u ? 1.15 : 1.0);   // same chunk margin as above
@@ -121,7 +122,7 @@ vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     o.kind = float(k);
     o.rot = i.rot;
     o.aspect = aspect;
-    o.prof = float(pr);
+    o.prof = float(k == 7u ? lit : pr);
     return o;
 }
 // `contrast` (Increase Contrast) = 1 darkens the flake edge.
@@ -139,6 +140,8 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     if (occ.s.z > 0.0) for (int k = 0; k < 8; k++) hide = max(hide, occMask(in.wpos, occ.r[8 + k]));
     if (hide >= 1.0) discard_fragment();
     int kind = int(in.kind + 0.5);
+    float litS = 0.0; int litI = 0;
+    if (kind == 7) { kind = 0; uint lc = uint(in.prof + 0.5); litI = int(lc & 7u); litS = float((lc >> 3) & 15u) / 15.0; }
     float2 u0 = in.uv;   // distance to the streak's segment instead of to a point; head opaque, tail fainter
     float sg = 1.0;
     float tt2 = dot(in.tail, in.tail);
@@ -224,7 +227,12 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float &contrast [[b
     float3 rimC = mix(\(Palette.msl(Palette.shadow)), \(Palette.msl(Palette.shadowHC)), contrast);
     float rk = mix(\(Palette.msl(Palette.rimAlpha)), 0.7, contrast);
     float a = (1.0 - smoothstep(1.0 - soft, 1.0, d)) * in.alpha * sg * (1.0 - hide);
-    return float4(mix(\(Palette.msl(Palette.flake)), rimC, rk * edge) * a, a);
+    float3 fc = mix(\(Palette.msl(Palette.flake)), rimC, rk * edge);
+    if (litS > 0.0) {   // lit by a Christmas light: toward the bulb's colour
+        float3 lcol[5] = { \(Palette.lights.map { Palette.msl($0) }.joined(separator: ", ")) };
+        fc = mix(fc, lcol[litI], min(litS * 1.4, 0.9));
+    }
+    return float4(fc * a, a);
 }
 """
 

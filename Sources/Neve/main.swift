@@ -264,7 +264,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             applyPrefs()
             poller.requestPoll()   // the occluders / coverage follow the option now, not at the next window change
         case .christmasTree: applyPrefs(); if on { armTree() }
-        case .stillSnow, .snowman, .walk, .visitors, .sleigh, .showInCaptures, .adaptiveFps, .pointerPush: applyPrefs()
+        case .stillSnow, .snowman, .walk, .visitors, .sleigh, .lights, .showInCaptures, .adaptiveFps, .pointerPush: applyPrefs()
         }
     }
 
