@@ -94,9 +94,13 @@ private func stackedField(seed: UInt64) -> SnowField {
     pileUp(f, id: 1, rounds: 14, keepSpill: true)
     #expect(!f.avalancheActive)
     #expect(!f.triggerAvalanche(near: CGPoint(x: 480, y: 550)))   // cooldown
-    advance(f, 61, fps: 30)
-    pileUp(f, id: 1, rounds: 14, keepSpill: true)
-    #expect(f.triggerAvalanche(near: CGPoint(x: 480, y: 550)))
+    var again = false   // after the cooldown a trigger works again; a spontaneous chain (full > 60 s, p = dt/240) may take the slot first and restart the cooldown, so give it a few cooldowns
+    for _ in 0..<5 where !again {
+        advance(f, 61, fps: 30)
+        pileUp(f, id: 1, rounds: 14, keepSpill: true)
+        again = f.triggerAvalanche(near: CGPoint(x: 480, y: 550))
+    }
+    #expect(again)
 }
 
 @Test func reduceMotionHasNoAvalanche() {

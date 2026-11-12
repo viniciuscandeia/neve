@@ -27,7 +27,7 @@ func pileUp(_ f: SnowField, id: Int, rounds: Int = 12, volume: Float = 4, keepSp
     let i = f.surfaces.firstIndex { $0.id == id }!
     let d0 = f.debris.count
     for _ in 0..<rounds { for b in f.surfaces[i].pile.heights.indices { f.deposit(surface: i, bin: b, volume: volume) } }
-    if !keepSpill { f.debris.removeLast(f.debris.count - d0) }   // end spill lumps now carry their volume (`vol`): a fixture builds a pile, not a cloud of falling snow, so tests' volume ledgers start clean
+    if !keepSpill { f.debris.removeLast(f.debris.count - d0); f.surfaces[i].pile.owedL = 0; f.surfaces[i].pile.owedR = 0 }   // end spill lumps now carry their volume (`vol`): a fixture builds a pile, not a cloud of falling snow, so tests' volume ledgers start clean (the same for the overflow owed to the ends)
 }
 
 /// Integration helper: steps a snowing field until window `id` carries a pile at least `height` tall.

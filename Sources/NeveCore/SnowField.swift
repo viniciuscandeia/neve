@@ -79,6 +79,8 @@ public final class SnowField {
     var entries: [Entry] { get { sset.entries } _modify { yield &sset.entries } }
     var seams: [SeamLink] { get { sset.seams } _modify { yield &sset.seams } }   // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
     var dockTrickle = DockTrickle()   // DockSpill.swift
+    var overflowTick = 0              // 0.5 s ticks since the last overflow drip (Surfaces.swift stepOverflow lets lumps go every 3rd tick)
+    var bankRefused: Float = 0        // pt^2 the Dock bar / ground pile refused at its heap ceiling (nowhere to overflow to; window tops pass it to their ends, see Pile.owe): a ledger for tests, never drawn
     var lastWindows: [WindowInfo] = []
     var pendingGone: [Int: (s: Surface, since: Double)] = [:]   // windows missing from the latest poll: the surface stays in `surfaces` as a ghost (snow and what stands on it in place, drawn), knocked off only after Tuning.goneGrace (Mission Control / minimise flicker)
     var goneGrace = Tuning.goneGrace   // s a window may be missing before its pile is knocked off (tests set 0 for the old immediate knock-off)
@@ -371,7 +373,7 @@ public final class SnowField {
         stepSlump(dt: dt)
         stepSeams(dt: dt)
         ageClock += dt
-        if ageClock >= 0.5 { for i in surfaces.indices { surfaces[i].pile.ageStep(ageClock) }; stepEaves(dt: ageClock); ageClock = 0 }   // snow compacts slowly: twice a second is plenty
+        if ageClock >= 0.5 { for i in surfaces.indices { surfaces[i].pile.ageStep(ageClock) }; stepEaves(dt: ageClock); stepOverflow(); ageClock = 0 }   // snow compacts slowly: twice a second is plenty
         stepPuffs(dt: dt)
         stepWindDust(dt: dt)
         stepGlints(dt: dt)

@@ -10,8 +10,7 @@
 // Gap: `gapLo...gapHi` / `gapT` = the scooped trail of a cursor push; its walls slump to repose over Tuning.plowSlumpTime (stepSlump settles them), spilling snow back into the gap.
 // Cornice: `eaveL` / `eaveR` (pt^2) = snow overhanging a bare window end (`eaveEnd`), fed / drained by SnowField.stepEaves (Effects.swift: released as a block `dropEave` at Tuning.eaveMax); drawn in Contour.swift; `empty()` clears it; kept by an unchanged-window rebuild, lost (falls) when the window moves / resizes.
 // Operations: deposit(bin:volume:powder:) spreads 1/2-1/4-1/4 (softness: full sticking up to 80 % of limit, tapering to 15 %; powder on bare bins lands as a one-bin speck) then relaxes +-8 bins (6 passes: Tuning.relaxReach / relaxPasses, slope <= Tuning.slope; bins inside a pushed heap, mound > 0.5, are skipped: `settle` owns them); relax allows Tuning.moundSlope extra step when either bin is inside a pushed heap (compacted snow, ~45 degrees); relax moves half the
-//   excess (the rule is `Pile.transfer`, shared with Seams.stepSeams) to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (only the part trimmed at the end bins is kept as spill, elsewhere it
-//   is dropped); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts from the GEOMETRY of the higher windows over the pile (`hideTop`, no stacking order; limit rises to the front top at the wall for step <= maxDrift, also against the wobble) (the drawn bank / fillet is Contour.swift's slope limit across owner changes, not here);
+//   excess (the rule is `Pile.transfer`, shared with Seams.stepSeams) to a lower visible neighbour, hidden neighbours are walls, past the ends it goes to spillL / spillR (SnowField turns that into debris). deposit first clamps a stale `mound` over bin +-9 to the pushed excess actually still there (snow lost by melt / release / take / slide never regrows a heap), then trims anything over `limit` (the part trimmed at the end bins is kept as spill, in a middle bin it is owed (`owedL/R`) to the nearest unsupported end and drips off as lumps, SnowField.stepOverflow); carve / plow dig grooves with berms and return the area removed (plow returns what is NOT banked, for the caller to spray as debris); settle rounds pushed heaps (and re-syncs `mound` to the slumped snow); round(radius:) follows corner arcs; addWalls builds drifts from the GEOMETRY of the higher windows over the pile (`hideTop`, no stacking order; limit rises to the front top at the wall for step <= maxDrift, also against the wobble) (the drawn bank / fillet is Contour.swift's slope limit across owner changes, not here);
 //   visibleRuns() = visible bin ranges. `open(b)` = visible AND not under another window's body (`hideTop`, geometry, any stacking order): the only bins snowfall lands on / relax flows into (so a grown field is the same in every stacking order). supportL/R are also set for the HIGHER window's end over a lower window's top edge (any step): no taper / dip / bare corner there; the group exchange across such ends lives in Seams.swift.
 // Pile is a struct: avoid copying whole arrays in hot code (mutate surfaces[si].pile in place, see Surfaces.sweep). Callers: Surfaces.swift (build / deposit / shed), SurfaceMap.swift, Render.swift (writePiles reads it), and read or mutated directly by
 //   Avalanche, Frost, Melt, Walk, Snowball, Figures*. Tests: PileLogicTests, SurfaceMapTests, PhysicsTests and others. Changing slope / limit math changes visuals everywhere and many tuned tests.
@@ -47,6 +46,8 @@ public struct Pile {
     var age: [Float] = []        // per bin: seconds the snow has lain (0 = fresh, capped at Tuning.ageFull): older snow holds a steeper face (`Pile.reposeStep`); mixes with what lands / flows in; travels wherever heights do
     var eaveL: Float = 0         // cornice store (pt^2) of snow overhanging each UNSUPPORTED window end (`eaveEnd`): fed by SnowField.stepEaves, capped by Tuning.eaveMax (released as a block), drawn by Contour.swift
     var eaveR: Float = 0
+    var owedL: Float = 0         // volume (height units) a full pile could not hold in a MIDDLE bin (deposit trimmed it / refused it), owed to the nearest unsupported end: SnowField.stepOverflow drips it off as lumps (drops, never continuous rain); `empty()` clears it
+    var owedR: Float = 0
     var peel: [Float] = []       // per bin: seconds until its excess over `limit` lets go as debris (-1 = none); empty = nothing pending
     var peeling: Bool { !peel.isEmpty }
 
@@ -78,7 +79,14 @@ public struct Pile {
         return r
     }
 
-    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = []; eaveL = 0; eaveR = 0 }
+    mutating func empty() { for b in heights.indices { heights[b] = 0; age[b] = 0 }; mound = []; eaveL = 0; eaveR = 0; owedL = 0; owedR = 0 }
+
+    /// Snow a full pile cannot keep in a middle bin `bin` is owed to the nearest end that is not a seam / drift (`supportL/R`); lost only when both ends are supported.
+    static let owedCap: Float = 400   // per end: a long idle full window cannot build a landslide debt
+    mutating func owe(_ v: Float, from bin: Int) {
+        let left = bin < heights.count / 2
+        if left, !supportL { owedL = min(owedL + v, Self.owedCap) } else if !left, !supportR { owedR = min(owedR + v, Self.owedCap) } else if !supportL { owedL = min(owedL + v, Self.owedCap) } else if !supportR { owedR = min(owedR + v, Self.owedCap) }
+    }
 
     /// Whether that end is a bare, on-screen, uncovered window corner: the only place a cornice forms.
     func eaveEnd(left: Bool) -> Bool { !heights.isEmpty && !(left ? supportL : supportR) && !continuesPastScreen(left: left) && open(left ? 0 : heights.count - 1) }
@@ -171,7 +179,10 @@ public struct Pile {
     /// Returns whether anything changed.
     @discardableResult
     mutating func deposit(bin: Int, volume: Float, powder: Bool = false) -> Bool {
-        guard bin >= 0, bin < heights.count, open(bin), cap[bin] >= Tuning.minRoom else { return false }
+        guard bin >= 0, bin < heights.count, open(bin), cap[bin] >= Tuning.minRoom else {
+            if volume > 0, bin >= 0, bin < heights.count, open(bin) { owe(volume, from: bin) }   // landing under a ceiling is not thrown away either
+            return false
+        }
         var changed = false
         // Fresh powder barely sticks to a clean surface and lands as a one-bin speck (no wide footprint); the grip grows as snow builds up under it.
         if !mound.isEmpty {   // self-correcting allowance: snow that left by any path (melt, release, take, slide) must not let snowfall regrow the old heap
@@ -184,14 +195,17 @@ public struct Pile {
             mixAge(bin, added: heights[bin] - h0, age: 0, weight: Tuning.ageFresh)
             changed = heights[bin] != h0
         } else {
+            var lost = volume   // what the pile does not keep (softness, ceiling, ceiling cap) is owed to the nearest end, see `owe`
             for o in -1...1 {
                 var i = bin + o
                 if i < 0 || i >= heights.count || !open(i) { i = bin }
                 guard cap[i] >= Tuning.minRoom else { continue }
                 let before = heights[i]
                 heights[i] = max(before, min(before + volume * softness(i) * (o == 0 ? 0.5 : 0.25), limit(i)))
+                lost -= heights[i] - before
                 if heights[i] != before { changed = true; mixAge(i, added: heights[i] - before, age: 0, weight: Tuning.ageFresh) }
             }
+            if lost > 1e-4 { owe(lost, from: bin) }
         }
         let lo = max(0, bin - Tuning.relaxReach), hi = min(heights.count - 1, bin + Tuning.relaxReach)
         for _ in 0..<Tuning.relaxPasses {
@@ -207,7 +221,7 @@ public struct Pile {
             let over = heights[i] - max(limit(i), 0)
             guard open(i), over > 0, peel.isEmpty || peel[i] < 0 else { continue }
             heights[i] -= over
-            if i == 0 { spillL += over } else if i == heights.count - 1 { spillR += over }
+            if i == 0 { spillL += over } else if i == heights.count - 1 { spillR += over } else { owe(over, from: i) }
             changed = true
         }
         return changed

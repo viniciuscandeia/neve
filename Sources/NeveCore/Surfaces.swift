@@ -6,7 +6,7 @@
 //   Tuning.velSmoothing); a resized one remaps; snow past the screen edge is parked in `overhang`; windows that vanish without closing (Space switch, resolution) are stashed by id (`stashAway` / `restoreStashed`: piles, frost, balls, figures,
 //   gifts, the Christmas tree (Stashed.tree; knockOff of a window that never returns drops it); cap 64, 30 min); a window that is gone for good goes through `knockOff` (pile falls as intact slabs via dropBlocks). `movedOnly` limits a drag sample to the moved window and windows within +-8 pt in x unless `dragOnlyRebuild` is false (tests).
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll (close, minimise, hide, zoom up to the menu bar) stays in `surfaces` as a GHOST (`pendingGone`: pile, balls, gifts, figures, tree in place and drawn; it returns clean-or-not by simply reappearing) and is knocked off only after `goneGrace` (0.6 s; an expired ghost forces a rebuild even on an unchanged list; the app guarantees a read after the deadline via PollScheduler.settleRead; tests via makeField set 0). knockOff then lets transportBalls/Gifts/Tree/Figures release what stood on it. Tests: StackOrderTests, WindowGoneTests.
-// Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> one debris lump carrying vol = the spilled volume; what addDebris refuses stays owed), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
+// Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> one debris lump carrying vol = the spilled volume; what addDebris refuses stays owed), `stepOverflow` (every 3rd 0.5 s tick: snow a full window pile could not keep in a middle bin, `Pile.owedL/R`, drips off the nearest end as one lump per end; the Dock bar / ground refuse it into `bankRefused`), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
 //   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); Push feel: scooped bins keep a `gapT` (Tuning.plowSlumpTime): `stepSlump` settles the gap's walls to repose even while the blade moves (snow spills back in); a push faster than 300 pt/s holds back up to 15 % of the scooped snow as powder (debris from the blade front, + puffs; none in economy / Low Power; calm never sweeps); against the Dock bar a push >= Tuning.dockOverSpeed with the heap at the bar's top throws a speed-scaled share as arcing chunks that land on the Dock pile (slower: only heaps up to 40 pt over the bar); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris; ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
@@ -25,6 +25,31 @@ extension SnowField {
         guard landable(surface) else { return }
         if surfaces[surface].pile.deposit(bin: bin, volume: volume, powder: powder) { pilesDirty = true }
         if surfaces[surface].pile.spillL > 2 || surfaces[surface].pile.spillR > 2 { spill(surface) }
+        if surfaces[surface].id <= 0 { bankRefused += (surfaces[surface].pile.owedL + surfaces[surface].pile.owedR) * Tuning.binWidth; surfaces[surface].pile.owedL = 0; surfaces[surface].pile.owedR = 0 }   // only window tops pass overflow on to their ends; the Dock bar / ground heap ceiling has nowhere to send it (counted in bankRefused)
+    }
+
+    /// Every 3rd 0.5 s tick (SnowField.step): what full window piles could not keep in a middle bin (`Pile.owedL/R`) drips off the nearest end as ONE lump per end once >= overflowMin
+    /// (half the debt, 6...80 height units, at most every 1.5 s per end, so a burst's debt drains over ~half a minute): drops, not continuous rain. The lump carries its volume and lands again (hash noise: draws no random number, so neither `rng` nor `fxRng` shifts).
+    static let overflowMin: Float = 6
+    func stepOverflow() {
+        guard !quiet, !calm else { return }
+        overflowTick += 1
+        guard overflowTick >= 3 else { return }
+        overflowTick = 0
+        for si in surfaces.indices where surfaces[si].id > 0 && surfaces[si].id != draggingID && landable(si) {
+            let p = surfaces[si].pile, last = p.heights.count - 1
+            guard last > 0, p.owedL >= Self.overflowMin || p.owedR >= Self.overflowMin else { continue }
+            for left in [true, false] {
+                let owed = left ? p.owedL : p.owedR
+                guard owed >= Self.overflowMin else { continue }
+                let take = min(max(owed / 2, Self.overflowMin), 80, owed), sign: Float = left ? -1 : 1, seed = si &* 7919 &+ Int(time * 997) &+ (left ? 1 : 2)
+                func u(_ k: Int) -> Float { Float(noise(seed &* 31 &+ k) + 1) * 0.5 }
+                guard put(Flake(pos: [Float(left ? surfaces[si].c0 : surfaces[si].c0 + last + 1) * Tuning.binWidth, surfaces[si].edgeY + p.base[left ? 0 : last]],
+                                vx: sign * (8 + 17 * u(1)), fall: 10 + 20 * u(2), phase: 0, amp: 0, freq: 0, size: 3 + 2 * u(3),
+                                alpha: 0.95, kind: .debris, seed: u(4), fade: 1, vol: take * Tuning.binWidth)) else { continue }
+                if left { surfaces[si].pile.owedL -= take } else { surfaces[si].pile.owedR -= take }
+            }
+        }
     }
 
     /// Snow that slid off a surface end falls as debris.
