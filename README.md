@@ -96,7 +96,7 @@ O ícone de floco ❄️ fica na barra de menus e abre um menu nativo (com o bot
 
 Todo o resto fica em **Ajustes**, uma janela no estilo dos Ajustes do Sistema, com abas na barra de ferramentas (a última aberta é lembrada) e o botão **Restaurar padrões** na aba Sistema:
 
-- **Geral:** *Quantidade*, *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Atrás de janelas grandes*.
+- **Geral:** *Quantidade*, *Nevar em* (todas as telas, só a principal ou uma tela pelo nome; desativado no modo econômico), *Atrás das janelas* e *Flocos distantes atrás das janelas* (ligado por padrão).
 - **Bonecos:** *Boneco de neve*, *Andam e brigam*, *Visitantes* (coelho, passarinho e pinguim), *Trenó do Papai Noel*, *Árvore de Natal* e *Luzes de Natal*.
 - **Desempenho:** *Modo econômico* (20 fps com a neve calma, 30 com movimento; só a tela principal), *Modo ambiente* (não pausa após 5 minutos sem uso), *Neve dança com a música*, *Cursor empurra os flocos* (os flocos no ar e a neve acumulada: o cursor passa como um limpa-neve e empurra a neve para a frente em um monte arredondado, ou para os dois lados em passadas verticais; só o que passa da borda cai; desligado, o cursor não mexe nela) e *Neve parada* (só com Reduzir Movimento).
 - **Sistema:** *Aparecer em capturas de tela* (nem todo app de captura respeita esta opção: no macOS 15.4 ou mais novo o ScreenCaptureKit a ignora, então alguns apps de captura mostram a neve mesmo assim), *Permitir Acessibilidade…* (só quando falta), *Abrir ao iniciar sessão* (não aparece em instâncias de desenvolvimento) e *Restaurar padrões*.

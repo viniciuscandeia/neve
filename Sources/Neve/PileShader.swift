@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/Neve/PileShader.swift  (MSL source for snow piles; appended to the flake shader library)
 // Role: `pileShaderSource`, one instanced quad per `PileSeg` (NeveCore/Render.swift `PileSeg`: x0/x1 in screen-local pt, top/base heights at both ends, slope, dragged flags bit0 = rides the drag offset,
 //   bit1 = bank-flagged (corner fill / bridge, no skirt), n0/n1 = continuous surface normals, inset = pt hidden under a window edge, z = its window's index in the front-to-back list). Vertex stage pads the quad (1 pt overlap in x, 8 pt below base, 4 pt above top).
-// Fragment draws body, lifted band, ~6 pt crest gradient, cool AO tint for deep snow, soft downward shadow skirt + faint halo, one-light shading (Palette.light), +-1 % dither, then multiplied by 0 inside every window in front of the slice's own (`PileOcc` list from SnowField.occluders, buffer 2/3; z < occN). `tone` = float4 (increase contrast, Palette.dark blend, clock seconds, fx 1 = effects on / 0 = economy or Low Power). Effects (all x fx): crest glitter, body grain (1 pt cells of pre-drag in.p), warm tone on lit faces (Palette.warm), soft shadow of windows in front (from the occluder loop).
+// Fragment draws body, lifted band, ~6 pt crest gradient, cool AO tint for deep snow, soft downward shadow skirt + faint halo, one-light shading (Palette.light), +-1 % dither, then multiplied by 0 inside every window in front of the slice's own (compact mode: faded outside the live rect by buffer 4 / 5, `live` + `outFade`) (`PileOcc` list from SnowField.occluders, buffer 2/3; z < occN). `tone` = float4 (increase contrast, Palette.dark blend, clock seconds, fx 1 = effects on / 0 = economy or Low Power). Effects (all x fx): crest glitter, body grain (1 pt cells of pre-drag in.p), warm tone on lit faces (Palette.warm), soft shadow of windows in front (from the occluder loop).
 // Invariants: `struct PileSeg` is NeveCore ShaderStructs.pileSeg, checked against the Swift one byte for byte by ShaderLayoutTests (12 x 4-byte fields = 48 B); colours come from NeveCore Palette via \(Palette.msl(...)). Used with Gpu.piles in Renderer.swift, drawn by Overlay.render BEFORE prims and flakes.
 // Gotcha: edge cases (cliffs steeper than 2.5:1, overlap strips) are handled explicitly in the fragment; changing the quad padding changes overdraw cost on every pile bin (hot at 60 fps on full-screen). The fragment returns early when its alpha is below 0.001 and stops the occluder loop once vis hits 0.
 
@@ -28,7 +28,8 @@ vertex SVOut pileVertex(uint vid [[vertex_id]], uint iid [[instance_id]], consta
     return o;
 }
 fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buffer(0)]], constant float4 &tone [[buffer(1)]],
-                           constant PileOcc *occ [[buffer(2)]], constant uint &occN [[buffer(3)]]) {
+                           constant PileOcc *occ [[buffer(2)]], constant uint &occN [[buffer(3)]],
+                           constant float4 &live [[buffer(4)]], constant float &outFade [[buffer(5)]]) {
     float contrast = tone.x, dark = tone.y, time = tone.z, fx = tone.w;   // fx = 0 in economy / Low Power: no glitter, grain, warmth or window shadow
     PileSeg s = segs[in.id];
     float dx = max(s.x1 - s.x0, 1e-3);
@@ -92,6 +93,7 @@ fragment float4 pileFragment(SVOut in [[stage_in]], constant PileSeg *segs [[buf
         if (vis <= 0.0) break;   // fully hidden: later windows cannot bring it back
     }
     rgb *= 1.0 - 0.13 * fx * wsh;   // neutral darkening
-    return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a)) * vis;
+    float inLive = smoothstep(-4.0, 4.0, min(min(in.w.x - live.x, live.z - in.w.x), min(in.w.y - live.y, live.w - in.w.y)));   // compact mode: snow outside the live rect fades out with the occluders (outFade 0 = whole screen)
+    return float4(rgb * a + shCol * sa * (1.0 - a), a + sa * (1.0 - a)) * vis * (1.0 - outFade * (1.0 - inLive));
 }
 """

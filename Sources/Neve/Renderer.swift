@@ -4,7 +4,7 @@
 //   compile/pipeline failure (the controller then logs once and shows "Sem neve: este Mac não consegue desenhá-la").
 // `flakeShaderSource` (MSL in a Swift string; \(Palette.msl(...)) interpolations bake NeveCore Palette colours into the shader, so palette edits need no shader edit): instanced quads, one per `Instance`
 //   (kind: 0 flake, 1 clump, 2 slab/falling chunk (packed profile in kind>>8), 3 puff, 4 glint, 5 meltwater drop, 6 out-of-focus disc, 7 flake lit by a Christmas light: colour index | strength << 3 in kind >> 8, mixed toward Palette.lights). Motion-streak stretch uses frameDt (set from the SIM frame, keeps slowmo consistent);
-//   `Occ` buffer = the 17 float4 occluder rects (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
+//   `Occ` buffer = the 26 float4 (24 occluder rects + s + n) (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
 // `AppearanceWatcher` (@MainActor): mirrors the system light/dark appearance into Palette.darkTarget (fade ~0.5 s eased by Palette.tick per frame) and posts `changed` so paused (still) overlays wake.
 // Invariants: the MSL `struct Instance` is NeveCore ShaderStructs.instance, checked against NeveCore/Render.swift `Instance` by ShaderLayoutTests (field order, offsets, size); changing one without the other renders garbage silently. Y is up, units are screen-local points.
 // Flakes >= 5 pt are six-arm crystals when fragment buffer 0 = float2 (contrast, fx) has fx = 1.
@@ -83,7 +83,7 @@ let flakeShaderSource = """
 using namespace metal;
 \(ShaderStructs.instance)   // kind: 0 flake, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc
 struct VOut { float4 position [[position]]; float2 uv; float alpha; float size; float seed; float2 wpos; float kind; float rot; float aspect; float prof; float2 tail; };
-struct Occ { float4 r[16]; float4 s; };   // r[0..3] hide every flake, r[4..7] only background ones (seed >= 2); r[8..15] HARD occluders (floating panels: always hide every flake); s.x = strength of the first four, s.y = 1 when any of r[0..7] is set (0: the fragment skips the mask loop), s.z = 1 when any hard rect is set, s.w = dark blend 0...1
+\(ShaderStructs.occ)   // r[0..7] compact: hide every flake, faded by s.x; r[8..15] only background flakes (seed >= 2); r[16..23] HARD (surfaceless windows, floating panels: always hide every flake). Rects are packed from the first slot of each group. s.x = compact strength, s.y = compact count (0 while strength is 0), s.z = hard count, s.w = dark blend 0...1, n.x = background count
 vertex VOut flakeVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                         constant Instance *inst [[buffer(0)]], constant float2 &viewSize [[buffer(1)]], constant float &frameDt [[buffer(2)]]) {
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
@@ -138,8 +138,9 @@ fragment float4 flakeFragment(VOut in [[stage_in]], constant float2 &cf [[buffer
     float seed = fract(in.seed);
     float dark = occ.s.w;
     float hide = 0.0;
-    if (occ.s.y > 0.0) for (int k = 0; k < 4; k++) hide = max(hide, max(occMask(in.wpos, occ.r[k]) * occ.s.x, in.seed >= 2.0 ? occMask(in.wpos, occ.r[4 + k]) : 0.0));
-    if (occ.s.z > 0.0) for (int k = 0; k < 8; k++) hide = max(hide, occMask(in.wpos, occ.r[8 + k]));
+    for (int k = 0; k < int(occ.s.y); k++) hide = max(hide, occMask(in.wpos, occ.r[k]) * occ.s.x);
+    if (in.seed >= 2.0) for (int k = 0; k < int(occ.n.x); k++) hide = max(hide, occMask(in.wpos, occ.r[8 + k]));
+    for (int k = 0; k < int(occ.s.z); k++) hide = max(hide, occMask(in.wpos, occ.r[16 + k]));
     if (hide >= 1.0) discard_fragment();
     int kind = int(in.kind + 0.5);
     float litS = 0.0; int litI = 0;

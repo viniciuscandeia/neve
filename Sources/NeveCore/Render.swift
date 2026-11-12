@@ -57,6 +57,11 @@ public struct PrimWriter {
         guard k < 1 else { return }
         for i in start..<n { p[i].color.w *= max(k, 0) }
     }
+    /// Compact-mode soft cut: multiplies the alpha of every prim whose anchor point `a` lies outside the live rect (minX, minY, maxX, maxY) by `k` (shared with `Rig.a`'s convention: color.w only).
+    public mutating func fadeOutside(_ r: SIMD4<Float>, by k: Float) {
+        guard k < 1 else { return }
+        for i in 0..<n where p[i].a.x < r.x || p[i].a.x > r.z || p[i].a.y < r.y || p[i].a.y > r.w { p[i].color.w *= max(k, 0) }
+    }
     public mutating func ellipse(center: SIMD2<Float>, radii: SIMD2<Float>, rotation: Float = 0, color: SIMD4<Float>, soft: Float = 0) {
         var q = Prim(); q.kind = 0; q.a = center; q.b = radii; q.c = SIMD2(rotation, 0); q.color = color; q.soft = soft
         put(q)
@@ -88,7 +93,7 @@ extension SnowField {
                 let rot: Float = f.size > 4 && f.kind != .near ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
                 let far = f.kind == .background   // atmospheric perspective: smaller and dimmer, draw side only
                 p[n] = Instance(pos: lag == 0 ? f.pos : f.pos - f.vel * lag, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : (lit ? lightCode(at: f.pos) : 0), vel: calm || f.kind == .near ? .zero : f.vel); n += 1
-            }   // seed >= 2: background flake (shader occlusion by large windows)
+            }   // seed >= 2: background flake (shader occlusion by every front window, pref behindLarge)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading
             let t = max(f.delay, 0) / Tuning.puffLife

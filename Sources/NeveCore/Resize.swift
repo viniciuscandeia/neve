@@ -56,7 +56,7 @@ extension SnowField {
         giftState.confetti.removeAll(keepingCapacity: true); splats.removeAll(keepingCapacity: true)
         chain = AvaChain(); dockTrickle = DockTrickle(); sweepOwed = 0
         overhang.removeAll(); spaceSwitchIDs = []
-        groundWinKey = []; groundWinCeil = []; groundWinHidden = []
+        groundWinKey = []; groundWinCeil = []; groundWinHidden = []; groundWinTop = []
         dockTarget = nil; dockCur = nil; dockPrev = nil
         var pile = Pile(columns: numCols, inset: 0, c0: 0, x0: -1e5, x1: 2e5 + newSize.x)
         pile.maxHeight = Tuning.groundMaxHeight
