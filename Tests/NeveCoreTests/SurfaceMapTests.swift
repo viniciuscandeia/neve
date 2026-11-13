@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveCoreTests/SurfaceMapTests.swift  (the biggest suite: surfaces, visibility, carry-over, ground bank; defines the shared test helpers)
-// Shared helpers used by most test files: `makeField` (1000x800 field at origin 0, groundY 90 = Dock top, visibleTop 780), `win`, `pileUp` (direct deposits; spill lumps from the build are dropped), `snowUntilPiled`, `pileOnLoneWindow`, `fillBankLevel`, and the windows `back` (x 100...400, top y 400)
+// Shared helpers used by most test files: `makeField` (1000x800 field at origin 0, groundY 90 = Dock top, visibleTop 780), `win`, `pileUp` (direct deposits; spill lumps from the build are dropped), `snowUntilPiled`, `benchEnabled` (the one NEVE_BENCH condition for every benchmark: `@Test(.enabled(if: benchEnabled))`), `pileOnLoneWindow`, `fillBankLevel`, and the windows `back` (x 100...400, top y 400)
 //   and `front` (x 200...500, y 300...600). Covers: front/back visibility by list order, clipping to the screen, windows off screen / in the menu-bar area / without headroom / at ground level get no surface, Dock surface only over the bar, slow move carries
 //   the pile without shedding, fast move sheds (`shedFraction`), narrower resize drops only the overhang, bounds changes, vanished window drops blocks (debris count truthful at the pool limit), Space-switch stash (restore, changed width restores nothing, cap 64
 //   and 30 min expiry, no debris), headroom / ceiling rules in `Pile.deposit`, ground pile and the bank beside a bottom Dock (rises to the Dock top, never inside the bar's rounded silhouette, merged contour, shrinking Dock sheds as debris), `DockDebounce`,
@@ -12,6 +12,9 @@ import Testing
 @testable import NeveCore
 
 // Field 1000x800 at origin (0,0): ground (dock top) at y=90, menu-bar area starts at y=780.
+/// The one condition for every benchmark (`NEVE_BENCH=1 Tests/run.sh -r <name>`); without it they are skipped.
+let benchEnabled = ProcessInfo.processInfo.environment["NEVE_BENCH"] == "1"
+
 func makeField(flakes: Int = 0, seed: UInt64 = 1) -> SnowField {
     let f = SnowField(size: CGSize(width: 1000, height: 800), origin: .zero, groundY: 90, visibleTop: 780, flakeCount: flakes, seed: seed)
     f.goneGrace = 0   // most tests close windows and expect the knock-off at once; the grace has its own test (StackOrderTests)

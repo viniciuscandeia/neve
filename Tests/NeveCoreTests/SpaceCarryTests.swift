@@ -1,4 +1,4 @@
-// AGENT HEADER - Tests/NeveCoreTests/SpaceCarryTests.swift  (Space switches and carrying snow when windows move / resize, review round L3: Dock pile and what stands on it survive a switch, a window present before and after keeps its snow, a vanished window returns at another x with the same width, frost / icicles survive a round trip, move+resize carries by the shift, carry sheds what no longer fits as debris (volume conserved), eased heights survive a move, an unchanged window keeps its velocity. Related: Surfaces.stashAway.)
+// AGENT HEADER - Tests/NeveCoreTests/SpaceCarryTests.swift  (a vanished window long after the switch is a real close whose pile turns into debris (>= 90 % of its volume), Space switches and carrying snow when windows move / resize, review round L3: Dock pile and what stands on it survive a switch, a window present before and after keeps its snow, a vanished window returns at another x with the same width, frost / icicles survive a round trip, move+resize carries by the shift, carry sheds what no longer fits as debris (volume conserved), eased heights survive a move, an unchanged window keeps its velocity. Related: Surfaces.stashAway.)
 
 import CoreGraphics
 import Testing
@@ -161,11 +161,16 @@ private func switchSpace(_ f: SnowField) { f.dropPiles(); f.markStale() }
 @Test func vanishingLongAfterTheSwitchWindowIsARealClose() {
     let f = makeField()
     f.update(windows: [back], now: 0)
-    pileUp(f, id: 1, keepSpill: true)   // (the debris asserted below is the build's own spill lumps)
+    pileUp(f, id: 1)   // (clean ledger: the debris below is the close's own)
     switchSpace(f)
+    advance(f, 2)   // the switch's 1.5 s silence (knockOff makes no debris while `silent`) is over
     f.update(windows: [back, win(9, 600, 300, 100, 100)], now: 7)   // past the window: ids are forgotten
+    let vol = total(f.pile(id: 1)!), d0 = f.debris.count
+    #expect(vol > 0)
     f.update(windows: [win(9, 600, 300, 100, 100)], now: 8)
-    #expect(f.stash[1] == nil && !f.debris.isEmpty)
+    let thrown = f.debris[d0...].reduce(0) { $0 + $1.vol }
+    #expect(f.stash[1] == nil && f.pile(id: 1) == nil)
+    #expect(thrown > 0.9 * vol * Tuning.binWidth, "the pile (\(vol * Tuning.binWidth)) turned into only \(thrown) of debris")
 }
 
 @Test func overhangComesBackFromTheSpaceStash() {

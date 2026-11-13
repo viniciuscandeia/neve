@@ -184,7 +184,7 @@ private func nearField(_ i: Intensity = .media) -> SnowField {
 
 // MARK: Benchmark (NEVE_BENCH=1 Tests/run.sh -r CalmBench): stepFlakes vs writeInstances per frame, Nevasca
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["NEVE_BENCH"] == "1"))
+@Test(.enabled(if: benchEnabled))
 func calmBenchStepVsWrite() {
     let f = SnowField(size: CGSize(width: 2560, height: 1440), origin: .zero, groundY: 90, visibleTop: 1400, flakeCount: 1500, seed: 3)
     f.setIntensity(.nevasca, immediate: true)

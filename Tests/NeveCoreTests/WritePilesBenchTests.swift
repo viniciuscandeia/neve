@@ -23,8 +23,8 @@ private func bench(_ label: String, _ f: SnowField) {
     print("BENCH writePiles \(label): \(Int(best)) ns/call (\(n) slices)")
 }
 
-@Test func writePilesBench() {
-    guard getenv("NEVE_BENCH") != nil else { return }
+@Test(.enabled(if: benchEnabled))
+func writePilesBench() {
     let f = SnowField(size: CGSize(width: 3000, height: 900), origin: .zero, groundY: 90, visibleTop: 880, flakeCount: 0, seed: 1)
     let ws = [dockWin(900, 2100)] + (0..<6).map { win($0 + 1, CGFloat($0) * 20, 120 + CGFloat($0) * 110, 2900 - CGFloat($0) * 40, 90) }
     f.update(windows: ws)

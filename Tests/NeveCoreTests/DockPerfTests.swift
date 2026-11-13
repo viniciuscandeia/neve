@@ -31,8 +31,8 @@ private func cpuMs() -> Double { Double(clock()) / Double(CLOCKS_PER_SEC) * 1000
     let t0 = cpuMs()
     while f.dockCur != f.dockTarget, n < 600 { f.step(dt: 1 / 60); n += 1 }
     let ms = cpuMs() - t0
-    if getenv("NEVE_BENCH") != nil { print("BENCH dock animation: \(n) steps, \(ms / Double(max(n, 1))) ms per step") }
-    if getenv("NEVE_BENCH") != nil {   // the rebuild alone: all surfaces vs the Dock + ground only
+    if benchEnabled { print("BENCH dock animation: \(n) steps, \(ms / Double(max(n, 1))) ms per step") }
+    if benchEnabled {   // the rebuild alone: all surfaces vs the Dock + ground only
         let w = f.effective(f.lastWindows)
         for (label, only) in [("full", nil), ("dock+ground", [0, Tuning.groundID])] as [(String, Set<Int>?)] {
             let t = cpuMs()

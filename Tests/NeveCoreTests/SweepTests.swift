@@ -1,4 +1,4 @@
-// AGENT HEADER - Tests/NeveCoreTests/SweepTests.swift  (cursor sweep, Surfaces.sweep + pointer swirl)
+// AGENT HEADER - Tests/NeveCoreTests/SweepTests.swift  (cursor sweep, Surfaces.sweep + pointer swirl; `plowMicrobench` runs only with NEVE_BENCH=1; hitTest ignores covered gifts, trees, snowmen and balls, one case per kind)
 // Cursor on a window acts only from above its top edge (title bar removes no snow, does not burst a window snowman); hitTest ignores covered piles/figures and starts a window pile at its edge.
 // Window top y = 500, x 200...500, piles built by direct deposits (`pileField` full, `lightField` 3 rounds). A sweep clears only its path (the snow heaps ahead of the cursor, or to both sides for a vertical pass; nothing sprays at the cursor on a full pile),
 //   a sweep above the pile removes nothing, debris flies in the cursor direction from the run end, the dragged window's pile is not swept, falling flakes part around a still pointer and a distant pointer does nothing. "Soft dent": a swipe never pops a
@@ -270,7 +270,8 @@ private func carried(_ f: SnowField) -> Float { f.debris.reduce(0) { $0 + $1.vol
 }
 
 /// Timing only (prints µs per call); the pile is restored every call so each pass cuts a fresh pile, as the first frames of a real swipe do.
-@Test func plowMicrobench() {
+@Test(.enabled(if: benchEnabled))
+func plowMicrobench() {
     let f = lightField()
     let saved = f.surfaces[0].pile.heights
     var total = Duration.zero
@@ -407,4 +408,26 @@ private func heapPeak(_ f: SnowField) -> Float { f.pile(id: 1)!.heights.max() ??
     #expect(!f.hitTest(point: CGPoint(x: 350, y: 497)))   // below the edge (title bar): not snow
     f.update(windows: [win(2, 150, 280, 450, 300), win(1, 200, 300, 300, 200)])   // 2 is in front of 1 and covers it
     #expect(!f.hitTest(point: CGPoint(x: 350, y: 505)))
+}
+
+/// One case per kind: bare window 1 (no pile), the thing at x 350 on its top edge: grabbable, then not once window 2 covers the column.
+@Test(arguments: ["gift", "tree", "snowman", "ball"])
+func coveredObjectDoesNotCaptureTheMouse(kind: String) {
+    let f = makeField()
+    f.update(windows: [win(1, 200, 300, 300, 200)])
+    var probe = CGPoint(x: 350, y: 510)
+    switch kind {
+    case "gift": f.giftState.gifts.append(Gift(pos: SIMD2(350, 508), vel: .zero, surface: 1, spin: 0, color: 0, scale: 1))
+    case "tree":
+        var t = Tree(pos: SIMD2(350, 500), vel: .zero, scale: f.snowmanScale); t.state = .resting; t.surface = 1
+        f.tree = t
+        probe.y = 500 + CGFloat(Tuning.treeHeight * f.snowmanScale) / 3
+    case "snowman": stand(f, x: 350, on: 1); probe.y = 515
+    default:
+        var b = Snowball(id: 70, pos: SIMD2(350, 510), radius: 10, surfaceID: 1); b.state = .resting
+        f.balls.append(b)
+    }
+    #expect(f.hitTest(point: probe), "\(kind) should be grabbable uncovered")
+    f.update(windows: [win(2, 150, 280, 450, 300), win(1, 200, 300, 300, 200)])
+    #expect(!f.hitTest(point: probe), "\(kind) under a window must not capture the mouse")
 }

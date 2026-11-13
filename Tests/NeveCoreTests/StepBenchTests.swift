@@ -107,7 +107,7 @@ private func runBench(_ name: String, nevasca: Bool, sweep: Bool, pointer: Bool)
     print(out)
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["NEVE_BENCH"] == "1"))
+@Test(.enabled(if: benchEnabled))
 func stepBench() {
     for (label, nev) in [("media", false), ("nevasca", true)] {
         runBench("\(label) quiet", nevasca: nev, sweep: false, pointer: true)

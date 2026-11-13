@@ -2,6 +2,7 @@
 // Each test failed before its fix: a disabled tree stashed with a window does not return on a Space switch (B1); a frost-only window is stashed (B2); resize() drops the ghost windows (N2);
 //   the overflow debt `owedL/R` survives a window move / resize and a Space round trip (N3); slab and heavy-impact crumbs carry volume (total snow before == after settling); a burst chunk born inside a pile is buried, and a fast piece lands before the bottom-of-screen removal (not lost); `Pile.empty()` clears
 //   the pending spill and peel; a ball under a window in front is not a mouse target; debris of a tree shake / popped gift / snowball spray / broken icicle carry their window's origin z.
+//   The last section re-runs the tree stash / removeTree, owed debt carry and frost stash paths with the shipped Tuning.goneGrace (makeField uses 0).
 
 import CoreGraphics
 import Testing
@@ -153,4 +154,80 @@ private func everything(_ f: SnowField) -> Float {   // pile volume (height unit
     advance(f, 10)
     let accounted = area() - a0 + f.bankRefused + f.debris.reduce(0) { $0 + $1.vol }
     #expect(accounted >= carried * 0.98 && accounted <= carried * 1.02)
+}
+
+// MARK: with the production grace (makeField sets goneGrace = 0; these use Tuning.goneGrace, the shipped default)
+
+private func graceField() -> SnowField { let f = makeField(); f.goneGrace = Tuning.goneGrace; return f }
+
+@Test func graceTreeStashedWithAWindowIsRemovedAndNeverComesBack() {
+    let f = graceField()
+    f.update(windows: [back], now: 0)
+    f.treeEnabled = true
+    var t = Tree(pos: SIMD2(250, 400), scale: 1); t.state = .resting; t.surface = 1
+    f.tree = t
+    switchSpace(f)
+    f.update(windows: [], now: 1)
+    #expect(f.stash[1]?.tree != nil && f.tree == nil)
+    f.removeTree()
+    #expect(!f.hasTree)
+    f.update(windows: [back], now: 2)
+    f.update(windows: [back], now: 5)
+    #expect(f.tree == nil && !f.hasTree)
+}
+
+@Test func graceGhostWindowKeepsItsTreeUntilTheGraceEndsAndRemoveTreeLeavesNoneBehind() {
+    let f = graceField()
+    f.update(windows: [back], now: 0)
+    var t = Tree(pos: SIMD2(250, 400), scale: 1); t.state = .resting; t.surface = 1
+    f.tree = t
+    f.update(windows: [], now: 1)   // missing from the poll: a ghost, the tree stays on it
+    #expect(f.pendingGone[1] != nil && f.tree?.state == .resting && f.tree?.surface == 1)
+    f.removeTree()
+    f.update(windows: [], now: 1 + Tuning.goneGrace + 0.1)   // the grace ends: knocked off, nothing to drop
+    #expect(f.pendingGone.isEmpty && f.tree == nil && !f.hasTree)
+}
+
+@Test func graceOverflowDebtSurvivesMoveResizeAndSpaceTrip() {
+    func owed(_ f: SnowField) -> Float { let p = f.pile(id: 1)!; return p.owedL + p.owedR }
+    let f = graceField()
+    f.update(windows: [win(1, 100, 200, 300, 200)], now: 0)
+    for b in 10..<20 { f.surfaces[f.index[1]!].pile.heights[b] = 5 }
+    f.surfaces[f.index[1]!].pile.owedL = 40; f.surfaces[f.index[1]!].pile.owedR = 25
+    f.update(windows: [win(1, 130, 200, 300, 200)], now: 10)
+    #expect(owed(f) == 65)
+    f.update(windows: [win(1, 130, 200, 340, 220)], now: 20)
+    #expect(owed(f) == 65)
+    switchSpace(f)
+    f.update(windows: [], now: 21)
+    #expect(f.pendingGone.isEmpty && f.stash[1] != nil)   // a Space switch stashes at once: no ghost
+    f.update(windows: [win(1, 130, 200, 340, 220)], now: 22)
+    #expect(owed(f) == 65)
+}
+
+@Test func graceGhostKeepsItsOwedDebtWhenTheWindowReturnsInTime() {
+    let f = graceField()
+    f.update(windows: [win(1, 100, 200, 300, 200)], now: 0)
+    for b in 10..<20 { f.surfaces[f.index[1]!].pile.heights[b] = 5 }
+    f.surfaces[f.index[1]!].pile.owedL = 40; f.surfaces[f.index[1]!].pile.owedR = 25
+    f.update(windows: [], now: 1)
+    #expect(f.pendingGone[1] != nil)
+    f.update(windows: [win(1, 100, 200, 300, 200)], now: 1.2)
+    let p = f.pile(id: 1)!
+    #expect(f.pendingGone.isEmpty && p.owedL + p.owedR == 65)
+}
+
+@Test func graceFrostOnlyWindowIsStashedOnASpaceSwitchAndSurvivesAGhostGap() {
+    let f = graceField()
+    f.update(windows: [back], now: 0)
+    f.iceWin.append(WinIce(id: 1, acc: 0, fill: 1, frost: 1, frozen: false, w0: 300, h0: 200))
+    switchSpace(f)
+    f.update(windows: [], now: 1)
+    #expect(f.stash[1]?.ice?.frost == 1)
+    let g = graceField()
+    g.update(windows: [back], now: 0)
+    g.iceWin.append(WinIce(id: 1, acc: 0, fill: 1, frost: 1, frozen: false, w0: 300, h0: 200))
+    g.update(windows: [], now: 1)   // ghost: frost stays with it
+    g.update(windows: [back], now: 1.2)
+    #expect(g.iceWin.first { $0.id == 1 }?.frost == 1)
 }
