@@ -3,7 +3,7 @@
 # Role: build Neve.app by hand (no Xcode): `swift build -c release`, assemble the bundle, write Info.plist, codesign. Output build/Neve.app (or $NEVE_APP_DIR/Neve.app).
 # Env knobs: NEVE_DEV=<name> (or `--dev <name>`) -> dev bundle build/Neve-<name>.app, bundle id io.github.viniciuscandeia.neve.dev, executable Neve-dev-<name>,
 #   Info.plist key NeveInstance=<name> (the app reads it as its instance name, see Sources/Neve/Prefs.swift / main.swift). NEVE_VERSION (CFBundleShortVersionString, default 1.0),
-#   NEVE_BUILD (CFBundleVersion, default = number of commits in HEAD), NEVE_UNIVERSAL=1 (arm64 + x86_64 via two builds + lipo; --arch needs Xcode), NEVE_SIGN (identity), NEVE_APP_DIR.
+#   NEVE_BUILD (CFBundleVersion, default = number of commits in HEAD), NEVE_UNIVERSAL=1 (explicit arm64 + x86_64 builds, lipo of .build/<arch>-apple-macosx/release/Neve; --arch needs Xcode), NEVE_SIGN (identity), NEVE_APP_DIR.
 # Bundle contents: Resources/Neve.icns (committed, see make-icon.sh); the SwiftPM resource bundle Neve_NeveCore.bundle (Localizable.strings pt-BR/en, found by
 #   Sources/NeveCore/Localization.swift in Contents/Resources); en/pt-BR InfoPlist.strings; LSUIElement=true (menu-bar agent, no Dock icon); NSAudioCaptureUsageDescription (music tap).
 # Signing: uses the "Neve Local Signing" identity if present (scripts/make-cert.sh) so Accessibility/audio grants survive rebuilds; else ad-hoc with a warning (grants are lost every build).
@@ -11,12 +11,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Dev bundle: NEVE_DEV=<name> (or --dev <name>) -> build/Neve-<name>.app, own bundle id, executable Neve-dev-<name>.
-[ "${1:-}" = "--dev" ] && NEVE_DEV=$2
+if [ "${1:-}" = "--dev" ]; then NEVE_DEV=${2:-}; [ -n "$NEVE_DEV" ] || { echo "make-app.sh: --dev needs a name (scripts/make-app.sh --dev <name>)" >&2; exit 2; }; fi
 # NEVE_VERSION sets the bundle version; NEVE_UNIVERSAL=1 builds arm64+x86_64 (two builds + lipo; --arch needs Xcode); NEVE_SIGN overrides the identity. NEVE_APP_DIR puts Neve.app elsewhere (release builds go to dist/, never over the running build/Neve.app).
 VERSION=${NEVE_VERSION:-1.0}
 BUILD=${NEVE_BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}   # CFBundleVersion: an incrementing build number
-swift build -c release
-[ -z "${NEVE_UNIVERSAL:-}" ] || swift build -c release --triple x86_64-apple-macosx14.0
+# Universal: both targets built explicitly (never "native + x86_64", which breaks on Intel Macs), lipo'd from .build/<arch>-apple-macosx/release.
+if [ -n "${NEVE_UNIVERSAL:-}" ]; then
+  for A in arm64 x86_64; do swift build -c release --triple $A-apple-macosx14.0; done
+  BINDIR=.build/arm64-apple-macosx/release
+else
+  swift build -c release; BINDIR=$(swift build -c release --show-bin-path)
+fi
 BID=io.github.viniciuscandeia.neve; APP=${NEVE_APP_DIR:-build}/Neve.app; EXE=Neve; EXTRA=""
 if [ -n "${NEVE_DEV:-}" ]; then
   BID=$BID.dev; APP="build/Neve-$NEVE_DEV.app"; EXE="Neve-dev-$NEVE_DEV"
@@ -26,14 +31,14 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Neve.icns "$APP/Contents/Resources/Neve.icns"
 # Localized strings (SwiftPM resource bundle; found in Contents/Resources by NeveCore/Localization.swift) + the Info.plist strings.
-cp -R "$(swift build -c release --show-bin-path)/Neve_NeveCore.bundle" "$APP/Contents/Resources/"
+cp -R "$BINDIR/Neve_NeveCore.bundle" "$APP/Contents/Resources/"
 for L in en pt-BR; do mkdir -p "$APP/Contents/Resources/$L.lproj"; done
 printf '%s\n' '"NSAudioCaptureUsageDescription" = "Neve uses the audio playing on your Mac only to make the snow dance to the music. Nothing is recorded or sent.";' > "$APP/Contents/Resources/en.lproj/InfoPlist.strings"
 printf '%s\n' '"NSAudioCaptureUsageDescription" = "A Neve usa o áudio que está tocando no Mac só para fazer a neve dançar no ritmo da música. Nada é gravado ou enviado.";' > "$APP/Contents/Resources/pt-BR.lproj/InfoPlist.strings"
 if [ -n "${NEVE_UNIVERSAL:-}" ]; then
-  lipo -create "$(swift build -c release --show-bin-path)/Neve" .build/x86_64-apple-macosx/release/Neve -output "$APP/Contents/MacOS/$EXE"
+  lipo -create .build/arm64-apple-macosx/release/Neve .build/x86_64-apple-macosx/release/Neve -output "$APP/Contents/MacOS/$EXE"
 else
-  cp "$(swift build -c release --show-bin-path)/Neve" "$APP/Contents/MacOS/$EXE"
+  cp "$BINDIR/Neve" "$APP/Contents/MacOS/$EXE"
 fi
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

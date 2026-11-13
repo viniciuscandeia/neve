@@ -1,12 +1,14 @@
 #!/bin/bash
 # AGENT HEADER - scripts/release.sh
-# Role: produce a distributable dist/Neve-VERSION.zip (universal arm64+x86_64, ad-hoc signed with hardened runtime). Usage: scripts/release.sh VERSION.
+# Role: produce a distributable dist/Neve-VERSION.zip (universal arm64+x86_64, ad-hoc signed with hardened runtime). Usage: scripts/release.sh VERSION (numeric, e.g. 1.2.3; refuses a dirty git tree).
 # Unsets NEVE_DEV/NEVE_INSTANCE/NEVE_SCENE, exports NEVE_VERSION/NEVE_SIGN=-/NEVE_UNIVERSAL=1/NEVE_APP_DIR=dist and calls scripts/make-app.sh, then validates the artifact
 # (executable, bundle id, version strings, numeric CFBundleVersion, required Info.plist keys, icns, both lipo slices) before codesign + ditto + shasum.
 # Builds into dist/ so the locally signed build/Neve.app (and its Accessibility grant) is never touched. Keep the validated plist keys in sync with make-app.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 V=${1:?usage: release.sh VERSION}
+case $V in ""|*[!0-9.]*|.*|*.|*..*) echo "release.sh: version must be numeric like 1.2.3, got '$V'" >&2; exit 2;; esac
+[ -z "$(git status --porcelain)" ] || { echo "release.sh: working tree is dirty; commit or stash first" >&2; exit 2; }
 # A dev bundle (NEVE_DEV) would be built into build/, leaving a stale dist/Neve.app to be signed and zipped.
 unset NEVE_DEV NEVE_INSTANCE NEVE_SCENE
 export NEVE_VERSION=$V NEVE_SIGN=- NEVE_UNIVERSAL=1 NEVE_APP_DIR=dist

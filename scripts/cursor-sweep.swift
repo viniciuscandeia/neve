@@ -2,7 +2,7 @@
 // Role: standalone tool (compiled by scripts/perf.sh with swiftc -O into build/cursor-sweep) that drives the REAL cursor via CGWarpMouseCursorPosition for a perf scenario.
 // Usage: cursor-sweep <secs> <x0,x1,y> [<x0,x1,y> ...] in CG coordinates (top-left origin, pt). 4 s per segment, sinusoidal sweep with peak speed ~600 pt/s regardless of length,
 // 8 ms steps, y wobbles 4..8 pt above the segment so the cursor cuts through the snow resting on that edge (exercises the pointer push / CursorThrow paths).
-// Restores the original cursor position on normal exit; SIGTERM skips the restore (perf.sh knows). Moves the user's real pointer: only run under the screen lock.
+// Restores the original cursor position on normal exit and on SIGTERM/SIGINT. Moves the user's real pointer: only run under the screen lock.
 
 import CoreGraphics
 import Foundation
@@ -16,7 +16,17 @@ let segs: [(Double, Double, Double)] = args.dropFirst().compactMap {
     return v.count == 3 ? (v[0], v[1], v[2]) : nil
 }
 let start = CGEvent(source: nil)?.location ?? .zero
+// SIGTERM/SIGINT: put the cursor back (the sweep loop runs off the main queue so the handler can fire).
+var sources: [DispatchSourceSignal] = []
+for sig in [SIGTERM, SIGINT] {
+    signal(sig, SIG_IGN)
+    let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+    src.setEventHandler { CGWarpMouseCursorPosition(start); exit(0) }
+    src.resume()
+    sources.append(src)
+}
 let t0 = Date()
+DispatchQueue.global().async {
 while true {
     let t = Date().timeIntervalSince(t0)
     if t >= secs { break }
@@ -28,3 +38,6 @@ while true {
     usleep(8000)
 }
 CGWarpMouseCursorPosition(start)
+exit(0)
+}
+dispatchMain()

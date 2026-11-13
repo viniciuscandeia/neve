@@ -10,7 +10,7 @@
 #   ([screen ...] lines: ticks/s, step, flakesim, gpu, hitch; see Sources/Neve/Perf.swift). Last output line: SUMMARY key=value ...
 # --fake (with --sweep): no real cursor; passes NEVE_FAKE_POINTER=sweep (or $SWEEP_SEGS) so Sources/Neve/FakePointer.swift walks the same path in-app (no idle gate needed for the cursor, still needs it for the screen).
 # Env passed to the app: NEVE_PERF=1, NEVE_INSTANCE, NEVE_PERF_LOG, NEVE_SCENARIO=heavy, NEVE_REDUCE_MOTION=1 (still mode).
-# Side effects: holds the screen lock for the whole run, caffeinate, kills ONLY its own pids (NEVE_PID, sweep, dragger) - NEVER kill Neve by name (the user's app may run; it only warns).
+# Side effects: INT/TERM trap restores hidden apps/windows and prints the manual restore command; the "another Neve is running" warning matches the exact bundle id via lsappinfo (dev instances end in .dev, never match). Holds the screen lock for the whole run, caffeinate, kills ONLY its own pids (NEVE_PID, sweep, dragger) - NEVER kill Neve by name (the user's app may run; it only warns).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FAKE=0; MODE=media; SECS=60; DRAG=0; SWEEP=0; POINTER=""; NOFIG=0; KEEP=0; RUNS=3; BIN=""
@@ -42,7 +42,7 @@ export NEVE_LOCK_PID=$$; LOCKED=0
 cleanup() {
   set +e
   [ -n "$DRAG_PID" ] && kill "$DRAG_PID" 2>/dev/null
-  [ -n "$SWEEP_PID" ] && kill "$SWEEP_PID" 2>/dev/null   # SIGTERM skips its restore: the cursor stays where it was
+  [ -n "$SWEEP_PID" ] && kill "$SWEEP_PID" 2>/dev/null   # SIGTERM: it restores the cursor itself
   [ -n "$NEVE_PID" ] && kill "$NEVE_PID" 2>/dev/null   # only our own pid; never the user's Neve
   [ -n "$CAFF_PID" ] && kill "$CAFF_PID" 2>/dev/null
   for w in ${WINS[@]+"${WINS[@]}"}; do osascript -e "tell application \"Finder\" to close (window id $w)" 2>/dev/null; done
@@ -53,6 +53,14 @@ cleanup() {
   rm -rf "$TMP"
 }
 trap cleanup EXIT
+# Ctrl-C / kill: the EXIT trap (cleanup) restores the hidden apps and Finder windows; also print the manual restore command in case that is cut short.
+abort() {
+  trap - INT TERM
+  echo "perf.sh: aborted; restoring hidden apps / Finder windows. If any stay hidden, run:" >&2
+  echo "  osascript -e 'tell application \"System Events\" to set visible of (every application process whose visible is false and background only is false) to true'" >&2
+  exit 130
+}
+trap abort INT TERM
 
 # The screen is shared with other agents: hold the lock for the whole run.
 neve_lock_acquire "perf:$NAME" "${NEVE_LOCK_TIMEOUT:-1800}"; LOCKED=1
@@ -133,8 +141,8 @@ ENVV=(NEVE_PERF=1 NEVE_INSTANCE="$NAME")
 [ "$MODE" = still ] && ENVV+=(NEVE_REDUCE_MOTION=1)   # still mode = Reduce Motion + Neve parada
 caffeinate -dimsu -t $(( RUNS * (SECS + 25) + 60 )) & CAFF_PID=$!; disown
 
-# Any installed / release Neve (executable "Neve"); our dev bundle runs as Neve-dev-<name>, and a --bin build has no bundle path.
-if pgrep -f "/Contents/MacOS/Neve( |$)" >/dev/null; then
+# The user's installed / release Neve: exact bundle id (dev instances are io.github.viniciuscandeia.neve.dev, so they never match).
+if lsappinfo list | grep -q 'bundleID="io.github.viniciuscandeia.neve"'; then
   echo "WARNING: another Neve.app is running; WindowServer numbers include it. Not killed."
 fi
 echo "mode=$MODE secs=$SECS runs=$RUNS drag=$DRAG sweep=$SWEEP pointer=${POINTER:-default} nofig=$NOFIG bin=$BIN"

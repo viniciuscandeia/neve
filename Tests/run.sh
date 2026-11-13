@@ -6,10 +6,12 @@
 #   -r = release build with -enable-testing (~3 s run vs ~95 s debug, ~2 min compile; @testable import works); --sanitize builds in .build-thread/.build-address and injects the CLT
 #   clang sanitizer runtime via DYLD_INSERT_LIBRARIES (runner not instrumented); --verbose prints per-test timings. Exits 2 when the build/runner/framework is missing.
 # After the tests it runs `NEVE_SHADER_CHECK=1 <build>/Neve` (compiles all Metal shaders/pipelines, no UI) and fails on any error.
-# Needs /Library/Developer/CommandLineTools/.../Frameworks/Testing.framework (same path as Package.swift's `clt`). Tests that touch the real screen must be idle-gated.
+# Needs Testing.framework: the Command Line Tools one (/Library/Developer/CommandLineTools/.../Frameworks, same path as Package.swift's `clt`, the default) or, if absent, the selected Xcode's Platforms/MacOSX.platform/Developer/Library/Frameworks (unverified on an Xcode-only machine). Tests that touch the real screen must be idle-gated.
 set -e
 cd "$(dirname "$0")/.."
 F=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
+# Only Xcode (no CLT Testing.framework): use the one inside the selected Xcode (unverified on such a machine).
+[ -d "$F/Testing.framework" ] || { X=$(xcode-select -p 2>/dev/null)/Platforms/MacOSX.platform/Developer/Library/Frameworks; [ -d "$X/Testing.framework" ] && F=$X; }
 CFG=debug; EXTRA=
 B=.build; SAN=
 while [ $# -gt 0 ]; do
@@ -19,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-[ -d "$F/Testing.framework" ] || { echo "run.sh: $F/Testing.framework not found: install/update the Command Line Tools (xcode-select --install)" >&2; exit 2; }
+[ -d "$F/Testing.framework" ] || { echo "run.sh: $F/Testing.framework not found: install/update the Command Line Tools (xcode-select --install) or select a full Xcode (xcode-select -s)" >&2; exit 2; }
 # shellcheck disable=SC2086
 swift build --build-tests -c $CFG $EXTRA ${SAN:+--sanitize=$SAN --scratch-path .build-$SAN} >&2 || { echo "run.sh: swift build failed (errors above)" >&2; exit 2; }
 [ -n "$SAN" ] && B=.build-$SAN
