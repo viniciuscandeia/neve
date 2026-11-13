@@ -1,5 +1,5 @@
 // AGENT HEADER - Tests/NeveRenderTests/OffscreenRenderTests.swift  (permanent: NeveRender draws a deterministic scenario offscreen, non-blank and repeatable)
-// Role: every RenderVariant renders to a non-empty frame, and two renders of two identical worlds give identical bytes. Equivalence with the old path lives in LegacyEquivalenceTests (bridge).
+// Role: every RenderVariant renders to a non-empty frame, and two renders of two identical worlds give identical bytes. (The byte-equivalence bridge to the pre-extraction path was verified at 0 differing bytes and removed after phase 1 landed.)
 
 import NeveCore
 import NeveRender

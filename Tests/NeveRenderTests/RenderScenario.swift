@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveRenderTests/RenderScenario.swift  (deterministic SnowField scenario + input variants for the offscreen render tests)
 // Role: `renderScenario()` builds the same world every call (1000x800 screen, seed 7, Dock + three windows, Nevasca, piles >= 80 %, two snowmen, snowing flakes, Christmas tree + lights, December date, 480 fixed 1/60 s steps, explicit `now` for window updates: no clock, no I/O);
 //   `renderVariants` lists the overlay-level inputs the frame is drawn with (plain, contrast + reduce motion + economy + drag shift, compact soft cut with occluders, shrunk live strip at 2x scale). Each render consumes its own field (writePiles eases `shown`), so call `renderScenario()` per render.
-// Used by: LegacyEquivalenceTests (bridge) and NeveRenderTests.
+// Used by: NeveRenderTests.
 
 import CoreGraphics
 import Foundation
@@ -25,7 +25,7 @@ func renderScenario() -> SnowField {
     return f
 }
 
-/// Overlay-level inputs of one frame (the names are NeveRender's `FrameInputs`; the bridge maps them onto LegacyInputs).
+/// Overlay-level inputs of one frame (the names are NeveRender's `FrameInputs`).
 struct RenderVariant {
     var name: String
     var contrast: Float = 0

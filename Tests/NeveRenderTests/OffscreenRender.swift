@@ -1,6 +1,6 @@
 // AGENT HEADER - Tests/NeveRenderTests/OffscreenRender.swift  (renders one NeveRender frame into an offscreen texture and returns its bytes)
 // Role: `offscreenRender(field, variant)` = the headless path the lab will use: Gpu -> FrameData(inputs from a RenderVariant) -> prepare -> encode into a new bgra8 shared texture -> premultiplied BGRA bytes, row-major.
-// Used by: NeveRenderTests (permanent) and LegacyEquivalenceTests (bridge).
+// Used by: NeveRenderTests.
 
 import Foundation
 import Metal
