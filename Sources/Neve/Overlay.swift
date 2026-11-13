@@ -307,6 +307,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         link?.isPaused = occluded || !window.isVisible || suspended
     }
 
+    /// Global Option-press hook (WindowPoller's flagsChanged monitor): in still mode the paused link must restart so the panel becomes interactive. Update() keeps the poll-time check as the no-Accessibility fallback.
+    func optionDown() { if stillPaused { wake() } }
+
     private var pileSeen = -1
     private var lastWindows: [WindowInfo] = []
     private var confirmedDrag: Int?   // the window being dragged by the mouse (main confirms it); only that one is extrapolated

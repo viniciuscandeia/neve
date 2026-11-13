@@ -1,6 +1,6 @@
 // AGENT HEADER - Sources/Neve/WindowPoller.swift  (window-read coordination, MainActor; split out of AppController)
 // Role: everything between "something may have changed" and `Overlay.update(...)`: the PollScheduler (`sched`: coalesced, <=30/s, bursts bounded) and its one-shot timer (arm / runScheduled),
-//   requestPoll / transitionPoll / settlePoll (the entry points AX events, notifications and timers call), the global mouse monitor (down / up / drag; installed only while polling),
+//   requestPoll / transitionPoll / settlePoll (the entry points AX events, notifications and timers call), the global mouse monitor (down / up / drag) and Option flagsChanged monitor (-> Overlay.optionDown; both installed only while polling, in syncMouseMonitor),
 //   pollWindows (CGWindowList read -> DragTracker + MissionControlGate -> offscreen filter -> Dock rect (WindowInfo number 0) -> Overlay.update), the Mission Control gate (setMissionControl,
 //   mcProbeTick = the 0.3 s on-screen-ID probe; the probe TIMER stays in AppController.scheduleSafety) and scene mode (NEVE_SCENE demo / fight: SceneStage windows, 60 Hz timer).
 // Host: `unowned host: AppController` supplies overlays, polling, idle, behind, dock, settleUntil and the callbacks (screensChanged, refreshDock, scheduleTimers, updateStatus, endQuietStretch).
@@ -22,7 +22,7 @@ final class WindowPoller {
     private var fullscreenIdle: Bool { host.fullscreenIdle }
     private var watcher: WindowWatcher { host.watcher }
     private var timerGap: Double { host.timerGap }
-    private var mouseDown = false, mouseMonitor: Any?
+    private var mouseDown = false, mouseMonitor: Any?, optionMonitor: Any?
     private(set) var missionControl = false
     private var mcTimer: Timer?, mcGate = MissionControlGate(), mcMonitor: Any?, mcIDs = WindowIDWatch(), mcStrong = false
     private func displayID(_ s: NSScreen) -> Int { host.displayID(s) }
@@ -34,9 +34,14 @@ final class WindowPoller {
             mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] e in
                 MainActor.assumeIsolated { self?.mouseEvent(e.type) }
             }
+            optionMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] e in   // still mode: wake at once on Option (needs Accessibility; Overlay.update is the fallback)
+                guard e.modifierFlags.contains(.option) else { return }
+                MainActor.assumeIsolated { self?.overlays.forEach { $0.optionDown() } }
+            }
         } else if !polling, let m = mouseMonitor {
             NSEvent.removeMonitor(m)
             mouseMonitor = nil
+            if let o = optionMonitor { NSEvent.removeMonitor(o); optionMonitor = nil }
             mouseDown = false
         }
     }
