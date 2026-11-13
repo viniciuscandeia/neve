@@ -24,5 +24,9 @@ let package = Package(
             name: "NeveCoreTests", dependencies: ["NeveCore"],
             swiftSettings: hasCLT ? [.unsafeFlags(["-F", clt])] : [],
             linkerSettings: hasCLT ? [.unsafeFlags(["-F", clt, "-framework", "Testing", "-Xlinker", "-rpath", "-Xlinker", clt, "-Xlinker", "-rpath", "-Xlinker", clt + "/../usr/lib"])] : []),
+        .testTarget(
+            name: "NeveRenderTests", dependencies: ["NeveCore"],
+            swiftSettings: hasCLT ? [.unsafeFlags(["-F", clt])] : [],
+            linkerSettings: hasCLT ? [.unsafeFlags(["-F", clt, "-framework", "Testing", "-Xlinker", "-rpath", "-Xlinker", clt, "-Xlinker", "-rpath", "-Xlinker", clt + "/../usr/lib"])] : []),
     ]
 )
