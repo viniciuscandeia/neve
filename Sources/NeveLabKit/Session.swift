@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveLabKit/Session.swift
-// Role: one Neve Lab session = a LabWorld + its directory + a Unix-socket server. `Session.handle(request)` is the whole protocol (pure, testable); `LabServer` just frames lines to it.
+// Role: one Neve Lab session = a SessionWorld + its directory + a Unix-socket server. `Session.handle(request)` is the whole protocol (pure, testable); `LabServer` just frames lines to it.
 // Protocol (one JSON object per line each way): requests {"cmd":"ping"|"state"|"stop"} | {"cmd":"send","action":{...}} | {"cmd":"capture","dir":"optional"}; responses {"ok":true,"result":{...}} or {"ok":false,"error":"msg"}.
 // Ordering: every request executes under one lock in arrival order; an invalid request (bad cmd/JSON, or world.apply throwing) returns an error and leaves the world and history untouched.
 // Files in the session dir: config.json (effective config + build identity), history.jsonl ({"seq":n,"action":{...}} per ACCEPTED send, appended after apply succeeds), lab.log, captures/. capture and state are not recorded.
@@ -8,14 +8,14 @@ import Foundation
 import Darwin
 
 public final class Session: @unchecked Sendable {
-    public let config: LabConfig
-    let world: LabWorld
+    public let config: SessionConfig
+    let world: SessionWorld
     let dir: URL
     private let lock = NSLock()
     private var seq = 0
     public private(set) var stopRequested = false
 
-    public init(config: LabConfig, world: LabWorld) throws {
+    public init(config: SessionConfig, world: SessionWorld) throws {
         self.config = config; self.world = world; dir = URL(fileURLWithPath: config.dir)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("captures"), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
@@ -48,7 +48,7 @@ public final class Session: @unchecked Sendable {
             case "state": return Session.ok(world.state())
             case "stop": stopRequested = true; log("stop"); return Session.ok()
             case "send":
-                guard let action = req["action"], case .object = action else { throw LabError.invalid("send needs an object \"action\"") }
+                guard let action = req["action"], case .object = action else { throw SessionError.invalid("send needs an object \"action\"") }
                 let r = try world.apply(action)
                 try appendHistory(action)
                 return Session.ok(r)
@@ -59,7 +59,7 @@ public final class Session: @unchecked Sendable {
                 var r = try world.capture(dir: d, name: name)
                 if case .object(var o) = r { o["config"] = (try? JSON.parse(JSONEncoder().encode(config))) ?? .null; o["seq"] = .number(Double(seq)); r = .object(o) }
                 return Session.ok(r)
-            default: throw LabError.invalid("unknown cmd")
+            default: throw SessionError.invalid("unknown cmd")
             }
         } catch {
             log("error: \(error)")
@@ -71,9 +71,9 @@ public final class Session: @unchecked Sendable {
     public func replay(historyOf source: URL) throws {
         let text = try String(contentsOf: source.appendingPathComponent("history.jsonl"), encoding: .utf8)
         for l in text.split(separator: "\n") {
-            guard let a = try JSON.parse(String(l))["action"] else { throw LabError.invalid("bad history line") }
+            guard let a = try JSON.parse(String(l))["action"] else { throw SessionError.invalid("bad history line") }
             let r = handle(.object(["cmd": .string("send"), "action": a]))
-            if r["ok"] != .bool(true) { throw LabError.invalid("replay failed: \(r["error"]?.string ?? "?")") }
+            if r["ok"] != .bool(true) { throw SessionError.invalid("replay failed: \(r["error"]?.string ?? "?")") }
         }
     }
 }
@@ -89,11 +89,11 @@ public final class LabServer: @unchecked Sendable {
     public func start() throws {
         signal(SIGPIPE, SIG_IGN)
         try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        if let fd = try? LabClient.connect(socket: path) { close(fd); throw LabError.invalid("socket already in use: \(path)") }
+        if let fd = try? LabClient.connect(socket: path) { close(fd); throw SessionError.invalid("socket already in use: \(path)") }
         unlink(path)   // stale socket from a crashed session
         let fd = try makeSocket(); var a = try sockAddr(path)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-        guard r == 0, listen(fd, 16) == 0 else { let e = String(cString: strerror(errno)); close(fd); throw LabError.io("bind/listen \(path): \(e)") }
+        guard r == 0, listen(fd, 16) == 0 else { let e = String(cString: strerror(errno)); close(fd); throw SessionError.io("bind/listen \(path): \(e)") }
         listenFD = fd
         session.log("listening \(path)")
         Thread.detachNewThread { [self] in

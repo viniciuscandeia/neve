@@ -230,6 +230,31 @@ NEVE_SNOWMAN_FAST=1 .build/release/Neve
 
 `NEVE_DEMO_ICE=1` faz as janelas congelarem em ~10 s (geada na borda) e as estalactites embaixo crescerem 120 vezes mais rápido; `NEVE_DEMO_AVALANCHE=<segundos>` enche as pilhas e dispara uma avalanche a cada tanto tempo; `NEVE_DEMO_SLEIGH=1` faz o trenó do Papai Noel cruzar a tela logo depois de abrir (e de novo a cada ~45 s), solta presentes sobre os montes e funciona em qualquer data (sem isso: 24–25/12 a cada ~10 min, dezembro a cada ~45 min, resto do ano a cada ~3 h). Presentes: varrer com o cursor estoura em confete; ⌥-clique abre. Com ⌥ pressionado e o cursor parado por 0,8 s perto de um boneco (e fora da neve), ele joga uma bola de neve no cursor (até 3 por toque, a cada 2 s).
 
+### Neve Lab (desktops simulados para agentes)
+
+`NeveLab` é um executável separado: cada sessão é um processo com mundo, cursor, preferências e Metal próprios, sem tocar no cursor nem nas janelas reais. Tela de 1280 × 800 pt (escala 1×, aparência clara, sem áudio); coordenadas dos comandos seguem a imagem (origem no canto superior esquerdo). O tempo só anda dentro dos comandos, em passos fixos de 1/60 s.
+
+```sh
+swift build -c release
+L=.build/release/NeveLab
+$L create --id a --seed 7 [--size 1280x800] [--dir build/lab/a]   # inicia a sessão (processo em segundo plano, socket local)
+$L send --id a '{"type":"create_window","id":1,"title":"Notas","x":200,"y":300,"w":500,"h":300}'
+$L state --id a                                                    # JSON: passo, janelas, cursor, bolas, árvore, neve, preferências, digest
+$L capture --id a                                                  # <dir>/captures/capture-NNNN.png + .json (passo, configuração, build, estado); não avança a física
+$L replay --from build/lab/a --id b                                # sessão nova que refaz o histórico de a (mesmo estado e digest)
+$L stop --id a                                                     # encerra só essa sessão; os arquivos ficam
+```
+
+Cada ação aceita vai para `<dir>/history.jsonl`; ação inválida devolve `{"ok":false,"error":...}` (saída 1) e não altera o mundo. Um timeout nunca reenvia a ação: confira com `state`. Exemplos de ações:
+
+```json
+{"type":"move_window","id":1,"x":600,"y":250,"duration":0.5,"drag":true}
+{"type":"fill_pile","surface":"ground","height":12}
+{"type":"cursor_move","x":400,"y":795,"duration":0.3}
+```
+
+Para pegar neve do chão: `option_down`, `cursor_move` até o monte, `mouse_down` (`"outcome":"scoop"`), arraste com `cursor_move` e solte com `mouse_up`. Outras ações: `resize_window`, `minimize_window`, `restore_window`, `close_window`, `raise_window`, `lower_window`, `advance` (`steps` ou `seconds`), `drop_tree`, `set_pref`, `set_intensity`.
+
 ### Build e release
 
 - **Variáveis do `scripts/make-app.sh`:** `NEVE_VERSION` (versão do bundle, padrão 1.0), `NEVE_UNIVERSAL=1` (arm64 + x86_64, dois builds e `lipo`), `NEVE_SIGN` (identidade de assinatura; `-` = ad-hoc) e `NEVE_APP_DIR` (onde gerar `Neve.app`, padrão `build`).

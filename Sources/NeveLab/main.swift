@@ -3,13 +3,13 @@
 // `create` (same flags) spawns `serve` detached (log: <dir>/serve.out) and waits for the socket; `send --id X '<action json>'`, `state --id X`, `capture --id X [--dir D]`, `stop --id X`,
 // `replay --from DIR --id NEW` (= create with --replay-from, seed/size taken from the source config) talk to a session over its socket. Common: `--timeout SECS` (default 30; a timeout is never retried: check `state`).
 // Output: the response JSON on stdout; exit 0 if ok, 1 on {"ok":false}, 2 on usage/connection errors. Session dir default build/lab/<id>/ (relative to cwd).
-// World: currently `StubWorld` (NeveLabKit/LabWorld.swift); the real world replaces `makeWorld` below.
+// World: `LabAdapter` (LabAdapter.swift: NeveLabCore world + NeveRender capture) behind NeveLabKit's `SessionWorld`.
 import Foundation
 import NeveLabKit
 
 func die(_ m: String, _ code: Int32 = 2) -> Never { FileHandle.standardError.write(Data((m + "\n").utf8)); exit(code) }
 
-func makeWorld(_ c: LabConfig) -> LabWorld { StubWorld(config: c) }
+func makeWorld(_ c: SessionConfig) -> SessionWorld { LabAdapter(config: c) }
 
 var args = Array(CommandLine.arguments.dropFirst())
 guard !args.isEmpty else { die("usage: NeveLab serve|create|send|state|capture|replay|stop ...") }
@@ -20,12 +20,12 @@ while !args.isEmpty {
     if a.hasPrefix("--") { guard !args.isEmpty else { die("missing value for \(a)") }; opt[String(a.dropFirst(2))] = args.removeFirst() } else { pos.append(a) }
 }
 
-@MainActor func sessionConfig(id: String) throws -> LabConfig {
+@MainActor func sessionConfig(id: String) throws -> SessionConfig {
     let size = (opt["size"] ?? "1280x800").split(separator: "x").compactMap { Int($0) }
     guard size.count == 2, size.allSatisfy({ $0 > 0 }) else { die("bad --size (WxH)") }
     guard let seed = UInt64(opt["seed"] ?? "1") else { die("bad --seed") }
     let dir = URL(fileURLWithPath: opt["dir"] ?? "build/lab/\(id)").standardizedFileURL.path
-    return LabConfig(id: id, seed: seed, width: size[0], height: size[1], dir: dir, socket: try LabPaths.socket(id: id), build: BuildIdentity.current(), replayedFrom: opt["replay-from"].map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    return SessionConfig(id: id, seed: seed, width: size[0], height: size[1], dir: dir, socket: try LabPaths.socket(id: id), build: BuildIdentity.current(), replayedFrom: opt["replay-from"].map { URL(fileURLWithPath: $0).standardizedFileURL.path })
 }
 
 @MainActor func send(_ req: JSON) -> Never {

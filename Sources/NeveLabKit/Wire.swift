@@ -7,20 +7,20 @@ import Darwin
 
 public enum LabPaths {
     public static func validate(id: String) throws {
-        guard !id.isEmpty, id.count <= 32, id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else { throw LabError.invalid("bad id (use A-Za-z0-9_-, max 32)") }
+        guard !id.isEmpty, id.count <= 32, id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else { throw SessionError.invalid("bad id (use A-Za-z0-9_-, max 32)") }
     }
     public static func socket(id: String) throws -> String {
         try validate(id: id)
         let t = (ProcessInfo.processInfo.environment["TMPDIR"] ?? "/tmp/").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let p = "/\(t)/neve-lab/\(id).sock"
-        guard p.utf8.count < 104 else { throw LabError.invalid("socket path too long (set a shorter TMPDIR): \(p)") }
+        guard p.utf8.count < 104 else { throw SessionError.invalid("socket path too long (set a shorter TMPDIR): \(p)") }
         return p
     }
 }
 
 func sockAddr(_ path: String) throws -> sockaddr_un {
     var a = sockaddr_un(); a.sun_family = sa_family_t(AF_UNIX)
-    guard path.utf8.count < MemoryLayout.size(ofValue: a.sun_path) else { throw LabError.invalid("socket path too long") }
+    guard path.utf8.count < MemoryLayout.size(ofValue: a.sun_path) else { throw SessionError.invalid("socket path too long") }
     withUnsafeMutableBytes(of: &a.sun_path) { b in for (i, c) in path.utf8.enumerated() { b[i] = c }; b[path.utf8.count] = 0 }
     a.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
     return a
@@ -28,7 +28,7 @@ func sockAddr(_ path: String) throws -> sockaddr_un {
 
 func makeSocket() throws -> Int32 {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard fd >= 0 else { throw LabError.io("socket: \(String(cString: strerror(errno)))") }
+    guard fd >= 0 else { throw SessionError.io("socket: \(String(cString: strerror(errno)))") }
     var one: Int32 = 1; setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
     return fd
 }
@@ -40,14 +40,14 @@ public final class LineReader {
     public func readLine() throws -> Data? {
         while true {
             if let i = buf.firstIndex(of: 10) { let l = buf[buf.startIndex..<i]; buf = Data(buf[(i + 1)...]); return Data(l) }
-            guard buf.count < Self.cap else { throw LabError.invalid("line too long") }
+            guard buf.count < Self.cap else { throw SessionError.invalid("line too long") }
             var tmp = [UInt8](repeating: 0, count: 65536)
             let n = read(fd, &tmp, tmp.count)
             if n > 0 { buf.append(contentsOf: tmp[0..<n]) }
             else if n == 0 { if buf.isEmpty { return nil }; let l = buf; buf = Data(); return l }
             else if errno == EINTR { continue }
-            else if errno == EAGAIN || errno == EWOULDBLOCK { throw LabError.timeout }
-            else { throw LabError.io("read: \(String(cString: strerror(errno)))") }
+            else if errno == EAGAIN || errno == EWOULDBLOCK { throw SessionError.timeout }
+            else { throw SessionError.io("read: \(String(cString: strerror(errno)))") }
         }
     }
 }
@@ -58,7 +58,7 @@ public func writeLine(_ fd: Int32, _ d: Data) throws {
         var off = 0
         while off < p.count {
             let n = write(fd, p.baseAddress! + off, p.count - off)
-            if n < 0 { if errno == EINTR { continue }; throw LabError.io("write: \(String(cString: strerror(errno)))") }
+            if n < 0 { if errno == EINTR { continue }; throw SessionError.io("write: \(String(cString: strerror(errno)))") }
             off += n
         }
     }
@@ -68,7 +68,7 @@ public enum LabClient {
     public static func connect(socket path: String) throws -> Int32 {
         let fd = try makeSocket(); var a = try sockAddr(path)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-        guard r == 0 else { let e = String(cString: strerror(errno)); close(fd); throw LabError.io("connect \(path): \(e)") }
+        guard r == 0 else { let e = String(cString: strerror(errno)); close(fd); throw SessionError.io("connect \(path): \(e)") }
         return fd
     }
     public static func request(socket path: String, _ req: JSON, timeout: TimeInterval = 30) throws -> JSON {
@@ -76,7 +76,7 @@ public enum LabClient {
         var tv = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - floor(timeout)) * 1e6))
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         try writeLine(fd, req.data())
-        guard let line = try LineReader(fd: fd).readLine() else { throw LabError.io("connection closed without a response") }
+        guard let line = try LineReader(fd: fd).readLine() else { throw SessionError.io("connection closed without a response") }
         return try JSON.parse(line)
     }
 }

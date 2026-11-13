@@ -158,8 +158,8 @@ let script = [
     try act(w, #"{"type":"move_window","id":1,"x":300,"y":320,"duration":0.5,"drag":true}"#)
     let s = snap(w), c = s["cursor"] as! [String: Any]
     #expect(c["down"] as? Bool == false)
-    #expect(c["x"] as? Double == 300 + 200)   // grabbed at the title bar centre, followed the window by the same delta
-    #expect(c["y"] as? Double == 320 + 15)
+    #expect(c["x"] as? Double == Double(300 + 200))   // grabbed at the title bar centre, followed the window by the same delta
+    #expect(c["y"] as? Double == Double(320 + 15))
 }
 
 @Test func scoopRollDragAndThrow() throws {

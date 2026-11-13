@@ -19,7 +19,7 @@ public enum BuildIdentity {
 }
 
 public enum LabConfigFile {
-    public static func read(dir: String) throws -> LabConfig {
-        try JSONDecoder().decode(LabConfig.self, from: Data(contentsOf: URL(fileURLWithPath: dir + "/config.json")))
+    public static func read(dir: String) throws -> SessionConfig {
+        try JSONDecoder().decode(SessionConfig.self, from: Data(contentsOf: URL(fileURLWithPath: dir + "/config.json")))
     }
 }

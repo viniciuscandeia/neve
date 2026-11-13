@@ -1,21 +1,20 @@
 // AGENT HEADER - Tests/NeveLabTests/LabSessionTests.swift
 // Role: tests of the Neve Lab process/protocol layer against StubWorld: line framing round-trip over a socketpair, ordered execution (also across concurrent connections), invalid commands leave world and
-// history unchanged, history.jsonl written and replayed into a fresh session, capture idempotence, and two sessions in parallel (in-process servers on two sockets, plus the built `NeveLab` binary
-// when it sits next to the test bundle) sharing no files or sockets. Uses short ids under $TMPDIR/neve-lab and a per-test temp dir.
+// history unchanged, history.jsonl written and replayed into a fresh session, capture idempotence, and two sessions in parallel (in-process servers on two sockets) sharing no files or sockets (the built binary now runs the real world: see LabRealWorldTests.swift). Uses short ids under $TMPDIR/neve-lab and a per-test temp dir.
 import Foundation
 import Testing
 @testable import NeveLabKit
 
 private func tmpDir() -> String { NSTemporaryDirectory() + "nl-\(UUID().uuidString.prefix(8))" }
 
-private func makeServer(_ id: String) throws -> (LabServer, LabConfig) {
-    let c = LabConfig(id: id, seed: 1, width: 1280, height: 800, dir: tmpDir(), socket: try LabPaths.socket(id: id))
+private func makeServer(_ id: String) throws -> (LabServer, SessionConfig) {
+    let c = SessionConfig(id: id, seed: 1, width: 1280, height: 800, dir: tmpDir(), socket: try LabPaths.socket(id: id))
     let s = LabServer(session: try Session(config: c, world: StubWorld(config: c)))
     try s.start()
     return (s, c)
 }
 private func add(_ n: Double) -> JSON { .object(["cmd": .string("send"), "action": .object(["op": .string("add"), "n": .number(n)])]) }
-private func req(_ c: LabConfig, _ r: JSON) throws -> JSON { try LabClient.request(socket: c.socket, r, timeout: 5) }
+private func req(_ c: SessionConfig, _ r: JSON) throws -> JSON { try LabClient.request(socket: c.socket, r, timeout: 5) }
 private func ids() -> String { String(UUID().uuidString.prefix(8)) }
 
 @Suite struct LabSessionTests {
@@ -99,36 +98,5 @@ private func ids() -> String { String(UUID().uuidString.prefix(8)) }
         DispatchQueue.concurrentPerform(iterations: 2) { i in for _ in 0..<25 { _ = try? req(i == 0 ? ca : cb, add(i == 0 ? 1 : 10)) } }
         #expect(try req(ca, .object(["cmd": .string("state")]))["result"]?["total"] == .number(25))
         #expect(try req(cb, .object(["cmd": .string("state")]))["result"]?["total"] == .number(250))
-    }
-
-    @Test func builtBinarySessionsLifecycle() throws {
-        // The binary sits next to NevePackageTests.xctest (.build/<cfg>/NeveLab); skip silently if this layout is not what we run under.
-        var d = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/nonexistent")
-        var exe: String?
-        for _ in 0..<6 { d.deleteLastPathComponent(); let p = d.appendingPathComponent("NeveLab").path; if FileManager.default.isExecutableFile(atPath: p) { exe = p; break } }
-        guard let exe else { return }
-        func run(_ a: [String]) throws -> (Int32, JSON?) {
-            let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = a
-            let o = Pipe(); p.standardOutput = o; p.standardError = FileHandle.nullDevice
-            try p.run(); let data = o.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
-            return (p.terminationStatus, try? JSON.parse(data))
-        }
-        let ia = "ba" + ids(), ib = "bb" + ids(), da = tmpDir(), db = tmpDir()
-        let ra = try run(["create", "--id", ia, "--seed", "7", "--size", "640x480", "--dir", da]); let rb = try run(["create", "--id", ib, "--dir", db])
-        #expect(ra.0 == 0 && rb.0 == 0)
-        #expect(try run(["send", "--id", ia, #"{"op":"add","n":5}"#]).0 == 0)
-        #expect(try run(["send", "--id", ib, #"{"op":"add","n":100}"#]).0 == 0)
-        #expect(try run(["send", "--id", ia, #"{"op":"bogus"}"#]).0 == 1)
-        #expect(try run(["state", "--id", ia]).1?["result"]?["total"] == .number(5))
-        #expect(try run(["state", "--id", ib]).1?["result"]?["total"] == .number(100))
-        let cfg = try LabConfigFile.read(dir: da)
-        #expect(cfg.width == 640 && cfg.seed == 7 && cfg.build["commit"] != nil)
-        let ic = "bc" + ids()
-        #expect(try run(["replay", "--from", da, "--id", ic, "--dir", tmpDir()]).0 == 0)
-        #expect(try run(["state", "--id", ic]).1?["result"]?["total"] == .number(5))
-        #expect(try run(["capture", "--id", ia]).0 == 0)
-        for i in [ia, ib, ic] { #expect(try run(["stop", "--id", i]).0 == 0) }
-        #expect(try run(["state", "--id", ia]).0 == 2)   // gone
-        #expect(FileManager.default.fileExists(atPath: da + "/history.jsonl"))
     }
 }
