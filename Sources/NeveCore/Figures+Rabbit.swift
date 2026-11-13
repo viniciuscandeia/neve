@@ -4,7 +4,7 @@
 //   (enters from the nearer end; ground / Dock only in ground-only mode). The rabbit hops (22 pt, 0.35 s, footprints carved into the pile), sniffs 1 s (may wait up to robinStoryWait for a story robin), snatches the nose (snowman loses `carrot`),
 //   flees; meanwhile the snowman throws 2-3 balls at it (`throwAtRabbit`, hit chance x `rabbitHitScale` 0.6). A hit (`rabbitHit`) makes it drop the carrot and flee faster; the owner then runs (`fetchStep`, 3x walk) to the carrot and `stepCarrots`
 //   re-attaches it, else the nose regrows after carrotRegrow 60 s of snowfall (`stepCarrot`). `clearCritters` / `clearCarrots` (Reduce Motion / walking off) restore noses. Also `standY` (pile top under a foot, shared by other visitors).
-// `rabbitLook(of:)` feeds Rig.rabbit; `writeCarrotPrims` draws carrots (Overlay.writePrims, with the drag `shift`). Uses `director.rng` for visit choices. Tests: RabbitTests.
+// `rabbitLook(of:)` feeds Rig.rabbit; `writeCarrotPrims` draws carrots (FrameData.writePrims, with the drag `shift`). Uses `director.rng` for visit choices. Tests: RabbitTests.
 
 import CoreGraphics
 import Foundation

@@ -1,5 +1,5 @@
 // AGENT HEADER - Sources/NeveCore/ShaderStructs.swift  (the MSL text of the three GPU structs the CPU fills)
-// Role: the single source of the Metal struct definitions that mirror `Instance`, `Prim` and `PileSeg` (plus `occ`, the flake fragment's occluder buffer, checked by its slot count) (Render.swift). The shader source strings in Sources/Neve (Renderer.swift flakeShaderSource, PrimShader.swift, PileShader.swift) interpolate these
+// Role: the single source of the Metal struct definitions that mirror `Instance`, `Prim` and `PileSeg` (plus `occ`, the flake fragment's occluder buffer, checked by its slot count) (Render.swift). The shader source strings in Sources/NeveRender (FlakeShader.swift, PrimShader.swift, PileShader.swift) interpolate these
 //   strings instead of repeating them, and ShaderLayoutTests parses exactly this text and compares size / alignment / field offsets with Swift's MemoryLayout, so a field added on one side only fails the suite instead of rendering garbage.
 //   Each string is one `struct Name { type field; ... };` line (no comments inside: the test parses it). Types used: float, uint, float2, float4.
 // Edit both sides together: Swift struct in Render.swift <-> the string here.

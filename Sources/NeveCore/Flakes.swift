@@ -8,7 +8,7 @@
 //   `introRank` / `slotKind` / `isActive` (pool bookkeeping: sky slots [0, skyCount), background after it, the first nearLimit sky slots are .near).
 // Perf: stepFlakes loops only [0, skyEnd) and [skyCount, skyCount + bgEnd), uses fastSin / fastCos (Util.swift), no allocation; its cost is timed through `timer` (flakesim in NEVE_PERF). Units: sim seconds, pt, pt/s, y up.
 // Gotchas: changing RNG consumption order changes every seeded test (DeterminismTests, FlakeMotionTests); sizes are biased small (u^2.2); the wind-slide in tryLand uses a hash, not `rng`, to keep the stream unchanged. tryLand: a landing the pile cannot keep is no longer discarded: Pile.deposit owes it to the nearest window end (Pile.owe, SnowField.stepOverflow); the Dock bar / ground heap ceiling still refuses it (bankRefused).
-// Callers: SnowField.step. Rendered by Render.writeInstances + the flake shader (Renderer.swift).
+// Callers: SnowField.step. Rendered by Render.writeInstances + the flake shader (NeveRender/FlakeShader.swift).
 
 import CoreGraphics
 import Foundation

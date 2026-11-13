@@ -22,6 +22,7 @@
 //   notifications into requestPoll. Hot path: pollWindows (<=30/s) and pollTick; keep allocations out of them.
 
 import NeveCore
+import NeveRender
 import AppKit
 import os
 import ServiceManagement

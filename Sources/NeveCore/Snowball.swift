@@ -9,7 +9,7 @@
 //   fits re-attaches to a headless body; else lands on the drawn snow via `supportTop` + standY), rest (follows the drawn pile, rolls aside when it does not fit under a low window), `follow` (stack children), promotion of three decreasing
 //   balls to a user `Figure` (Figures.swift `promote`), melt fade, `transportBalls` (window moved: x shift, or knocked off), `breakBalls` / `pop` (cursor sweep breaks a ball into debris). `supportTop` is also used by gifts and penguins (the tree has its own `treeSupport`, Tree.swift; `hitTest` also covers the tree).
 // `stepCovered` (called from SnowField.step) eases the draw-only `hide` of balls / gifts / the tree to 0 while their column is not `visible` (a window in front, even when only `held`); `writeBallPrims` draws with fade * hide.
-// Coordinates: local AppKit pt, y up. Balls on a dragged window ride with the drag (Overlay.writePrims shift). Tests: SnowballTests, SnowmanTests, SpaceCarryTests.
+// Coordinates: local AppKit pt, y up. Balls on a dragged window ride with the drag (FrameData.writePrims shift). Tests: SnowballTests, SnowmanTests, SpaceCarryTests.
 
 import CoreGraphics
 import Foundation

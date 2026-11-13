@@ -1,82 +1,12 @@
-// AGENT HEADER - Sources/Neve/Renderer.swift  (Metal setup + flake shader + appearance watcher)
-// Role: `Gpu` (built once, shared by all overlays via Overlay.sharedGpu): MTLDevice, command queue and the three render pipelines (flakes, prims, piles; premultiplied-alpha blend into bgra8Unorm).
-//   The Metal library is compiled AT RUNTIME from source strings (flakeShaderSource + primShaderSource + pileShaderSource) because Command Line Tools have no `metal` compiler: Gpu.init? returns nil on any
-//   compile/pipeline failure (the controller then logs once and shows "Sem neve: este Mac não consegue desenhá-la").
-// `flakeShaderSource` (MSL in a Swift string; \(Palette.msl(...)) interpolations bake NeveCore Palette colours into the shader, so palette edits need no shader edit): instanced quads, one per `Instance`
+// AGENT HEADER - Sources/NeveRender/FlakeShader.swift  (flake MSL source; part of the NeveRender library)
+// Role: `flakeShaderSource` (MSL in a Swift string; \(Palette.msl(...)) interpolations bake NeveCore Palette colours into the shader, so palette edits need no shader edit): instanced quads, one per `Instance`
 //   (kind: 0 flake, 1 clump, 2 slab/falling chunk (packed profile in kind>>8), 3 puff, 4 glint, 5 meltwater drop, 6 out-of-focus disc, 7 flake lit by a Christmas light: colour index | strength << 3 in kind >> 8, mixed toward Palette.lights). Motion-streak stretch uses frameDt (set from the SIM frame, keeps slowmo consistent);
-//   `Occ` buffer = the 26 float4 (24 occluder rects + s + n) (screen-local pt) written by Overlay (maximized-window compact mode, floating panels).
-// `AppearanceWatcher` (@MainActor): mirrors the system light/dark appearance into Palette.darkTarget (fade ~0.5 s eased by Palette.tick per frame) and posts `changed` so paused (still) overlays wake.
+//   `Occ` buffer = the 26 float4 (24 occluder rects + s + n) (screen-local pt) written by the caller through `FrameInputs.occ` (maximized-window compact mode, floating panels).
 // Invariants: the MSL `struct Instance` is NeveCore ShaderStructs.instance, checked against NeveCore/Render.swift `Instance` by ShaderLayoutTests (field order, offsets, size); changing one without the other renders garbage silently. Y is up, units are screen-local points.
 // Flakes >= 5 pt are six-arm crystals when fragment buffer 0 = float2 (contrast, fx) has fx = 1.
-// Perf: flake fragment shader runs for every flake pixel at up to 60 fps on full-screen drawables: keep branches cheap. Callers: Overlay.swift (pipeline use), AppController (indirectly).
+// Perf: flake fragment shader runs for every flake pixel at up to 60 fps on full-screen drawables: keep branches cheap. Callers: Gpu (Gpu.swift) compiles it with the prim and pile sources.
 
-import AppKit
 import NeveCore
-import Metal
-
-/// Follows the system appearance: `Palette.darkTarget` is 1 under Dark Aqua; the overlays ease `Palette.dark` toward it.
-@MainActor enum AppearanceWatcher {
-    private static var started = false
-    static let changed = Notification.Name("NeveAppearanceTargetChanged")
-    /// A new target wakes every overlay (a still-paused one would never run the blend) and restarts the palette clock: the fade is a smooth 0.5 s.
-    static func read() {
-        let t: Float = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 1 : 0
-        guard t != Palette.darkTarget else { return }
-        Palette.darkTarget = t
-        Palette.resetClock()
-        NotificationCenter.default.post(name: changed, object: nil)
-    }
-    static func start() {
-        guard !started else { return }
-        started = true
-        read(); Palette.dark = Palette.darkTarget   // first value without a fade
-        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { MainActor.assumeIsolated { read() } }   // effectiveAppearance settles just after the notification
-        }
-    }
-}
-
-/// Shared Metal objects, built once: one library (runtime-compiled from the shader strings), the flake and the prim pipelines.
-struct Gpu {
-    let device: MTLDevice
-    let queue: MTLCommandQueue
-    let flakes: MTLRenderPipelineState
-    let prims: MTLRenderPipelineState
-    let piles: MTLRenderPipelineState
-
-    init?() {
-        MainActor.assumeIsolated { AppearanceWatcher.start() }
-        guard let device = MTLCreateSystemDefaultDevice(),
-              let queue = device.makeCommandQueue() else { return nil }
-        let library: MTLLibrary
-        do { library = try device.makeLibrary(source: flakeShaderSource + primShaderSource + pileShaderSource, options: nil) }
-        catch { FileHandle.standardError.write(Data("Neve: shader compile failed: \(error)\n".utf8)); return nil }   // NEVE_SHADER_CHECK=1 surfaces this
-        guard let flakes = Gpu.pipeline(device, library, "flakeVertex", "flakeFragment"),
-              let prims = Gpu.pipeline(device, library, "primVertex", "primFragment"),
-              let piles = Gpu.pipeline(device, library, "pileVertex", "pileFragment") else { return nil }
-        self.device = device
-        self.queue = queue
-        self.flakes = flakes
-        self.prims = prims
-        self.piles = piles
-    }
-
-    /// Premultiplied-alpha blending into a bgra8 drawable.
-    private static func pipeline(_ device: MTLDevice, _ lib: MTLLibrary, _ v: String, _ f: String) -> MTLRenderPipelineState? {
-        let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: v)
-        d.fragmentFunction = lib.makeFunction(name: f)
-        let c = d.colorAttachments[0]!
-        c.pixelFormat = .bgra8Unorm
-        c.isBlendingEnabled = true
-        c.sourceRGBBlendFactor = .one
-        c.sourceAlphaBlendFactor = .one
-        c.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        do { return try device.makeRenderPipelineState(descriptor: d) }
-        catch { FileHandle.standardError.write(Data("Neve: pipeline \(v)/\(f) failed: \(error)\n".utf8)); return nil }
-    }
-}
 
 let flakeShaderSource = """
 #include <metal_stdlib>

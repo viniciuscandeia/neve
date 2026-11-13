@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/Neve/Overlay.swift  (one click-through Metal window per screen + its display-link frame loop)
 // Role: `Overlay` (@MainActor, CAMetalDisplayLinkDelegate) owns, for ONE NSScreen: a borderless non-activating NSPanel (canJoinAllSpaces, level just above the Dock window, or just above
 //   desktop icons in "behind windows" mode; sharingType .none unless showInCaptures), a CAMetalLayer, the `SnowField` simulation (NeveCore), 3-slot ring buffers (flake Instances, actor Prims, PileSegs;
-//   inFlight semaphore = 3, never blocks main: a skipped slot just drops the frame) and the three Metal passes (piles -> prims/actors -> flakes; shaders in PileShader/PrimShader/Renderer.swift).
+//   inFlight semaphore = 3, never blocks main: a skipped slot just drops the frame) and the three Metal passes (piles -> prims/actors -> flakes; shaders and frame encoding in NeveRender: FrameData / Gpu / *Shader.swift).
 //   `InteractView` forwards mouse events; the panel ignores the mouse EXCEPT while Option is held over snow / a snowball (hitTest) or a drag is in progress (`pressing`, `held` snowball, `heldTree` = the overlay whose field holds the dragged Christmas tree: it moves to the neighbour screen's overlay (Overlay.all) when the cursor crosses; `dropTree()` / `hasTree` are the menu / uniqueness hooks).
 // Coordinates: simulation + all buffers are screen-LOCAL AppKit points, y-up, origin = screen.frame.origin (groundY = visibleFrame.minY - frame.minY, visibleTop likewise). Metal viewport slides the whole-screen
 //   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ (OccluderLayout.bufferLength float4) = shader occluder rects + strength / counts).
@@ -12,14 +12,15 @@
 // Controller API (called by AppController in main.swift): setRun / present (fade 0.4 s then orderOut, link paused), setSuspended (Mission Control fade 0.2 s), dip (Space change), update(windows:covering:dragTarget:mouse:)
 //   (poll rate, NOT per frame: grows buffers, measureCover), adopt/screenChanged/refreshBounds/teardown (display hot-plug, Dock/menu-bar visibleFrame changes keep piles), intro/resume/melt/outro (gen counters make stale
 //   completions no-ops; teardown completes pending melt/outro so the controller's Countdown ends), apply(OverlayPrefs), clear, stage, beginScene.
-// Dependencies: NeveCore (SnowField, Tuning, FrameRate, Palette, Rig, PrimWriter, WindowInfo, coversScreen...), Perf.swift (NEVE_PERF meter, signposts), MusicTap, Gpu from Renderer.swift. Env: NEVE_REDUCE_MOTION=1 (force), NEVE_SLOWMO=<f>.
-// Perf: tick is the per-frame hot path (~60/s per screen): no allocation, no locks; buffers grow only in update() (poll rate); writePrims/writePiles/writeInstances mirror data the shaders read.
+// Dependencies: NeveCore (SnowField, Tuning, FrameRate, Palette, Rig, PrimWriter, WindowInfo, coversScreen...), Perf.swift (NEVE_PERF meter, signposts), MusicTap, NeveRender (Gpu, FrameData: frame writes + encoding; Overlay.render sets FrameInputs, owns the semaphore / drawable / present). Env: NEVE_REDUCE_MOTION=1 (force), NEVE_SLOWMO=<f>.
+// Perf: tick is the per-frame hot path (~60/s per screen): no allocation, no locks; buffers grow only in update() (poll rate); FrameData.writeActors/writePiles/writeInstances mirror data the shaders read.
 // Gotchas: Rig/Prim/PileSeg/Instance layouts must match the Metal source strings in the shader files; Render.writePiles output is checked by GroupContourTests / StackIndependenceTests; do not re-set window.level/sharingType unless
 //   changed (WindowServer recomposite hitch); screen tests/captures must be idle-gated and run under scripts/agent-run.sh --screen.
 
 import NeveCore
 import AppKit
 import Metal
+import NeveRender
 import QuartzCore
 
 /// Content view that hands mouse events to the overlay (only delivered while the window is interactive: ⌥ over snow).
@@ -34,7 +35,7 @@ final class InteractView: NSView {
 /// Click-through snow window covering one screen (interactive only while ⌥ is held over snow or a snowball).
 @MainActor
 final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
-    private static let sharedGpu = Gpu()
+    private static let sharedGpu: Gpu? = { MainActor.assumeIsolated { AppearanceWatcher.start() }; return Gpu() }()   // the watcher starts before the Gpu, as it always did
     private static let forceMotion = ProcessInfo.processInfo.environment["NEVE_REDUCE_MOTION"] == "1"   // perf / tests: behave as if Reduce Motion is on
 
     private(set) var screen: NSScreen
@@ -61,22 +62,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var pollMouse = NSEvent.mouseLocation
     private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
-    private let buffers: [MTLBuffer]
-    private var primCapacity = 1000   // ~700-900 prims (tree ~145, lights ~300) / screen; grows (in update, never per frame) after a frame that dropped some
-    private var primBuffers: [MTLBuffer]
-    private var primWant = 0
-    // MARK: pile pass
-    private var pileCapacity = 8192   // grows with the surfaces' bin count when the window list changes
-    private var pileBuffers: [MTLBuffer]
-    private var pileForce = false     // buffers were replaced: rewrite the piles once
+    private let fd: FrameData   // NeveRender: 3-slot rings (flake Instances, Prims, PileSegs), frame writes and encoding; inputs set in render()
     static let slowmo = Float(ProcessInfo.processInfo.environment["NEVE_SLOWMO"] ?? "") ?? 1   // visual checks: the sim runs at this fraction of real time
-    private var pileSlot = 0, pileCount = 0, frameDt: Float = 1.0 / 60   // 3-slot ring, rewritten only when the pile changed
+    private var frameDt: Float = 1.0 / 60
     private var shiftID: Int?, shift = SIMD2<Float>.zero   // dragged window: its figures / balls ride with the drag pile layer
-    private var bufferIndex = 0
     private let inFlight = DispatchSemaphore(value: 3)
-    private var pileOcc: [SIMD4<Float>] = []   // render()'s occluder rects, reused every frame
     private var link: CAMetalDisplayLink?
-    private let pass = MTLRenderPassDescriptor()   // reused every frame; only the texture changes
     private var run = false, fullscreen = false   // run: the controller's single decision (enabled, awake, not hot, user active)
     private var occluded = false
     private var suspended = false, dipGen = 0   // Mission Control hides the snow (fade 0.2 s); a Space change dips it
@@ -105,8 +96,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var coverPause = false                     // `covered`: nothing live, paused like a fullscreen app
     private var coverActive = false                    // compact mode entered (until the exit ramp ends)
     private var occStrength: Float = 0, occTarget: Float = 0   // flake occluders 0...1
-    private var occ = [SIMD4<Float>](repeating: .zero, count: OccluderLayout.bufferLength)   // 8 compact rects (faded by strength), 8 hiding background flakes, 8 hard rects (surfaceless windows, floating panels), s, n (see Renderer `Occ`)
-    private var occCount = (compact: 0, behind: 0, hard: 0)
     private var shrunk: CGRect?                        // live rect applied to panel + Metal layer (screen-local); nil = whole screen
 
     init?(screen: NSScreen, prefs: OverlayPrefs) {
@@ -121,28 +110,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let field = SnowField(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop,
                               flakeCount: max(120, Int(Float(Tuning.flakes) * areaScale)), config: simConfig,
                               seed: sceneSeed ?? .random(in: 0...UInt64.max))
-        var buffers: [MTLBuffer] = []
-        for _ in 0..<3 {
-            guard let b = gpu.device.makeBuffer(length: field.capacity * MemoryLayout<Instance>.stride, options: .storageModeShared) else { return nil }
-            buffers.append(b)
-        }
-        var primBuffers: [MTLBuffer] = []
-        for _ in 0..<3 {
-            guard let b = gpu.device.makeBuffer(length: primCapacity * MemoryLayout<Prim>.stride, options: .storageModeShared) else { return nil }
-            primBuffers.append(b)
-        }
-        self.primBuffers = primBuffers
-        var pileBuffers: [MTLBuffer] = []
-        for _ in 0..<3 {
-            guard let b = gpu.device.makeBuffer(length: pileCapacity * MemoryLayout<PileSeg>.stride, options: .storageModeShared) else { return nil }
-            pileBuffers.append(b)
-        }
-        self.pileBuffers = pileBuffers
+        guard let fd = FrameData(gpu: gpu, field: field) else { return nil }
+        self.fd = fd
         self.screen = screen
         self.prefs = prefs
         self.gpu = gpu
         self.field = field
-        self.buffers = buffers
         // A non-activating panel: clicking a snowball must not pull Neve (and its menu bar) in front of the user's app.
         let panel = NSPanel(contentRect: f, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.hidesOnDeactivate = false
@@ -183,9 +156,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         metalLayer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
         root.addSublayer(metalLayer)
 
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         NotificationCenter.default.addObserver(self, selector: #selector(appearanceChanged), name: AppearanceWatcher.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
 
@@ -230,9 +200,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         visibleTop = v.maxY - f.minY
         shrunk = nil; liveLocal = nil; coverKey = nil
         cover = CompactState(); coverFraction = 0; coverActive = false; coverPause = false; occStrength = 0; occTarget = 0
-        for i in occ.indices { occ[i] = .zero }; occCount = (0, 0, 0)
+        for i in fd.inputs.occ.indices { fd.inputs.occ[i] = .zero }; fd.inputs.occCount = (0, 0, 0)
         held = nil; heldTree = nil; pressing = false; lastCursor = nil; shiftID = nil; shift = .zero
-        lastWindows = []; pileSeen = -1; pileForce = true
+        lastWindows = []; pileSeen = -1; fd.forcePiles()
         field.resize(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop)
         field.setLive(nil)
         let bounds = CGRect(origin: .zero, size: f.size)
@@ -323,7 +293,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.setDragTarget(dragTarget)
         field.update(windows: windows, now: now)   // each window's dt = its own time since its last sample
         confirmedDrag = dragTarget
-        growBuffers()
+        if fd.grow(for: field) { wake() }
         let changed = windows != lastWindows
         if changed { lastWindows = windows; fastUntil = now + FrameRate.holdDown; wake() }
         if field.pileVersion != pileSeen { pileSeen = field.pileVersion; wake() }
@@ -332,21 +302,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         shift = .zero; shiftID = nil
         measureCover(covering ?? windows)
     }
-    /// Poll rate, outside the frame path: size the prim / pile buffers from the demand (old ones stay alive in any in-flight command buffer).
-    private func growBuffers() {
-        func make<T>(_ n: Int, _: T.Type) -> [MTLBuffer]? {
-            let bs = (0..<3).compactMap { _ in gpu.device.makeBuffer(length: n * MemoryLayout<T>.stride, options: .storageModeShared) }
-            return bs.count == 3 ? bs : nil
-        }
-        let pd = field.pileSegDemand
-        if pd > pileCapacity, let b = make((pd * 5 / 4 + 1023) & ~1023, PileSeg.self) {
-            pileBuffers = b; pileCapacity = b[0].length / MemoryLayout<PileSeg>.stride; pileForce = true; wake()
-        }
-        if primWant > primCapacity, let b = make((primWant * 3 / 2 + 255) & ~255, Prim.self) {
-            primBuffers = b; primCapacity = b[0].length / MemoryLayout<Prim>.stride; wake()
-        }
-    }
-
     // MARK: maximized window: snow only in the visible strip
 
     /// Windows -> coverage of the usable area, the live rect and the shader occluders (poll rate; cheap).
@@ -367,12 +322,12 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         coverFraction = c.fraction;
         liveLocal = liveRect(frame: frame, visible: vis, uncovered: c.uncovered)?.offsetBy(dx: -o.x, dy: -o.y)
         func box(_ r: CGRect) -> SIMD4<Float> { let l = r.offsetBy(dx: -o.x, dy: -o.y); return SIMD4(Float(l.minX), Float(l.minY), Float(l.maxX), Float(l.maxY)) }
-        for i in 0..<3 * OccluderLayout.slots { occ[i] = .zero }
+        for i in 0..<3 * OccluderLayout.slots { fd.inputs.occ[i] = .zero }
         let l = occluderLayout(windows: windows, vis: vis, screen: frame, behindWindows: prefs.behind, behindFar: prefs.behindLarge)
-        for (i, r) in l.compact.enumerated() { occ[i] = box(r) }
-        for (i, r) in l.behind.enumerated() { occ[8 + i] = box(r) }
-        for (i, r) in l.hard.enumerated() { occ[16 + i] = box(r) }
-        occCount = (l.compact.count, l.behind.count, l.hard.count)
+        for (i, r) in l.compact.enumerated() { fd.inputs.occ[i] = box(r) }
+        for (i, r) in l.behind.enumerated() { fd.inputs.occ[8 + i] = box(r) }
+        for (i, r) in l.hard.enumerated() { fd.inputs.occ[16 + i] = box(r) }
+        fd.inputs.occCount = (l.compact.count, l.behind.count, l.hard.count)
     }
 
     /// Hysteresis timers keep running on every poll, changed snapshot or not.
@@ -724,46 +679,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         field.drop(id, throwing: throwing)
     }
 
-    /// Balls, figures and shots through `Rig`; the ones standing on the dragged window are shifted by the drag.
-    private func writePrims(_ w: inout PrimWriter) {
-        let hc = contrast > 0
-        func d(_ sid: Int?) -> SIMD2<Float> { sid != nil && sid == shiftID ? shift : .zero }
-        field.writeBallPrims(&w, contrast: hc, shift: d)
-        for f in field.figures where f.phase != .hidden {
-            if f.kind == .sleigh { Rig.sleigh(field.sleighLook(of: f), contrast: hc, into: &w); continue }
-            if f.kind == .rabbit {
-                var l = field.rabbitLook(of: f)
-                let o = d(f.surfaceID)
-                l.foot += o
-                if let fl = l.flight { l.flight = fl + SIMD3(o.x, o.y, 0) }
-                Rig.rabbit(l, contrast: hc, into: &w)
-                continue
-            }
-            if f.kind == .penguin {
-                var l = field.penguinLook(of: f)
-                l.foot += d(f.surfaceID)
-                Rig.penguin(l, contrast: hc, into: &w)
-                continue
-            }
-            if f.kind == .robin {
-                var l = field.robinLook(of: f)
-                l.foot += d(f.surfaceID)
-                Rig.robin(l, contrast: hc, into: &w)
-                continue
-            }
-            var look = field.look(of: f)
-            look.foot += d(f.surfaceID)
-            if reduceMotion { look.pose.flutter = Flutter(); look.newest = 1 }
-            Rig.snowman(look, contrast: hc, into: &w)
-        }
-        field.writeTreePrims(&w, contrast: hc, shift: d)
-        field.writeCarrotPrims(&w, shift: d)
-        field.writeGiftPrims(&w, contrast: hc, shift: d)
-        field.writeShotPrims(&w, trails: !reduceMotion, shift: d)
-        field.writeIciclePrims(&w, contrast: hc, shift: d)
-        field.writeLightPrims(&w, shift: d)
-    }
-
     private func render(_ drawable: CAMetalDrawable) {
         let g = shrunk ?? CGRect(origin: .zero, size: frame.size)
         // A drawable made before a resize has the old size: skip it (the next one matches).
@@ -777,88 +692,30 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         }
         let sp = Perf.signposter.beginInterval("encode"); defer { Perf.signposter.endInterval("encode", sp) }
         if let m = perf { let tt = tickTarget; drawable.addPresentedHandler { m.presented($0.presentedTime, target: tt) } }
-        let buffer = buffers[bufferIndex]
-        bufferIndex = (bufferIndex + 1) % buffers.count
+        fd.begin()
         var t0 = Perf.now()
-        let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
-
+        // Overlay-level inputs of this frame (the sim and the picture are the app's decisions; NeveRender only draws them).
+        fd.inputs.contrast = contrast; fd.inputs.reduceMotion = reduceMotion; fd.inputs.still = still
+        fd.inputs.effects = !(prefs.economy || lowPower)   // visual extras (glitter, grain, crystals, window shadow) off in economy / Low Power, like the crest glints
+        fd.inputs.time = Float(ProcessInfo.processInfo.systemUptime.truncatingRemainder(dividingBy: 1024))   // shader clock (pile glints / grain)
+        fd.inputs.dragID = shiftID; fd.inputs.dragShift = shift   // dragged window: pile layer, figures and balls ride the mouse
+        fd.inputs.screenSize = frame.size
+        fd.inputs.frameDt = frameDt; fd.inputs.streakDt = frameDt * Self.slowmo
+        fd.inputs.occStrength = occStrength; fd.inputs.coverActive = coverActive; fd.inputs.viewRect = shrunk; fd.inputs.liveLocal = liveLocal
+        let count = fd.writeInstances(field)
         perf?.add(.write, t0); t0 = Perf.now()
         perf?.setInstances(count)
-        let pbuf = primBuffers[(bufferIndex + 2) % 3]   // bufferIndex already advanced: the same ring slot as `buffer`
-        var w = PrimWriter(pbuf.contents().assumingMemoryBound(to: Prim.self), capacity: primCapacity)
         t0 = Perf.now()
-        writePrims(&w)
-        // Soft cut: before the drawable shrinks, everything outside the live strip fades with the occluders (`Rig.a` convention: alpha only).
-        var outFade: Float = 0
-        var live = SIMD4<Float>.zero
-        if coverActive, shrunk == nil || occStrength < 1, let r = liveLocal, r.width * r.height <= 0.5 * frame.width * frame.height {
-            outFade = occStrength; live = SIMD4(Float(r.minX), Float(r.minY), Float(r.maxX), Float(r.maxY))
-            w.fadeOutside(live, by: 1 - outFade)
-        }
-        if w.dropped > 0 { primWant = max(primWant, primCapacity + w.dropped) }
-        perf?.truncated(prims: w.dropped)
+        fd.writeActors(field)
+        perf?.truncated(prims: fd.primsDropped)
         perf?.add(.actors, t0); t0 = Perf.now()
-        pass.colorAttachments[0].texture = drawable.texture
-        let slot = (pileSlot + 1) % pileBuffers.count
         t0 = Perf.now()
-        var pileDropped = 0
-        defer { pileForce = false }
-        if let n = field.writePiles(to: pileBuffers[slot].contents().assumingMemoryBound(to: PileSeg.self), capacity: pileCapacity, dt: frameDt, force: pileForce, dropped: &pileDropped) {
-            pileSlot = slot
-            pileCount = n
-            perf?.add(.pile, t0); perf?.bump(.pileWrites); perf?.setSegs(n)
+        if fd.writePiles(field) {
+            perf?.add(.pile, t0); perf?.bump(.pileWrites); perf?.setSegs(fd.segCount)
         } else { perf?.bump(.pileHits) }
-        perf?.truncated(piles: pileDropped)
+        perf?.truncated(piles: fd.pilesDropped)
         t0 = Perf.now()
-        if let enc = cmd.makeRenderCommandEncoder(descriptor: pass) {
-            var viewSize = field.size
-            let fx: Float = prefs.economy || lowPower ? 0 : 1   // visual extras (glitter, grain, crystals, window shadow) off in economy / Low Power, like the crest glints
-            // Shaders always work in whole-screen coordinates; the viewport slides the screen under the (smaller) drawable.
-            enc.setViewport(MTLViewport(originX: Double(-g.minX * scale), originY: Double(-(CGFloat(field.size.y) - g.maxY) * scale),
-                                        width: Double(CGFloat(field.size.x) * scale), height: Double(CGFloat(field.size.y) * scale), znear: 0, zfar: 1))
-            if pileCount > 0 {   // piles under the actors
-                var dragOffset = shiftID == nil ? SIMD2<Float>.zero : shift
-                enc.setRenderPipelineState(gpu.piles)
-                enc.setVertexBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
-                enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
-                enc.setVertexBytes(&dragOffset, length: MemoryLayout<SIMD2<Float>>.size, index: 2)
-                enc.setFragmentBuffer(pileBuffers[pileSlot], offset: 0, index: 0)
-                var tone = SIMD4<Float>(contrast, Palette.dark, Float(ProcessInfo.processInfo.systemUptime.truncatingRemainder(dividingBy: 1024)), fx)   // (increase contrast, dark blend, clock, effects)
-                enc.setFragmentBytes(&tone, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
-                pileOcc.removeAll(keepingCapacity: true)   // 2 x float4 per window in front-to-back order; the dragged one rides the mouse like its pile
-                for o in field.occluders {
-                    var rc = o.rect
-                    if o.id == shiftID { rc += SIMD4<Float>(shift.x, shift.y, shift.x, shift.y) }
-                    pileOcc.append(rc); pileOcc.append(SIMD4<Float>(o.radius, 0, 0, 0))
-                }
-                var occN = UInt32(field.occluders.count)
-                if pileOcc.isEmpty { pileOcc = [.zero, .zero] }
-                enc.setFragmentBytes(&pileOcc, length: pileOcc.count * MemoryLayout<SIMD4<Float>>.stride, index: 2)
-                enc.setFragmentBytes(&live, length: MemoryLayout<SIMD4<Float>>.size, index: 4)
-                enc.setFragmentBytes(&outFade, length: MemoryLayout<Float>.size, index: 5)
-                enc.setFragmentBytes(&occN, length: MemoryLayout<UInt32>.size, index: 3)
-                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pileCount)
-            }
-            if w.n > 0 {   // actors under the flakes
-                enc.setRenderPipelineState(gpu.prims)
-                enc.setVertexBuffer(pbuf, offset: 0, index: 0)
-                enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
-                enc.setFragmentBuffer(pbuf, offset: 0, index: 0)
-                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: w.n)
-            }
-            enc.setRenderPipelineState(gpu.flakes)
-            enc.setVertexBuffer(buffer, offset: 0, index: 0)
-            enc.setVertexBytes(&viewSize, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
-            var streakDt = frameDt * Self.slowmo   // streak length = distance per SIM frame, so it matches the (slowed) velocity
-            enc.setVertexBytes(&streakDt, length: MemoryLayout<Float>.size, index: 2)
-            var cf = SIMD2<Float>(contrast, fx)
-            enc.setFragmentBytes(&cf, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
-            occ[3 * OccluderLayout.slots] = SIMD4(occStrength, occStrength > 0 ? Float(occCount.compact) : 0, Float(occCount.hard), Palette.dark)   // compact rects only mask with strength > 0; behind / hard always
-            occ[3 * OccluderLayout.slots + 1] = SIMD4(Float(occCount.behind), 0, 0, 0)
-            occ.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-            if count > 0 { enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count) }
-            enc.endEncoding()
-        }
+        fd.encode(into: drawable.texture, commandBuffer: cmd, field: field, scale: scale)
         cmd.present(drawable)
         let sem = inFlight, meter = perf
         cmd.addCompletedHandler { c in meter?.gpuDone(c); sem.signal() }
