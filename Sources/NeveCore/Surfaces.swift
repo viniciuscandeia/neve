@@ -74,7 +74,7 @@ extension SnowField {
         // Each window's dt is its own time since its last sample (`stamps`, monotonic `now`; without it a clock advanced by `dt`).
         if let now { clock = now } else { clock += Double(dt) }
         pollDt = dt
-        if pendingGone.values.contains(where: { clock - $0.since >= goneGrace }) { boundsDirty = true }   // a ghost's deadline passed: the rebuild below knocks it off even when the list is unchanged
+        if pendingGone.values.contains(where: { clock - $0 >= goneGrace }) { boundsDirty = true }   // a ghost's deadline passed: the rebuild below knocks it off even when the list is unchanged
         defer { stamps.removeAll(keepingCapacity: true); for w in windows { stamps[w.number] = clock } }
         guard windows != lastWindows || boundsDirty else {
             if windowsStale, time >= staleUntil { windowsStale = false }   // an unchanged list right after a switch may be the pre-switch one: only a changed one settles it, or time
@@ -182,8 +182,8 @@ extension SnowField {
         }
         var ghosts: Set<Int> = []
         for s in old {   // gone surfaces: a window absent for one poll (Mission Control, Stage Manager, minimise animation, a close, a zoom up to the menu bar) stays as a GHOST (pile, figures, balls, gifts, tree in place and drawn) for Tuning.goneGrace, then falls
-            if s.id > 0, !silent, goneGrace > 0, pendingGone[s.id].map({ clock - $0.since < goneGrace }) ?? true {
-                if pendingGone[s.id] == nil { pendingGone[s.id] = (s, clock) }
+            if s.id > 0, !silent, goneGrace > 0, pendingGone[s.id].map({ clock - $0 < goneGrace }) ?? true {
+                if pendingGone[s.id] == nil { pendingGone[s.id] = clock }
                 built.append(s); ghosts.insert(s.id)
             } else { pendingGone[s.id] = nil; spawned += knockOff(s) }
         }

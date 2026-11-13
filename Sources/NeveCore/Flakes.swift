@@ -28,7 +28,7 @@ public struct Flake {
     public var kind: FlakeKind
     var seed: Float = 0     // per-flake shape variant / rotation (0..1)
     var fade: Float = 1     // 0..1 fade-in after a spawn; multiplied into alpha
-    // Effects (Effects.swift): shape 0 dot, 1 clump, 2 slab, 3 puff, 4 glint (= Instance.kind)
+    // Effects (Effects.swift): shape 0 dot, 1 clump, 2 slab, 3 puff, 4 glint, 5 drop, 6 out-of-focus disc, 7 flake lit by a Christmas light (= Instance.kind, Render.swift)
     var rot: Float = 0      // radians
     var spin: Float = 0     // rad/s
     var vol: Float = 0      // carried snow (area, pt^2): deposited where it lands; 0 = legacy size-based deposit

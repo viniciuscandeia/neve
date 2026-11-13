@@ -6,6 +6,9 @@
 import Foundation
 
 /// UserDefaults keys of the on / off options (raw values are the stored keys: never rename). Defaults on: Nevar, Flocos distantes atrás das janelas (behindLarge: every front window hides background flakes), Boneco de neve, Andam e brigam, Visitantes, Trenó, Árvore de Natal, Luzes de Natal, Quadros adaptativos, Cursor empurra os flocos; the rest off.
+/// UserDefaults key of the screen target ("all" / "main" / display ID); not a Pref (a string, not a flag).
+public let snowOnKey = "snowOn"
+
 public enum Pref: String, CaseIterable, Sendable {
     case enabled, economy, ambient, behindWindows, behindLarge, stillSnow, snowman, walk, visitors, sleigh, christmasTree, lights, showInCaptures, adaptiveFps, music, pointerPush
     public var defaultValue: Bool { [.enabled, .behindLarge, .snowman, .walk, .visitors, .sleigh, .christmasTree, .lights, .adaptiveFps, .pointerPush].contains(self) }

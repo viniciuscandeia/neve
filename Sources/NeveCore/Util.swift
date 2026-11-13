@@ -2,7 +2,7 @@
 // Role: `SplitMix64` (seedable RandomNumberGenerator: every simulation sequence is reproducible), `binCenter(c)` (x in pt of global column c), `noise`/`valueNoise`/`windNoise` (deterministic value noise; windNoise = two octaves at 8 s / 3 s, period ~9 h), `fastSin`/`fastCos` (parabola
 //   + refinement, max error ~0.001: per-flake hot path), SIMD2.limited (cap launch speeds at 800 pt/s per axis), Array.swapRemove, and `FrameRate` (+ `economyFrames`: economy pref or thermal >= fair): the display-link policy used by Overlay (`range(...)`: quiet = 30 fps (economy 20), busy 30...60, Low Power / shrunk window = 30;
 //   `snap` makes every rate the panel maximum divided by a whole number so 120/144/75/50 Hz panels stay even; `holdDown` 2.5 s before stepping down, stepping up is immediate), `pointerVelocity` (uses REAL elapsed dt, floored at 1/240), `cursorNear` (Liang-Barsky: does a fast cursor
-//   concern this screen?), `interpAlpha` (only for Tuning.interpolateCalm). Tests: EntryRhythmTests, NaturalMotionTests, PollSchedulerTests, FlakeMotionTests (FrameRate); the seeded RNG / noise underlie DeterminismTests and most simulation tests. windNoise octaves wrap at 4096 lattice cells (8 s -> ~9 h, 3 s -> ~3.4 h).
+//   concern this screen?). Tests: EntryRhythmTests, NaturalMotionTests, PollSchedulerTests, FlakeMotionTests (FrameRate); the seeded RNG / noise underlie DeterminismTests and most simulation tests. windNoise octaves wrap at 4096 lattice cells (8 s -> ~9 h, 3 s -> ~3.4 h).
 
 import CoreGraphics
 import Foundation
@@ -79,10 +79,6 @@ public enum FrameRate {
     /// Quiet ("calm") floor: fps the display link drops to when nothing fast happened for `holdDown`. Values live in Tuning (30, economy 20 today).
     public static var calmFloor: Float { Tuning.calmFloorFPS }
     public static var calmFloorEconomy: Float { Tuning.calmFloorEconomyFPS }
-
-    /// Interpolation option (Tuning.interpolateCalm, default off): at the calm floor the simulation steps at `floor` while the renderer draws every display
-    /// refresh at `lerp(prev, cur, alpha)`, alpha = time since the last sim step / step period, clamped 0...1. Pure helper; the renderer owns the buffers.
-    public static func interpAlpha(sinceStep: Double, stepPeriod: Double) -> Float { stepPeriod > 0 ? Float(min(max(sinceStep / stepPeriod, 0), 1)) : 1 }
 
     /// `target` fps made to divide `maxFPS`: the highest `maxFPS / k` that is at most 25 % above the target (75 Hz busy stays 75, 144 Hz gives 72 / 36 / 24).
     public static func snap(_ target: Float, maxFPS: Int) -> Float {

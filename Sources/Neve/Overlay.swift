@@ -6,7 +6,7 @@
 // Coordinates: simulation + all buffers are screen-LOCAL AppKit points, y-up, origin = screen.frame.origin (groundY = visibleFrame.minY - frame.minY, visibleTop likewise). Metal viewport slides the whole-screen
 //   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ (OccluderLayout.bufferLength float4) = shader occluder rects + strength / counts).
 // Frame loop (`tick`, main thread via RunLoop.main .common; the nonisolated delegate uses MainActor.assumeIsolated): dt = min(real dt, 0.06); Palette.tick; advanceCover; cursor sweep (one segment from last
-//   position, only if not near another screen); pointer velocity; MusicTap.shared.read(); field.step (optionally calm interpolation: Tuning.interpolateCalm); drag shift (pile/figure offset = mouse delta since poll);
+//   position, only if not near another screen); pointer velocity; MusicTap.shared.read(); field.step; drag shift (pile/figure offset = mouse delta since poll);
 //   render(). Adaptive rate: 60 fps while anything fast (cursor near snow, held ball, field.isBusy) else 30 after FrameRate.holdDown; economy (or thermal fair+, FrameRate.economyFrames) / low power cap; still mode (Reduce Motion + stillSnow) sleeps the link
 //   once piles settle (`dirty`/`wake()` restart it: ANY state change that alters the picture must call wake()).
 // Controller API (called by AppController in main.swift): setRun / present (fade 0.4 s then orderOut, link paused), setSuspended (Mission Control fade 0.2 s), dip (Space change), update(windows:covering:dragTarget:mouse:)
@@ -524,11 +524,8 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if let link, link.preferredFrameRateRange != frameRange { link.preferredFrameRateRange = frameRange }
         accessibilityChanged()   // `still` follows the pref
     }
-    private var simAccum = 0.0, lastStepDt: Float = 0
-    /// Calm interpolation active: option on, quiet floor, and not in a mode that is capped at 30 anyway.
-    private var interpolating: Bool { Tuning.interpolateCalm && slow && !econFrames && !lowPower && shrunk == nil }
     private var frameRange: CAFrameRateRange {
-        let r = FrameRate.range(lowPower: lowPower, economy: econFrames, shrunk: shrunk != nil, quiet: slow && !interpolating, maxFPS: fps)
+        let r = FrameRate.range(lowPower: lowPower, economy: econFrames, shrunk: shrunk != nil, quiet: slow, maxFPS: fps)
         return CAFrameRateRange(minimum: r.min, maximum: r.max, preferred: r.preferred)
     }
 
@@ -647,18 +644,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         perf?.add(.input, t0); t0 = Perf.now()
         field.music = prefs.music ? MusicTap.shared.read() : .silent
         if !still {
-            // Tuning.interpolateCalm (off by default): at the calm floor the link runs at the display rate, the sim still steps at the floor rate
-            // (accumulated dt) and render() draws flakes back-extrapolated to the present (alpha). Off: one step per frame, as always.
-            var stepDt = dt
-            if interpolating {
-                simAccum += dt
-                let period = 1 / Double(FrameRate.calmFloor)
-                if simAccum + dt * 0.5 >= period { stepDt = min(simAccum, 0.06); simAccum = 0 } else { stepDt = 0 }
-            } else { simAccum = 0 }
-            if stepDt > 0 {
-                let sp = Perf.signposter.beginInterval("sim"); field.step(dt: Float(stepDt) * Self.slowmo); Perf.signposter.endInterval("sim", sp)
-                lastStepDt = Float(stepDt) * Self.slowmo
-            }
+            let sp = Perf.signposter.beginInterval("sim"); field.step(dt: Float(dt) * Self.slowmo); Perf.signposter.endInterval("sim", sp)
         }
         perf?.add(.step, t0); t0 = Perf.now()
         let drag = confirmedDrag   // only the confirmed drag target (its delta matched the mouse's, same size, unique), never any window that merely moved
@@ -791,7 +777,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let buffer = buffers[bufferIndex]
         bufferIndex = (bufferIndex + 1) % buffers.count
         var t0 = Perf.now()
-        let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self), lag: interpolating ? (1 - FrameRate.interpAlpha(sinceStep: simAccum, stepPeriod: 1 / Double(FrameRate.calmFloor))) * lastStepDt : 0)
+        let count = still ? 0 : field.writeInstances(to: buffer.contents().assumingMemoryBound(to: Instance.self))
 
         perf?.add(.write, t0); t0 = Perf.now()
         perf?.setInstances(count)

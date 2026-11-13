@@ -47,7 +47,6 @@ struct Burst { var x: Float; var t: Float }
 
 extension SnowField {
     public var hasTree: Bool { tree != nil || burst != nil || stash.values.contains { $0.tree != nil } }
-    public var treeState: Tree? { tree }
     public var treeHeld: Bool { tree?.state == .held }
 
     /// Menu / auto timer: warns with a ~2 s gust at a random x (12-88 % of the width) and then the tree falls there. Reduce Motion skips the gust.

@@ -14,7 +14,7 @@ public func takeOnce(_ key: String, in store: UserDefaults) -> Bool {
 
 /// "Restaurar padrões": drops every stored option (the Bool prefs, Quantidade, "Nevar em") so each reads its default again from `Pref` / `Intensity`.
 public func restoreDefaults(in store: UserDefaults) {
-    (Pref.allCases.map(\.rawValue) + [Intensity.key, "snowOn"]).forEach(store.removeObject(forKey:))
+    (Pref.allCases.map(\.rawValue) + [Intensity.key, snowOnKey]).forEach(store.removeObject(forKey:))
 }
 
 /// Names for the "Nevar em" picker: the main screen is marked, and identical names get their resolution (then a number) appended.

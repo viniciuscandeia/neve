@@ -219,7 +219,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// "all" / "main" / a display ID. Economy forces the main screen (the one with the menu bar).
-    private var target: String { ud.string(forKey: "snowOn") ?? "all" }
+    private var target: String { ud.string(forKey: snowOnKey) ?? "all" }
     private var wantedScreens: [NSScreen] {
         let all = NSScreen.screens
         if sceneKind != nil { return Array(all.prefix(1)) }
@@ -229,7 +229,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func setTarget(_ t: String) {
-        ud.set(t, forKey: "snowOn")
+        ud.set(t, forKey: snowOnKey)
         syncOverlays()
     }
 

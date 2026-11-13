@@ -2,7 +2,7 @@
 // Role: defines the byte-exact structs the Metal shaders read and fills them from the simulation; Sources/Neve/Overlay.swift just passes it pointers into shared MTLBuffers (3-slot rings).
 //   `Instance` (40 B: flakes, puffs, drops, glints, debris/chunks; kind 0 flake, 1 clump, 2 slab (chunk profile packed in kind >> 8), 3 puff, 4 glint, 5 drop, 6 out-of-focus disc, 7 flake lit by a Christmas light: colour index + strength in kind >> 8, see Lights.swift), `Prim` (64 B SDF primitive: ellipse / capsule / convex quad)
 //   + `PrimWriter` (appends into a caller-owned buffer, counts `dropped` when full so the app can grow it; fade(from:by:)), `PileSeg` (48 B, one per bin pair of a snowy run; `z` = its window's index in the front-to-back list, the shader hides the slice inside every `SnowField.occluders` entry in front of it), `PileEnd` (ground / Dock run ends, for bridging).
-//   `writeInstances(to:lag:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris); `lag` is only used with Tuning.interpolateCalm. `pileSegDemand` sizes the pile buffer.
+//   `writeInstances(to:)` returns the count (sky + background flakes first, then puffs, drops (writeDrops), glints, debris). `pileSegDemand` sizes the pile buffer.
 //   `writePiles(to:capacity:dt:force:dropped:)` returns nil when nothing changed (same pileVersion, no easing) so the caller reuses its last buffer; else eases `shown` toward `heights` (rise: time constant Tuning.pileEase 0.25 s; drop 0.05 s,
 //   small drops 0.12 s; Reduce Motion snaps down), emits each snowy stretch of each visible run (top = `Self.crest`, shared with Contour.swift: neighbour blur + stable per-column `jitter` noise + front-window ceiling clamp; 3+ bare bins split a stretch), bridges ground bank <-> Dock
 //   pile, joins n0/n1 normals of neighbouring slices. Ground and Dock are drawn here (runs, the bank <-> Dock bridges and filled corners); every WINDOW support is drawn by Contour.swift `writeGroups` (one contour per group of touching windows: walls / seams from frame geometry only,
@@ -81,9 +81,7 @@ public struct PrimWriter {
 
 extension SnowField {
     /// Fills GPU instances; returns the count.
-    /// `lag` (s, default 0 = exactly the simulated position): sky/background flakes are drawn at pos - vel * lag, i.e. lerp(prev, pos, alpha)
-    /// with lag = (1 - alpha) * lastStepDt (FrameRate.interpAlpha); used only with Tuning.interpolateCalm.
-    public func writeInstances(to p: UnsafeMutablePointer<Instance>, lag: Float = 0) -> Int {
+    public func writeInstances(to p: UnsafeMutablePointer<Instance>) -> Int {
         var n = 0
         let lit = lightsEnabled, lc = lit ? lightCtx() : LightCtx()
         for i in 0..<(skyEnd + bgEnd) {
@@ -92,7 +90,7 @@ extension SnowField {
                 // Crystals (> 4pt) turn and sway like a pendulum; small dots stay round. Reduce Motion: fixed angle.
                 let rot: Float = f.size > 4 && f.kind != .near ? f.seed * 2 * .pi + (calm ? 0 : 0.5 * sin(f.phase)) : 0
                 let far = f.kind == .background   // atmospheric perspective: smaller and dimmer, draw side only
-                p[n] = Instance(pos: lag == 0 ? f.pos : f.pos - f.vel * lag, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : (lit ? lightCode(at: f.pos, lc) : 0), vel: calm || f.kind == .near ? .zero : f.vel); n += 1
+                p[n] = Instance(pos: f.pos, size: f.size * (far ? 0.8 : 1), alpha: f.alpha * f.fade * (far ? 0.7 : 1), seed: f.seed + (far ? 2 : 0), rot: rot, kind: f.kind == .near ? 6 : (lit ? lightCode(at: f.pos, lc) : 0), vel: calm || f.kind == .near ? .zero : f.vel); n += 1
             }   // seed >= 2: background flake (shader occlusion by every front window, pref behindLarge)
         }
         for f in puffs {   // grow 1 -> 1.8x while fading

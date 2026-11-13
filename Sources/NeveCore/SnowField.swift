@@ -48,7 +48,7 @@ public final class SnowField {
     var groundY: Float
     var visibleTop: Float
     var boundsDirty = false
-    var dragOnlyRebuild = true   // false (tests): every snapshot rebuilds all surfaces
+    var dragOnlyRebuild = true   // false: every snapshot rebuilds all surfaces (DragOnlyRebuildTests set it to compare)
     public internal(set) var windowsStale = false   // after a Space switch: no deposits on window surfaces until the next snapshot reconciles
     var stashBack: [(dx: Float, dy: Float, x: ClosedRange<Float>, e: Stashed)] = []   // windows back from another Space this update: their snowmen / balls / gifts are put back after the transports
     var stash: [Int: Stashed] = [:]   // window piles (and their frost) kept across a Space switch, by window number (cap 64, 30 min)
@@ -80,15 +80,15 @@ public final class SnowField {
     public var economy = false   // Economy mode: no glints
     var sset: SurfaceSet   // surfaces, index, column index, seams, occluders, joints, groups (SurfaceSet.swift); forwarded below
     var surfaces: [Surface] { get { sset.surfaces } _modify { yield &sset.surfaces } }
-    var index: [Int: Int] { get { sset.index } _modify { yield &sset.index } }
-    var offsets: [Int32] { get { sset.offsets } _modify { yield &sset.offsets } }
-    var entries: [Entry] { get { sset.entries } _modify { yield &sset.entries } }
-    var seams: [SeamLink] { get { sset.seams } _modify { yield &sset.seams } }   // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
+    var index: [Int: Int] { sset.index }
+    var offsets: [Int32] { sset.offsets }
+    var entries: [Entry] { sset.entries }
+    var seams: [SeamLink] { sset.seams }   // windows whose piles read as one snowbank (SurfaceMap.swift), rebuilt with the surfaces
     var dockTrickle = DockTrickle()   // DockSpill.swift
     var overflowTick = 0              // 0.5 s ticks since the last overflow drip (Surfaces.swift stepOverflow lets lumps go every 3rd tick)
     var bankRefused: Float = 0        // pt^2 the Dock bar / ground pile refused at its heap ceiling (nowhere to overflow to; window tops pass it to their ends, see Pile.owe): a ledger for tests, never drawn
     var lastWindows: [WindowInfo] = []
-    var pendingGone: [Int: (s: Surface, since: Double)] = [:]   // windows missing from the latest poll: the surface stays in `surfaces` as a ghost (snow and what stands on it in place, drawn), knocked off only after Tuning.goneGrace (Mission Control / minimise flicker)
+    var pendingGone: [Int: Double] = [:]   // window id -> `clock` when it went missing from the latest poll: the surface stays in `surfaces` as a ghost (snow and what stands on it in place, drawn), knocked off only after Tuning.goneGrace (Mission Control / minimise flicker)
     var goneGrace = Tuning.goneGrace   // s a window may be missing before its pile is knocked off (tests set 0 for the old immediate knock-off)
     var orderOnly = false   // the current rebuild only reorders the same windows (Cmd-Tab): buildSurface keeps all snow
     var dockCarryUntil = 0.0   // the carried Dock pile only applies to a rebuild within ~2 s of the resize (an auto-hidden Dock showing up later starts fresh)

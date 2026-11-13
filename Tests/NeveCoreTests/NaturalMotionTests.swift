@@ -59,8 +59,6 @@ private func snow(_ seed: UInt64 = 5) -> SnowField {
 @Test func calmFloorAndHold() {
     #expect(FrameRate.calmFloor == 30 && FrameRate.calmFloorEconomy == 20)
     #expect(FrameRate.holdDown >= 1)
-    #expect(Tuning.interpolateCalm == false)
-    #expect(FrameRate.interpAlpha(sinceStep: 0.5, stepPeriod: 1) == 0.5 && FrameRate.interpAlpha(sinceStep: 3, stepPeriod: 1) == 1)
 }
 
 @Test func fastSinStaysCloseToSin() {

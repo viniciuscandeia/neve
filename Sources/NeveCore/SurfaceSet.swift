@@ -10,10 +10,10 @@ import Foundation
 
 struct SurfaceSet {
     var surfaces: [Surface] = []
-    var index: [Int: Int] = [:]   // surface id -> index into `surfaces`
-    var offsets: [Int32]          // CSR: per column range into entries
-    var entries: [Entry] = []
-    var seams: [SeamLink] = []    // windows whose piles read as one snowbank (SurfaceMap.swift)
+    private(set) var index: [Int: Int] = [:]   // surface id -> index into `surfaces`
+    private(set) var offsets: [Int32]          // CSR: per column range into entries
+    private(set) var entries: [Entry] = []
+    private(set) var seams: [SeamLink] = []    // windows whose piles read as one snowbank (SurfaceMap.swift)
     var occluders: [Occluder] = []
     var zOf: [Int: UInt32] = [:]
     var groundZ: UInt32 = 0

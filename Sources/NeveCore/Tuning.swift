@@ -2,11 +2,12 @@
 // Role: `Tuning` = static knobs, all in points (pt), seconds, pt/s, or pt^2 for areas, y-up. Groups: snow field (flakes per 1440x900 screen, backgroundFraction, binWidth = 2 pt per pile bin, slope = max step between neighbouring
 //   bins, dustSlope/dustDepth/speck* = how thin snow stays in mounds, cornerInset), pile caps (maxPileHeight = window tops, groundMaxHeight, moundMax = sanity bound on cursor-pushed heaps), Dock bank (bankSlope/bankShelf/bankLimit/
 //   bankLevelMax, dockGlassOffset: the visible glass is 5 pt BELOW the AX list frame on macOS >= 26 (CG y-down), windowRadius 22 pt on macOS >= 26 else 10, dock* plow constants), drift/peel against front windows, wind, debris/puffs/glints/
-//   drops caps, shed (a moved window sheds snow from shedStart to shedFull pt/s), snowman/ball sizes, pointer push radius, frame-rate floors (calmFloorFPS 30, economy 20), `interpolateCalm` (env NEVE_INTERP=1, default off: measured costlier).
+//   drops caps, shed (a moved window sheds snow from shedStart to shedFull pt/s), snowman/ball sizes, pointer push radius, frame-rate floors (calmFloorFPS 30, economy 20).
 //   Drawn contour knobs (crestSlope, crestMaxStep, snowyMin, stretchGap, ownerGapMax, capBlend*, bridge*) and the Pile relax window (relaxReach, relaxPasses, moundReach) are here too.
 // `Intensity` (leve, media, forte, nevasca; UserDefaults key "intensity", Int raw value; multiplier on flake count, windGain; titles via tr()). `SimConfig` (Sendable): knobs the APP injects (snowman/ice/director speed, demo flags) so NeveCore never reads env.
 // Snow age (ageSlope, ageFull, ageFresh: Pile.age / reposeStep). Rules: constants only; behaviour lives elsewhere. Many are `static let` internal (tests use @testable import). Changing binWidth / slope / maxPileHeight shifts pile behaviour everywhere and invalidates tuned tests (PileLogicTests, SurfaceMapTests, WritePiles*).
-// Public surface used by the app target: flakes, plowFloor, interpolateCalm, dockGlass(fromAX:), windowRadius(for:), defaultWindowRadius, maxBalls, snowmanDepth, shedRefDt, Intensity, SimConfig.
+// Public surface used by the app target: flakes, plowFloor, dockGlass(fromAX:), windowRadius(for:), defaultWindowRadius, maxBalls, snowmanDepth, shedRefDt, Intensity, SimConfig.
+// Constants only: the one environment read left is the OS version (dockGlass default argument), no file / defaults I/O.
 // Gotcha: the `dockGlassOffset` / `windowRadius` values were measured on macOS 26 (calibration knobs, not derived).
 
 import CoreGraphics
@@ -110,13 +111,10 @@ public enum Tuning {
     // Frame rate (Util.swift FrameRate). Measure CPU, then pick.
     static let calmFloorFPS: Float = 30             // quiet rate (nothing fast for FrameRate.holdDown = 2.5 s after the last input / motion); 60 = smoothest, costliest
     static let calmFloorEconomyFPS: Float = 20      // same, Economy mode
-    /// Option, default OFF: at the calm floor step the sim at the floor rate but let the renderer interpolate positions every display refresh
-    /// (FrameRate.interpAlpha). Needs renderer wiring (prev/cur flake buffers); CPU = sim at floor + draw at display rate.
     public static let plowFloor: Float = 2   // pt of snow a cursor pass leaves on a window (a bare edge between lumps reads as dark dashes)
     static let plowSlowSpeed: Float = 40    // pt/s: cursor slower than this is a hover (gentle dent)
     static let plowHoverDepth: Float = 0.6  // pt removed per pass while hovering
     public static let plowRadius: Float = 14       // pt: effective half-width of the cursor blade; a push (>= plowSlowSpeed) scoops everything under it down to plowFloor, soft rounded edges
-    public static let interpolateCalm = ProcessInfo.processInfo.environment["NEVE_INTERP"] == "1"   // off: measured 2026-11-11, render at display rate costs +3.3..3.7% CPU and +8% WindowServer (fixed per-frame present cost); NEVE_INTERP=1 to re-measure
     // Wind-blown accumulation
     static let windBiasMax: Float = 0.3     // chance a landing flake slides one bin leeward when that bin is lower (at the sustained-wind cap)
     static let windBiasRef: Float = 150     // sustained wind speed (pt/s) at which the chance reaches the cap
@@ -164,6 +162,7 @@ public enum Tuning {
 public enum Intensity: Int, CaseIterable {
     case leve, media, forte, nevasca
     public static let key = "intensity"
+    public static var defaultValue: Intensity { .media }   // when nothing is saved
     public var title: String { [tr("Leve"), tr("Média"), tr("Forte"), tr("Nevasca")][rawValue] }
     var multiplier: Float { [0.4, 1.0, 1.8, 3.0][rawValue] }
     var windGain: Float { self == .nevasca ? 100 : 8 }   // peak sideways speed, points/s

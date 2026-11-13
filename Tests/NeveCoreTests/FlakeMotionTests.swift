@@ -1,8 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/FlakeMotionTests.swift  (Flakes.swift motion, spawn and landing)
 // Determinism per seed, terminal speed grows with size, smooth wind response (`wv` never snaps), pointerPush off ignores the cursor, the NEVE_PERF `timer` hook changes nothing, `.near` out-of-focus flakes (~2 % of sky, sizes 8-13, never deposit, off in calm /
 //   economy / low power, written as Instance kind 6 soft discs), Reduce Motion `edgeCalm` (outer 12 % tapers to 0.3; fewer spawns and slower fall at the edges), sustained wind (`windSlow`) piles more snow leeward in `tryLand`, and
-//   `writeInstances(lag:)` (0 = unchanged, lag backs flakes off along their velocity; `FrameRate.interpAlpha`).
-// Benchmark `CalmBench` (stepFlakes vs writeInstances per frame, Nevasca) runs only with NEVE_BENCH=1: `NEVE_BENCH=1 Tests/run.sh -r CalmBench` (used to decide Tuning.interpolateCalm).
+// Benchmark `CalmBench` (stepFlakes vs writeInstances per frame, Nevasca) runs only with NEVE_BENCH=1: `NEVE_BENCH=1 Tests/run.sh -r CalmBench`.
 
 import Foundation
 import CoreGraphics
@@ -183,20 +182,6 @@ private func nearField(_ i: Intensity = .media) -> SnowField {
     #expect(west < calm - 0.03)
 }
 
-// MARK: Calm interpolation (draw-time lag only; off = identical)
-
-@Test func writeInstancesLagZeroIsUnchangedAndLagBacksOffAlongVelocity() {
-    let f = snow(); advance(f, 3, fps: 30)
-    let cap = 4096
-    let a = UnsafeMutablePointer<Instance>.allocate(capacity: cap), b = UnsafeMutablePointer<Instance>.allocate(capacity: cap)
-    defer { a.deallocate(); b.deallocate() }
-    let na = f.writeInstances(to: a), nb = f.writeInstances(to: b, lag: 0)
-    #expect(na == nb && na > 0 && (0..<na).allSatisfy { a[$0].pos == b[$0].pos })
-    _ = f.writeInstances(to: b, lag: 1 / 60)
-    #expect((0..<na).contains { b[$0].pos != a[$0].pos })
-    #expect(FrameRate.interpAlpha(sinceStep: 0.5 / 30, stepPeriod: 1 / 30) == 0.5)
-}
-
 // MARK: Benchmark (NEVE_BENCH=1 Tests/run.sh -r CalmBench): stepFlakes vs writeInstances per frame, Nevasca
 
 @Test(.enabled(if: ProcessInfo.processInfo.environment["NEVE_BENCH"] == "1"))
@@ -209,6 +194,6 @@ func calmBenchStepVsWrite() {
     func time(_ body: () -> Void) -> Double { let t = DispatchTime.now().uptimeNanoseconds; for _ in 0..<n { body() }; return Double(DispatchTime.now().uptimeNanoseconds - t) / Double(n) / 1000 }
     let step = time { f.stepFlakes(dt: 1 / 30) }
     var count = 0
-    let write = time { count = f.writeInstances(to: p, lag: 0.01) }
+    let write = time { count = f.writeInstances(to: p) }
     print("CALMBENCH Nevasca \(count) instances: stepFlakes \(String(format: "%.1f", step)) us, writeInstances \(String(format: "%.1f", write)) us per call")
 }

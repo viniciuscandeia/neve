@@ -78,8 +78,8 @@ let menuWidth: CGFloat = 270
 
 struct IntensityTile: View {
     @Environment(\.colorSchemeContrast) private var contrast
-    @AppStorage(Intensity.key) private var level = 1
-    init(store: UserDefaults) { _level = AppStorage(wrappedValue: 1, Intensity.key, store: store) }
+    @AppStorage(Intensity.key) private var level = Intensity.defaultValue.rawValue
+    init(store: UserDefaults) { _level = AppStorage(wrappedValue: Intensity.defaultValue.rawValue, Intensity.key, store: store) }
     var body: some View {
         let current = Intensity(rawValue: level)?.title ?? ""
         VStack(alignment: .leading, spacing: 8) {
@@ -251,8 +251,8 @@ struct SettingsPane: View {
 
 /// Quantidade in Ajustes: a segmented picker, so the level is also reachable from the keyboard.
 private struct IntensityPicker: View {
-    @AppStorage(Intensity.key) private var level = 1
-    init(store: UserDefaults) { _level = AppStorage(wrappedValue: 1, Intensity.key, store: store) }
+    @AppStorage(Intensity.key) private var level = Intensity.defaultValue.rawValue
+    init(store: UserDefaults) { _level = AppStorage(wrappedValue: Intensity.defaultValue.rawValue, Intensity.key, store: store) }
     var body: some View {
         Picker(selection: $level) {
             ForEach(Intensity.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }

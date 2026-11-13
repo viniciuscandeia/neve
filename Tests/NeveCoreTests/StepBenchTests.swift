@@ -72,7 +72,7 @@ private func runBench(_ name: String, nevasca: Bool, sweep: Bool, pointer: Bool)
         f.step(dt: Float(dt))
         let tEnd = cpuNs()
         let wrote = f.writePiles(to: piles, capacity: pcap, dt: Float(dt)) != nil
-        _ = f.writeInstances(to: inst, lag: 0)
+        _ = f.writeInstances(to: inst)
         let tRender = cpuNs()
         if measuring {
             let ms = Double(tEnd &- tInput) / 1e6, input = Double(tInput &- tFrame) / 1e6

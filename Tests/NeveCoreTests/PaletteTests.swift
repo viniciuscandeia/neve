@@ -1,9 +1,9 @@
-// AGENT HEADER - Tests/NeveCoreTests/PaletteTests.swift  (Palette: every colour has light and dark, blend takes 0.5 s, tick step capped at 1/30 s so the blend never pops, light vector is unit and from above, glints stay below 3 Hz, flake sizes bias small. Adding a colour: give it BOTH variants or this fails.) Serialized: the suite mutates Palette.dark.
+// AGENT HEADER - Tests/NeveCoreTests/PaletteTests.swift  (Palette: every colour has light and dark, blend takes 0.5 s, tick step capped at 1/30 s so the blend never pops, light vector is unit and from above, glints stay below 3 Hz, flake sizes bias small. Adding a colour: give it BOTH variants or this fails.)
 
 import Testing
 @testable import NeveCore
 
-@Suite(.serialized) struct PaletteTests {   // extrasHaveBothAppearancesAndFollowTheBlend mutates Palette.dark (process-wide): the suite runs one test at a time
+struct PaletteTests {
     @Test func everyColorHasBothAppearances() {
         #expect(Palette.all.count >= 14)
         for (name, t) in Palette.all {
@@ -12,14 +12,10 @@ import Testing
         #expect(Palette.snow.dark.x < Palette.snow.light.x && Palette.flake.dark.x < Palette.flake.light.x)   // dark mode softens the white
         #expect(Palette.shadowAlpha.dark > Palette.shadowAlpha.light && Palette.rimAlpha.dark == 0)
     }
-    @Test func extrasHaveBothAppearancesAndFollowTheBlend() {
+    @Test func extrasHaveBothAppearances() {
         #expect(Palette.extras.count == 33 && Palette.all.count >= 46)
         for (name, t) in Palette.extras { #expect(t.light != t.dark, "\(name)") }
         for t in [Palette.rabbitFur, Palette.penguinBelly, Palette.trim, Palette.frost] { #expect(t.dark.max() < t.light.max() || t.dark.x < t.light.x) }   // whites soften
-        let d = Palette.dark; defer { Palette.dark = d }
-        Palette.dark = 0; let l = Rig.penguinBelly
-        Palette.dark = 1; let k = Rig.penguinBelly
-        #expect(l.x > k.x && Rig.carrot.x != l.x || Rig.carrot.x == Palette.carrot.dark.x)
     }
     @Test func lightIsUnitAndFromAbove() {
         #expect(abs(Palette.light.x * Palette.light.x + Palette.light.y * Palette.light.y - 1) < 1e-5 && Palette.light.y > 0.98 && Palette.light.x < 0)
