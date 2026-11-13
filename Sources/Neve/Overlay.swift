@@ -2,7 +2,7 @@
 // Role: `Overlay` (@MainActor, CAMetalDisplayLinkDelegate) owns, for ONE NSScreen: a borderless non-activating NSPanel (canJoinAllSpaces, level just above the Dock window, or just above
 //   desktop icons in "behind windows" mode; sharingType .none unless showInCaptures), a CAMetalLayer, the `SnowField` simulation (NeveCore), 3-slot ring buffers (flake Instances, actor Prims, PileSegs;
 //   inFlight semaphore = 3, never blocks main: a skipped slot just drops the frame) and the three Metal passes (piles -> prims/actors -> flakes; shaders and frame encoding in NeveRender: FrameData / Gpu / *Shader.swift).
-//   `InteractView` forwards mouse events; the panel ignores the mouse EXCEPT while Option is held over snow / a snowball (hitTest) or a drag is in progress (`pressing`, `held` snowball, `heldTree` = the overlay whose field holds the dragged Christmas tree: it moves to the neighbour screen's overlay (Overlay.all) when the cursor crosses; `dropTree()` / `hasTree` are the menu / uniqueness hooks).
+//   `InteractView` forwards mouse events to the shared NeveCore `InteractionPolicy` (Overlay is its AppKit adapter and `InteractionTarget`: it supplies Option / buttons / cursor / ignoresMouseEvents, the policy owns press order, drag, throw, lost release, sweep); the panel ignores the mouse EXCEPT while Option is held over snow / a snowball (hitTest) or a drag is in progress (policy.pressing, policy.held; `treeHost` = the overlay whose field holds the dragged Christmas tree: it moves to the neighbour screen's overlay (Overlay.all) when the cursor crosses; `dropTree()` / `hasTree` are the menu / uniqueness hooks).
 // Coordinates: simulation + all buffers are screen-LOCAL AppKit points, y-up, origin = screen.frame.origin (groundY = visibleFrame.minY - frame.minY, visibleTop likewise). Metal viewport slides the whole-screen
 //   coordinate space under a possibly smaller drawable (`shrunk` live rect, "maximized window" compact mode driven by Coverage.swift's CompactState; occ (OccluderLayout.bufferLength float4) = shader occluder rects + strength / counts).
 // Frame loop (`tick`, main thread via RunLoop.main .common; the nonisolated delegate uses MainActor.assumeIsolated): dt = min(real dt, 0.06); Palette.tick; advanceCover; cursor sweep (one segment from last
@@ -45,9 +45,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private let window: NSWindow
     var windowNumber: Int { window.windowNumber }
     private let view = InteractView()
-    private var held: Int?                // snowball being dragged
-    private var heldTree: Overlay?        // overlay (self or the neighbour screen's) whose field holds the Christmas tree being dragged
-    private var holding: Bool { held != nil || heldTree != nil }
+    private var policy = InteractionPolicy()   // NeveCore: the shared press / drag / release / sweep rules (this class is its AppKit adapter and InteractionTarget)
+    private var treeHost: Overlay?        // overlay (self or the neighbour screen's) whose field holds the Christmas tree being dragged (policy.held == .tree)
+    private var holding: Bool { policy.holding }
     /// Every overlay of the app (set once by AppController): the tree drag looks the screen under the cursor up here.
     static var all: () -> [Overlay] = { [] }
     var screenFrame: CGRect { frame }
@@ -55,12 +55,9 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// "Soltar árvore": starts the tree's gust + fall on this screen (false when there is one already, the option is off or the snow is leaving).
     func dropTree(replacing: Bool = false) -> Bool { let ok = field.dropTree(replacing: replacing); if ok { wake() }; return ok }
     /// Removes any tree / burst this screen holds (the menu replaces it); a drag in progress ends with it.
-    func removeTree() { field.removeTree(); if heldTree != nil { heldTree = nil; pressing = false }; wake() }
-    private var lastDragTime: CFTimeInterval = 0
-    private var lostRelease: CFTimeInterval = 0   // seconds held with no button down
+    func removeTree() { field.removeTree(); policy.cancelTree(); treeHost = nil; wake() }
     private var dayChecked: CFTimeInterval = -1000
     private var pollMouse = NSEvent.mouseLocation
-    private var lastCursor: CGPoint?
     private let metalLayer = CAMetalLayer()
     private let fd: FrameData   // NeveRender: 3-slot rings (flake Instances, Prims, PileSegs), frame writes and encoding; inputs set in render()
     static let slowmo = Float(ProcessInfo.processInfo.environment["NEVE_SLOWMO"] ?? "") ?? 1   // visual checks: the sim runs at this fraction of real time
@@ -71,7 +68,6 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     private var run = false, fullscreen = false   // run: the controller's single decision (enabled, awake, not hot, user active)
     private var occluded = false
     private var suspended = false, dipGen = 0   // Mission Control hides the snow (fade 0.2 s); a Space change dips it
-    private var pressing = false              // between our own mouseDown and mouseUp: stays interactive so the release is ours
     private var lowPower = false
     private var thermalWarm = false   // thermal state >= fair: economy frame rates (FrameRate.economyFrames), set by the controller
     private var econFrames: Bool { FrameRate.economyFrames(pref: prefs.economy, thermalRaw: thermalWarm ? 1 : 0) }
@@ -124,7 +120,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         super.init()
         view.onDown = { [weak self] e in MainActor.assumeIsolated { self?.mouseDown(e) } }
         view.onDrag = { [weak self] e in MainActor.assumeIsolated { self?.mouseDragged(e) } }
-        view.onUp = { [weak self] e in MainActor.assumeIsolated { self?.pressing = false; self?.mouseUp(throwing: e.timestamp - (self?.lastDragTime ?? 0) < 0.08) } }
+        view.onUp = { [weak self] e in MainActor.assumeIsolated { self?.mouseUp(e) } }
 
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -201,7 +197,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         shrunk = nil; liveLocal = nil; coverKey = nil
         cover = CompactState(); coverFraction = 0; coverActive = false; coverPause = false; occStrength = 0; occTarget = 0
         for i in fd.inputs.occ.indices { fd.inputs.occ[i] = .zero }; fd.inputs.occCount = (0, 0, 0)
-        held = nil; heldTree = nil; pressing = false; lastCursor = nil; shiftID = nil; shift = .zero
+        policy.reset(); treeHost = nil; shiftID = nil; shift = .zero
         lastWindows = []; pileSeen = -1; fd.forcePiles()
         field.resize(size: f.size, origin: f.origin, groundY: groundY, visibleTop: visibleTop)
         field.setLive(nil)
@@ -401,7 +397,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         return CGPoint(x: p.x + o.x, y: p.y + o.y)
     }
 
-    func clear() { field.clear(); held = nil; heldTree = nil; pressing = false; wake() }
+    func clear() { field.clear(); policy.clear(); treeHost = nil; wake() }
     func stage(_ s: Scenario) { field.stage(s); wake() }
     /// Scene mode: starts the script (after the scene windows are in the field) / seconds into its loop.
     func beginScene(_ k: SceneKind) { field.beginScene(k); wake() }
@@ -526,8 +522,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     /// Every pause path: the display link stops and the panel stops catching the mouse (a paused tick can no longer let go of it).
     private func pauseLink() {
         link?.isPaused = true
-        if holding { mouseUp() }   // a paused tick can no longer let go of a held ball / tree
-        pressing = false
+        policy.cancel(on: self)   // a paused tick can no longer let go of a held ball / tree
         if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
     }
 
@@ -581,24 +576,14 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         let option = sceneKind == nil && NSEvent.modifierFlags.contains(.option)
         let o = frame.origin
         let here = CGPoint(x: cursor.x - o.x, y: cursor.y - o.y)
-        if holding, !option { mouseUp() }   // ⌥ released mid-drag: let go
         // Interactive only where there is snow or a snowball (and ⌥ is down): everywhere else clicks pass through.
         let buttons = NSEvent.pressedMouseButtons
-        if buttons == 0 { pressing = false }
-        if holding, buttons == 0 { lostRelease += realDt; if lostRelease > 0.1 { mouseUp() } } else { lostRelease = 0 }   // mouse-up lost (the real one lands within a frame or two and keeps the throw)   // the release was lost (another app took it): never stay interactive
-        let interactive = holding || pressing || (option && buttons == 0 && showing && !suspended && frame.contains(cursor) && field.hitTest(point: here))
-        if window.ignoresMouseEvents == interactive { window.ignoresMouseEvents = !interactive }
-        let prevCursor = lastCursor ?? cursor
-        let sweeping = !resumed && !still && lastCursor != nil && prevCursor != cursor && NSEvent.pressedMouseButtons & 1 == 0 && !option && !holding
+        let tk = policy.tick(cursor: cursor, origin: o, option: option, buttonDown: buttons != 0, leftDown: buttons & 1 != 0, realDt: realDt, resumed: resumed, screen: frame.size,
+                             canInteract: showing && !suspended, canSweep: !still, slowmo: Self.slowmo, on: self)
+        if window.ignoresMouseEvents == tk.interactive { window.ignoresMouseEvents = !tk.interactive }
+        let prevCursor = tk.from, sweeping = tk.sweeping, moved = tk.moved
         let from = CGPoint(x: prevCursor.x - o.x, y: prevCursor.y - o.y)
-        // Another screen's overlay: a segment that never comes within 80pt (sweep radius + the tallest pile / figure) of this frame cuts nothing here.
-        let near = CGRect(origin: .zero, size: frame.size).insetBy(dx: -80, dy: -80).intersects(CGRect(x: min(from.x, here.x), y: min(from.y, here.y), width: max(abs(here.x - from.x), 1), height: max(abs(here.y - from.y), 1)))
-        if sweeping, near { field.sweep(from: from, to: here, dt: Float(max(realDt * Double(Self.slowmo), 1.0 / 240))) }
-        let moved = FrameRate.pointerVelocity(dx: Float(cursor.x - prevCursor.x), dy: Float(cursor.y - prevCursor.y), realDt: realDt, slowmo: Self.slowmo)
-        field.optionHeld = option
         refreshDay(now: now)
-        field.setPointer(frame.contains(cursor) ? SIMD2(Float(here.x), Float(here.y)) : nil, velocity: resumed ? .zero : moved)
-        lastCursor = cursor
         perf?.add(.input, t0); t0 = Perf.now()
         field.music = prefs.music ? MusicTap.shared.read() : .silent
         if !still {
@@ -628,7 +613,7 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         if wantSlow != slow { slow = wantSlow; perf?.bump(.flips); link?.preferredFrameRateRange = frameRange }
         perf?.secSlow = slow
         if let d = meltDone, field.meltDone { meltDone = nil; d() }
-        if still, !dirty, !option, !holding, !pressing, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }
+        if still, !dirty, !option, !holding, !policy.pressing, field.pilesSettled, !Palette.isBlending { stillPaused = true; pauseLink() }
     }
 
     /// Tells the simulation today's date (sleigh frequency); re-read every 10 minutes so a Mac left on rolls over into December.
@@ -640,44 +625,15 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     private func mouseDown(_ e: NSEvent) {
-        guard e.modifierFlags.contains(.option) else { window.ignoresMouseEvents = true; return }   // not ours (⌥ let go meanwhile): hand the click back, post nothing
-        pressing = true
-        let p = local(e)
-        if field.openGift(at: p) { return }
-        if field.pickTree(at: p) { heldTree = self; lastDragTime = e.timestamp; return }
-        held = field.pickSnowball(at: p) ?? field.scoop(at: p)
-        lastDragTime = e.timestamp
+        // Not ours (⌥ let go meanwhile): hand the click back, post nothing. No hit test here: the panel already gated the click by the previous frame's.
+        if policy.mouseDown(at: local(e), option: e.modifierFlags.contains(.option), hitGate: false, now: e.timestamp, on: self) == .passThrough { window.ignoresMouseEvents = true }
     }
 
-    /// Drags the Christmas tree: follows the cursor in global coordinates and, when the cursor enters another screen, moves the tree into that screen's field (the drag continues there).
-    private func dragTree(_ e: NSEvent) {
-        guard var host = heldTree else { return }
-        let g = NSEvent.mouseLocation
-        if !host.frame.contains(g), let n = Overlay.all().first(where: { $0 !== host && $0.showing && $0.frame.contains(g) }), let t = host.field.takeTree() {
-            n.field.adoptTree(t, at: n.localPoint(g))
-            host.wake(); n.wake()
-            heldTree = n; host = n
-        }
-        host.field.dragTree(to: host.localPoint(g), dt: Float(max(e.timestamp - lastDragTime, 1.0 / 240)))
-        lastDragTime = e.timestamp
-        host.wake()
-    }
+    private func mouseDragged(_ e: NSEvent) { policy.mouseDragged(to: local(e), now: e.timestamp, on: self) }
+
+    private func mouseUp(_ e: NSEvent) { policy.buttonUp(now: e.timestamp, on: self) }
 
     func localPoint(_ g: CGPoint) -> CGPoint { CGPoint(x: g.x - frame.origin.x, y: g.y - frame.origin.y) }
-
-    private func mouseDragged(_ e: NSEvent) {
-        if heldTree != nil { dragTree(e); return }
-        guard let id = held else { return }
-        field.drag(id, to: local(e), dt: Float(max(e.timestamp - lastDragTime, 1.0 / 240)))
-        lastDragTime = e.timestamp
-    }
-
-    private func mouseUp(throwing: Bool = false) {   // a pause before letting go is not a throw
-        if let h = heldTree { heldTree = nil; h.field.releaseTree(throwing: throwing); h.wake(); return }
-        guard let id = held else { return }
-        held = nil
-        field.drop(id, throwing: throwing)
-    }
 
     private func render(_ drawable: CAMetalDrawable) {
         let g = shrunk ?? CGRect(origin: .zero, size: frame.size)
@@ -723,4 +679,31 @@ final class Overlay: NSObject, CAMetalDisplayLinkDelegate {
         perf?.bump(.commits)
         perf?.add(.encode, t0)
     }
+}
+
+/// The app side of the shared InteractionPolicy: every call is main-thread (display link / mouse events), hence @preconcurrency. Only the tree needs the adapter's own logic (it can move to a neighbour screen mid-drag).
+extension Overlay: @preconcurrency InteractionTarget {
+    var optionHeld: Bool { get { field.optionHeld } set { field.optionHeld = newValue } }
+    func hitTest(point: CGPoint) -> Bool { field.hitTest(point: point) }
+    func openGift(at p: CGPoint) -> Bool { field.openGift(at: p) }
+    func pickTree(at p: CGPoint) -> Bool { guard field.pickTree(at: p) else { return false }; treeHost = self; return true }
+    /// Follows the cursor in global coordinates and, when the cursor enters another screen, moves the tree into that screen's field (the drag continues there).
+    func dragTree(to p: CGPoint, dt: Float) {
+        guard var host = treeHost else { return }
+        let g = NSEvent.mouseLocation
+        if !host.frame.contains(g), let n = Overlay.all().first(where: { $0 !== host && $0.showing && $0.frame.contains(g) }), let t = host.field.takeTree() {
+            n.field.adoptTree(t, at: n.localPoint(g))
+            host.wake(); n.wake()
+            treeHost = n; host = n
+        }
+        host.field.dragTree(to: host.localPoint(g), dt: dt)
+        host.wake()
+    }
+    func releaseTree(throwing: Bool) { if let h = treeHost { treeHost = nil; h.field.releaseTree(throwing: throwing); h.wake() } }
+    func pickSnowball(at p: CGPoint) -> Int? { field.pickSnowball(at: p) }
+    func scoop(at p: CGPoint) -> Int? { field.scoop(at: p) }
+    func drag(_ id: Int, to p: CGPoint, dt: Float) { field.drag(id, to: p, dt: dt) }
+    func drop(_ id: Int, throwing: Bool) { field.drop(id, throwing: throwing) }
+    func plow(from a: CGPoint, to b: CGPoint, dt: Float) { field.sweep(from: a, to: b, dt: dt) }
+    func setPointer(_ p: SIMD2<Float>?, velocity: SIMD2<Float>) { field.setPointer(p, velocity: velocity) }
 }

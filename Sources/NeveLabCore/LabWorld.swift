@@ -10,7 +10,7 @@
 //   Differences from the app: polls at a fixed 30 Hz instead of PollScheduler's bursts / 2 s safety poll; no Mission Control gate; no Space / stale protocol; no Dock; no CompactState / coverage compaction of the app (Overlay.measureCover); under a fullscreen window the sim keeps stepping (the app pauses the link); drag pile shift (render-only) not modelled.
 // Preparation commands (`fill_pile`, `drop_tree`) return "preparation": true; they use package-only NeveCore helpers (LabAccess.swift), never arbitrary writes.
 // Renderer note (plan): `Pile.shown` easing is mutated by SnowField.writePiles(dt:) -> frame data must be prepared ONCE per canonical step (in `prepareFrame`) and reused by every capture; capture must never step physics or call writePiles again.
-// Differences of policy vs the app: see InteractionPolicy.swift. Tests: Tests/NeveLabCoreTests.
+// The policy is the app's own (NeveCore/InteractionPolicy.swift; remaining differences listed there). Tests: Tests/NeveLabCoreTests.
 
 import CoreGraphics
 import Foundation

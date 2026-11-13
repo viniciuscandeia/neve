@@ -1,13 +1,12 @@
-// AGENT HEADER - Tests/NeveLabCoreTests/PolicyTests.swift  (InteractionPolicy against a recording mock target: no simulation involved)
+// AGENT HEADER - Tests/NeveCoreTests/PolicyTests.swift  (the shared InteractionPolicy against a recording mock target: no simulation involved)
 // Role: pins the app's input rules in the pure policy: press order gifts -> tree -> existing ball -> scoop, Option required, throw only when the last drag event is < 0.08 s old, Option released / lost release (> 0.1 s without button) let go WITHOUT a throw,
 //   one sweep per frame only when idle (no Option / button / hold, not the first frame), pointer position + velocity each frame.
 
 import CoreGraphics
-import NeveCore
 import Testing
-@testable import NeveLabCore
+@testable import NeveCore
 
-final class Mock: InteractionTarget {
+final class PolicyMock: InteractionTarget {
     var optionHeld = false
     var log: [String] = []
     var hit = true, gift = false, tree = false, ball: Int?, scooped: Int?
@@ -29,7 +28,7 @@ private let screen = CGSize(width: 1280, height: 800)
 private let pt = CGPoint(x: 100, y: 100)
 
 @Test func pressOrderIsGiftTreeBallScoop() {
-    var p = InteractionPolicy(), m = Mock(), r = InteractionPolicy.Press.nothing
+    var p = InteractionPolicy(), m = PolicyMock(), r = InteractionPolicy.Press.nothing
     r = p.mouseDown(at: pt, option: false, now: 0, on: m); #expect(r == .passThrough && m.log.isEmpty)
     m.hit = false
     r = p.mouseDown(at: pt, option: true, now: 0, on: m); #expect(r == .passThrough && m.log.isEmpty)
@@ -47,7 +46,7 @@ private let pt = CGPoint(x: 100, y: 100)
 }
 
 @Test func throwOnlyWhenTheLastDragIsFresh() {
-    var p = InteractionPolicy(), m = Mock()
+    var p = InteractionPolicy(), m = PolicyMock()
     m.ball = 1
     _ = p.mouseDown(at: pt, option: true, now: 1, on: m)
     p.mouseDragged(to: pt, now: 1.05, on: m)
@@ -61,7 +60,7 @@ private let pt = CGPoint(x: 100, y: 100)
 }
 
 @Test func optionReleaseAndLostReleaseLetGoWithoutThrow() {
-    var p = InteractionPolicy(), m = Mock()
+    var p = InteractionPolicy(), m = PolicyMock()
     m.ball = 1
     _ = p.mouseDown(at: pt, option: true, now: 0, on: m)
     p.tick(cursor: pt, option: false, buttonDown: true, realDt: 1.0 / 60, resumed: false, screen: screen, on: m)
@@ -75,7 +74,7 @@ private let pt = CGPoint(x: 100, y: 100)
 }
 
 @Test func sweepOnlyWhenIdleAndPointerEveryFrame() {
-    var p = InteractionPolicy(), m = Mock()
+    var p = InteractionPolicy(), m = PolicyMock()
     let a = CGPoint(x: 100, y: 100), b = CGPoint(x: 160, y: 100)
     p.tick(cursor: a, option: false, buttonDown: false, realDt: 1.0 / 60, resumed: true, screen: screen, on: m)
     #expect(m.velocity == .zero && m.pointer == SIMD2(100, 100) && !m.log.contains("plow"))
@@ -95,9 +94,9 @@ private let pt = CGPoint(x: 100, y: 100)
 }
 
 @Test func interactiveOnlyOverSnowWithOptionAndNoButton() {
-    var p = InteractionPolicy(), m = Mock(), r = false
-    r = p.tick(cursor: pt, option: false, buttonDown: false, realDt: 1.0 / 60, resumed: true, screen: screen, on: m); #expect(!r)
-    r = p.tick(cursor: pt, option: true, buttonDown: false, realDt: 1.0 / 60, resumed: false, screen: screen, on: m); #expect(r)
+    var p = InteractionPolicy(), m = PolicyMock(), r = false
+    r = p.tick(cursor: pt, option: false, buttonDown: false, realDt: 1.0 / 60, resumed: true, screen: screen, on: m).interactive; #expect(!r)
+    r = p.tick(cursor: pt, option: true, buttonDown: false, realDt: 1.0 / 60, resumed: false, screen: screen, on: m).interactive; #expect(r)
     m.hit = false
-    r = p.tick(cursor: pt, option: true, buttonDown: false, realDt: 1.0 / 60, resumed: false, screen: screen, on: m); #expect(!r)
+    r = p.tick(cursor: pt, option: true, buttonDown: false, realDt: 1.0 / 60, resumed: false, screen: screen, on: m).interactive; #expect(!r)
 }
