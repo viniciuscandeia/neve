@@ -1,0 +1,18 @@
+{
+  "about": "Window closed: snow stays as a ghost inside goneGrace, gone after",
+  "config": {"seed": 18, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "light", "intensity": "media"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "create_window", "id": 1, "title": "G", "x": 120, "y": 100, "w": 400, "h": 180},
+    {"type": "fill_pile", "surface": 1, "height": 9},
+    {"type": "advance", "seconds": 2},
+    {"type": "close_window", "id": 1},
+    {"type": "advance", "seconds": 0.2},
+    {"type": "capture", "name": "inside-grace"},
+    {"type": "advance", "seconds": 2},
+    {"type": "capture", "name": "after"}
+  ]
+}

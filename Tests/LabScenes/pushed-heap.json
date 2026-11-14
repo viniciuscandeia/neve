@@ -1,0 +1,19 @@
+{
+  "about": "Cursor sweeps across a window top pushing snow into a heap",
+  "config": {"seed": 15, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "light", "intensity": "media"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "create_window", "id": 1, "title": "W", "x": 100, "y": 150, "w": 440, "h": 150},
+    {"type": "fill_pile", "surface": 1, "height": 7},
+    {"type": "advance", "seconds": 1},
+    {"type": "cursor_move", "x": 110, "y": 146, "duration": 0.1},
+    {"type": "cursor_move", "x": 530, "y": 146, "duration": 0.5},
+    {"type": "cursor_move", "x": 110, "y": 146, "duration": 0.5},
+    {"type": "cursor_move", "x": 530, "y": 146, "duration": 0.5},
+    {"type": "cursor_move", "x": 320, "y": 60, "duration": 0.2},
+    {"type": "advance", "seconds": 2}
+  ]
+}

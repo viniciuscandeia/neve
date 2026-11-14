@@ -1,0 +1,13 @@
+{
+  "about": "Tall ground bank meeting the Dock bar end (the seam)",
+  "config": {"seed": 12, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "light", "intensity": "forte"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "set_dock", "position": "bottom", "icons": 6},
+    {"type": "fill_pile", "surface": "ground", "height": 60},
+    {"type": "advance", "seconds": 10}
+  ]
+}

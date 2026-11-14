@@ -1,0 +1,12 @@
+{
+  "about": "Same as dock-light in dark appearance",
+  "config": {"seed": 11, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "dark", "intensity": "forte"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "fill_pile", "surface": "ground", "height": 40},
+    {"type": "advance", "seconds": 10}
+  ]
+}

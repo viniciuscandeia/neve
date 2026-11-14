@@ -1,0 +1,12 @@
+{
+  "about": "Floating Dock, light: ground bank, snow on the bar and in the gap",
+  "config": {"seed": 11, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "light", "intensity": "forte"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "fill_pile", "surface": "ground", "height": 40},
+    {"type": "advance", "seconds": 10}
+  ]
+}

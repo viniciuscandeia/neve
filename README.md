@@ -264,6 +264,8 @@ Para pegar neve do chão: `option_down`, `cursor_move` até o monte, `mouse_down
 
 Aumentar o Dock depressa (mais ícones) empurra o banco de neve para cima da barra, como no app. Outras ações: `resize_window`, `minimize_window`, `restore_window`, `close_window`, `raise_window`, `lower_window`, `advance` (`steps` ou `seconds`), `drop_tree`, `set_pref`, `set_intensity`.
 
+**Testes de imagem de referência (golden).** `Tests/LabScenes/<nome>.json` descreve uma cena (`config` {seed, size, dock, icons, appearance, intensity, prefs}, `actions` = as ações do Lab, mais `{"type":"capture","name":"x"}` para várias capturas) e `Tests/run.sh LabGolden` monta cada uma no binário `NeveLab` real e compara o PNG byte a byte com `Tests/LabGolden/<GPU>-macos<N>/<cena>[.<captura>].png`. As referências são por máquina (GPU + versão maior do macOS); sem pasta para a máquina atual o teste avisa `LAB-GOLDEN SKIP` e passa. Numa diferença ele grava `build/lab-golden-failures/<nome>.actual.png` e `.diff.png` (diferença absoluta x8) e imprime quantos pixels mudaram e a maior diferença por canal. Se a mudança visual é intencional, regenere com `scripts/lab-golden.sh --update [cena]` (mostra NEW / UPDATED / UNCHANGED por imagem), **abra os PNGs alterados e confira** antes de commitar. Compacto / still não são modelados no Lab e por isso não têm cena.
+
 ### Build e release
 
 - **Variáveis do `scripts/make-app.sh`:** `NEVE_VERSION` (versão do bundle, padrão 1.0), `NEVE_UNIVERSAL=1` (arm64 + x86_64, dois builds e `lipo`), `NEVE_SIGN` (identidade de assinatura; `-` = ad-hoc) e `NEVE_APP_DIR` (onde gerar `Neve.app`, padrão `build`).

@@ -1,0 +1,14 @@
+{
+  "about": "Window bottom 2 pt above the Dock top (window bottom y 309, Dock top 311)",
+  "config": {"seed": 13, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "light", "intensity": "media"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "create_window", "id": 1, "title": "Big", "x": 40, "y": 70, "w": 560, "h": 239},
+    {"type": "fill_pile", "surface": 1, "height": 8},
+    {"type": "fill_pile", "surface": "ground", "height": 8},
+    {"type": "advance", "seconds": 4}
+  ]
+}

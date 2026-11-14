@@ -1,0 +1,16 @@
+{
+  "about": "Snowman built on the ground, then burst by the cursor",
+  "config": {"seed": 17, "size": "640x400", "dock": "none", "icons": 12, "appearance": "light", "intensity": "media"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "fill_pile", "surface": "ground", "height": 24},
+    {"type": "advance", "seconds": 40},
+    {"type": "capture", "name": "built"},
+    {"type": "cursor_move", "x": 200, "y": 368, "duration": 0.2},
+    {"type": "cursor_move", "x": 400, "y": 368, "duration": 0.2},
+    {"type": "advance", "seconds": 0.7},
+    {"type": "capture", "name": "burst"}
+  ]
+}

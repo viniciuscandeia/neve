@@ -1,0 +1,13 @@
+{
+  "about": "Christmas tree with lights on the ground, dark",
+  "config": {"seed": 16, "size": "640x400", "dock": "bottom", "icons": 12, "appearance": "dark", "intensity": "leve"},
+  "actions": [
+    {"type": "set_pref", "pref": "visitors", "value": false},
+    {"type": "set_pref", "pref": "sleigh", "value": false},
+    {"type": "set_pref", "pref": "walk", "value": false},
+    {"type": "set_pref", "pref": "snowman", "value": false},
+    {"type": "fill_pile", "surface": "ground", "height": 6},
+    {"type": "drop_tree"},
+    {"type": "advance", "seconds": 6}
+  ]
+}
