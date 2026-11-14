@@ -78,6 +78,8 @@ public enum Tuning {
     static let moundStepVar: Float = 0.25   // +-share the heap repose step varies per column (stable slow noise): the face is not one straight line
     static let moundRound: Float = 0.12     // pt per bin^2: the sharpest curvature a pushed heap keeps; above it Pile.roundHeap rounds the crest / foot
     static let plowSlumpTime: Float = 0.5   // s the walls of a scooped gap keep slumping toward repose (spilling some snow back in behind the cursor)
+    static let dockRunup: Float = 0.08      // pt of reach above the standing heap per pt/s of push speed beyond dockOverSpeed (1150 pt/s: 52 pt)
+    static let dockCrestMax: Float = 120    // pt^2 thrown over the bar per sweep segment at most (the plow re-scoops the whole heap every frame: an uncapped share would fling it all as a few huge lumps)
     static let dockOverSpeed: Float = 500   // pt/s: a push slower than this only heaps against the Dock bar; faster, a speed-scaled share of what rises above the bar's top arcs over onto the Dock pile
     static let moundReach = 9               // a deposit re-checks a pushed heap's allowance this many bins either side
     // Drawn contour (Render.writePiles, Contour.writeGroups): draw only, never changes heights

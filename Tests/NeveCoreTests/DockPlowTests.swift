@@ -1,7 +1,7 @@
 // AGENT HEADER - Tests/NeveCoreTests/DockPlowTests.swift  (cursor plow vs the Dock bar as an obstacle; heaps settle to a mound)
 // 1440x900 field, Dock bar [400,1000) (top = edgeY of surface 0), ground snow 20 deep outside the span. A fast horizontal push along the ground toward the Dock never carries snow under the bar to the far side; it banks against the bar's side up to the
 //   Dock top and the excess lands on the Dock's own pile at the near end (volume conserved: ground + Dock pile + debris + sweepOwed). Repeated pushes at the screen end / the Dock side leave a mound (neighbour step <= ~2x Tuning.slope), not a spike.
-// A fast push crests chunks over the bar onto the Dock pile, a slow one does not (slowPushNeverCrestsOverTheDock). Related: Surfaces.swift (sweep / berm), Pile.settle.
+// A fast push crests chunks over the bar onto the Dock pile, a slow one does not (slowPushNeverCrestsOverTheDock); the realistic path (ground bank above the plain limit, FULL Dock pile, cursor at bank height) is aCursorAtBankHeight... Related: Surfaces.swift (sweep / berm), Pile.settle.
 
 import Testing
 import CoreGraphics
@@ -37,7 +37,7 @@ private func maxStep(_ h: ArraySlice<Float>) -> Float { zip(h, h.dropFirst()).fi
         // the far side of the Dock (500... / ...200 are the columns under the bar's other half and beyond) gains nothing
         let far = dir > 0 ? Array(g[500...]) : Array(g[..<200])
         for (a, b) in zip(far, far0) { #expect(a <= b + 0.01) }
-        #expect(g[(dir > 0 ? 160 : 500)..<(dir > 0 ? 200 : 540)].max()! > 25 || f.pile(id: 0)!.heights.reduce(0, +) > dockBefore)
+        #expect(g[(dir > 0 ? 160 : 500)..<(dir > 0 ? 200 : 540)].max()! > 25 || f.pile(id: 0)!.heights.reduce(0, +) > dockBefore || f.debris.contains { $0.freq > 0 })   // (banked against the side, landed on the Dock pile, or still arcing over the bar)
         #expect(g.max()! <= dockTop + 1)
         #expect(abs(vol(f) - before) < before * 0.005)
     }
@@ -89,4 +89,32 @@ private func maxStep(_ h: ArraySlice<Float>) -> Float { zip(h, h.dropFirst()).fi
     let h = gh(f)
     #expect(h.max()! > 40)
     #expect(maxStep(h[600...]) <= 2 * (Tuning.slope + Tuning.moundSlope) + 0.01)   // the compacted heap's flanks stand at ~45 degrees (slope + moundSlope per bin)
+}
+
+// The realistic path (found in the Neve Lab): after a snowfall the ground bank beside the Dock stands well above the plain pile limit and the Dock pile is FULL, and the cursor hugs the ground at bank height (its lower edge above
+// maxPileHeight). Used to scoop nothing (the sweep gate looked at the plain limit only), and thrown chunks could only overflow off a full Dock pile.
+private func bankField() -> SnowField {
+    let f = field()
+    let g = f.index[Tuning.groundID]!, d = f.index[0]!
+    for b in 100..<200 { f.surfaces[g].pile.heights[b] = 60 }   // a 60 pt bank beside the bar (bins 100..199 = x 200...400)
+    for b in f.surfaces[d].pile.heights.indices where f.surfaces[d].pile.visible[b] { f.surfaces[d].pile.heights[b] = max(f.surfaces[d].pile.heights[b], min(f.surfaces[d].pile.limit(b), 18)) }   // full Dock pile
+    return f
+}
+private func bankPush(step: CGFloat, y: CGFloat = 25) -> (dock: Float, total: Float, total0: Float) {
+    let f = bankField(), t0 = vol(f), dock0 = f.pile(id: 0)!.heights.reduce(0, +) * Tuning.binWidth
+    var x: CGFloat = 100
+    for _ in 0..<400 {
+        f.sweep(from: CGPoint(x: x, y: y), to: CGPoint(x: x + step, y: y), dt: 1 / 60)
+        f.step(dt: 1 / 60)
+        x += step; if x > 390 { x = 100 }
+    }
+    for _ in 0..<240 { f.step(dt: 1 / 60) }
+    return (f.pile(id: 0)!.heights.reduce(0, +) * Tuning.binWidth - dock0, vol(f), t0)
+}
+@Test func aCursorAtBankHeightScoopsTheBankAndAFastPushCrestsOntoAFullDockPile() {
+    let fast = bankPush(step: 20), slow = bankPush(step: 5)   // 1200 vs 300 pt/s
+    #expect(fast.dock > 100, "fast push crests onto the full Dock pile: +\(fast.dock)")
+    #expect(slow.dock < 20, "slow push only heaps against the bar: +\(slow.dock)")
+    #expect(abs(slow.total - slow.total0) < slow.total0 * 0.005, "a slow push conserves the snow")
+    #expect(fast.total <= fast.total0 * 1.001, "a fast push never creates snow (a full Dock pile sheds part of a landing: Dock trickle cap, as before)")
 }

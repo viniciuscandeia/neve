@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveCore/Debris.swift  (falling snow chunks)
 // Role: `addDebris(x:y:vx:fall:size:vol:)` (false when Tuning.maxDebris 1200 is reached) and `stepDebris(dt:)`, the per-frame loop over `debris` (Flakes of kind .debris; `shape` 1 clump, 2 slab...). Snow accelerates (gravity 1400 pt/s^2, terminal
 //   1700), vx relaxes toward wind, and it lands through the shared `tryLand` (Flakes.swift: deposits `size*depositScale` volume; heavy falls there call Effects.impact) or vanishes past a side edge / below the bottom. Shape-2 slabs may `splitSlab`.
-// Flake fields used here: `phase` > 0 = freshly shed, cannot land yet (counts down by dt; shed paths set it, e.g. 0.5 in Avalanche); on a held slab phase < 0 = seconds since release (ramps the slide up over 0.15 s). `amp` > 0 = INTACT
+// Flake fields used here: `freq` > 0 = a crest chunk thrown over the Dock bar by a push (Surfaces.crestLand heaps it on the Dock pile past its limit); `phase` > 0 = freshly shed, cannot land yet (counts down by dt; shed paths set it, e.g. 0.5 in Avalanche); on a held slab phase < 0 = seconds since release (ramps the slide up over 0.15 s). `amp` > 0 = INTACT
 //   slab (amp = seconds aloft + 1): breaks via `slabHit`/`breakSlab` on a hit, or randomly when fragile (size < 40, aloft > 0.15 s; not in calm). `delay` > 0 on an intact slab = held until the release ripple reaches it (sags, slides at 0.3x); on a plain shape-2 slab it is the aloft timer for splitSlab.
 // Window bodies are walls: `blockByWindows` (after the move) keeps a piece from entering the outline of a window in FRONT of its origin (`SnowField.occluders` index < `Flake.oz`, `Occluder.hides`) sideways: x back, vx 0, it slides down the wall.
 //   Origin z: `Flake.oz` is stamped by `addDebris(oz:)` / `put` from `spawnZ` (`withSpawnZ(originZ(si:)) { ... }` at the spawn sites: overflow, spill, eave, avalanche, impact crumbs, figure bursts, shed runs; chunks and powder of a broken slab inherit it). Default .max = ground / Dock / sweep / loose = blocked by all.
@@ -74,7 +74,7 @@ extension SnowField {
             }
             let off = f.pos.x < -f.size / 2 || f.pos.x > w + f.size / 2   // gone only when it is fully past the screen edge
             // The landing test comes BEFORE the bottom-of-screen removal: a piece at terminal speed covers more than its size in one step, and would be dropped below the floor with its snow before it could land.
-            if (f.phase <= 0 && f.pos.x >= 0 && f.pos.x <= w && tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale, fall: f.fall, vol: f.vol, span: f.shape == 2 ? f.size : 0))
+            if (f.phase <= 0 && f.pos.x >= 0 && f.pos.x <= w && ((f.freq > 0 && crestLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, vol: f.vol)) || tryLand(x: f.pos.x, prevY: prevY, newY: f.pos.y, volume: f.size * Tuning.depositScale, fall: f.fall, vol: f.vol, span: f.shape == 2 ? f.size : 0)))
                 || f.pos.y < -f.size || off {
                 debris[i] = debris[debris.count - 1]
                 debris.removeLast()
