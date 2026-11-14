@@ -232,12 +232,13 @@ NEVE_SNOWMAN_FAST=1 .build/release/Neve
 
 ### Neve Lab (desktops simulados para agentes)
 
-`NeveLab` é um executável separado: cada sessão é um processo com mundo, cursor, preferências e Metal próprios, sem tocar no cursor nem nas janelas reais. Tela de 1280 × 800 pt (escala 1×, aparência clara, sem áudio); coordenadas dos comandos seguem a imagem (origem no canto superior esquerdo). O tempo só anda dentro dos comandos, em passos fixos de 1/60 s.
+`NeveLab` é um executável separado: cada sessão é um processo com mundo, cursor, preferências e Metal próprios, sem tocar no cursor nem nas janelas reais. Tela de 1280 × 800 pt (escala 1×, sem áudio, com Dock inferior e aparência clara por padrão); coordenadas dos comandos seguem a imagem (origem no canto superior esquerdo). O tempo só anda dentro dos comandos, em passos fixos de 1/60 s.
 
 ```sh
 swift build -c release
 L=.build/release/NeveLab
 $L create --id a --seed 7 [--size 1280x800] [--dir build/lab/a]   # inicia a sessão (processo em segundo plano, socket local)
+#   [--dock bottom|none] [--dock-icons 12] [--appearance light|dark]  # Dock virtual (padrão: bottom, 12 ícones) e aparência inicial
 $L send --id a '{"type":"create_window","id":1,"title":"Notas","x":200,"y":300,"w":500,"h":300}'
 $L state --id a                                                    # JSON: passo, janelas, cursor, bolas, árvore, neve, preferências, digest
 $L capture --id a                                                  # <dir>/captures/capture-NNNN.png + .json (passo, configuração, build, estado); não avança a física
@@ -253,7 +254,15 @@ Cada ação aceita vai para `<dir>/history.jsonl`; ação inválida devolve `{"o
 {"type":"cursor_move","x":400,"y":795,"duration":0.3}
 ```
 
-Para pegar neve do chão: `option_down`, `cursor_move` até o monte, `mouse_down` (`"outcome":"scoop"`), arraste com `cursor_move` e solte com `mouse_up`. Outras ações: `resize_window`, `minimize_window`, `restore_window`, `close_window`, `raise_window`, `lower_window`, `advance` (`steps` ou `seconds`), `drop_tree`, `set_pref`, `set_intensity`.
+Para pegar neve do chão: `option_down`, `cursor_move` até o monte, `mouse_down` (`"outcome":"scoop"`), arraste com `cursor_move` e solte com `mouse_up`. **Dock e aparência.** Com `--dock bottom` (padrão, como num Mac real) a sessão tem uma barra flutuante estilo macOS 26 (84 pt de altura, largura conforme `--dock-icons`) que entra na lista de janelas como no app (superfície 0): o chão sobe acima da barra, o banco de neve cresce ao lado dela, há neve no vão embaixo e no topo (pilha do Dock). `--dock none` volta ao chão plano na borda da tela. `--appearance dark` usa a paleta escura e um fundo escuro na captura (a simulação é idêntica; só muda o desenho). Ações de preparação (valem para o próximo `capture`; o estado mostra `dock` {position, icons, frame, ground} e `screen.appearance`):
+
+```json
+{"type":"set_dock","position":"bottom","icons":20}
+{"type":"set_dock","position":"none"}
+{"type":"set_appearance","appearance":"dark"}
+```
+
+Aumentar o Dock depressa (mais ícones) empurra o banco de neve para cima da barra, como no app. Outras ações: `resize_window`, `minimize_window`, `restore_window`, `close_window`, `raise_window`, `lower_window`, `advance` (`steps` ou `seconds`), `drop_tree`, `set_pref`, `set_intensity`.
 
 ### Build e release
 

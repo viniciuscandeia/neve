@@ -1,6 +1,6 @@
 // AGENT HEADER - Tests/NeveLabTests/LabRealWorldTests.swift
 // Role: acceptance tests of the REAL Neve Lab (NeveLab binary = NeveLabCore world + NeveRender capture) driven only through its CLI (`create` / `send` / `state` / `capture` / `replay` / `stop`), the way an agent uses it.
-// Covers: capture twice without advancing = identical PNG bytes and JSON; captures between steps do not change later state / digest; replay of a real session reproduces state AND digest, also after extra steps; an invalid action returns
+// Covers: Dock + dark appearance through the CLI (state, config.json, dark vs light capture differ, dark repeatable, replay); capture twice without advancing = identical PNG bytes and JSON; captures between steps do not change later state / digest; replay of a real session reproduces state AND digest, also after extra steps; an invalid action returns
 // an error and leaves world and history unchanged; two sessions act simultaneously sharing no files / sockets / state; ball scoop / drag / release; tree pick / drag / release. The binary sits next to NevePackageTests.xctest
 // (.build/<cfg>/NeveLab); a missing binary FAILS these tests (it is built with the test bundle). Sessions run on short ids under $TMPDIR/neve-lab; each test stops what it created.
 import Foundation
@@ -36,9 +36,9 @@ private struct Sess {
 }
 
 private func tmp() -> String { NSTemporaryDirectory() + "nlr-\(UUID().uuidString.prefix(8))" }
-private func start(_ lab: Lab, _ tag: String, seed: Int = 5, replay from: String? = nil) throws -> Sess {
+private func start(_ lab: Lab, _ tag: String, seed: Int = 5, dock: String = "none", extra: [String] = [], replay from: String? = nil) throws -> Sess {
     let id = tag + String(UUID().uuidString.prefix(6)), dir = tmp()
-    let r = try from.map { try lab.run(["replay", "--from", $0, "--id", id, "--dir", dir]) } ?? lab.run(["create", "--id", id, "--seed", "\(seed)", "--size", "640x400", "--dir", dir])
+    let r = try from.map { try lab.run(["replay", "--from", $0, "--id", id, "--dir", dir]) } ?? lab.run(["create", "--id", id, "--seed", "\(seed)", "--size", "640x400", "--dir", dir, "--dock", dock] + extra)
     #expect(r.code == 0, "create failed: \(r.json?.text ?? "?")")
     return Sess(lab: lab, id: id, dir: dir)
 }
@@ -108,6 +108,34 @@ private let scene = [
                     #"{"type":"advance","steps":"x"}"#, #"{"type":"advance","steps":5,"extra":1}"#, #"{"type":"mouse_up"}"#] { try a.fail(bad) }
         #expect(try lab.run(["send", "--id", a.id, "not json"]).code == 2)
         #expect(try a.state() == s0); #expect(a.history() == h0)
+    }
+
+    @Test func dockAndDarkAppearanceThroughTheCLI() throws {
+        let lab = try realLab()
+        let l = try start(lab, "dl", dock: "bottom", extra: ["--dock-icons", "8"]), d = try start(lab, "dd", dock: "bottom", extra: ["--dock-icons", "8", "--appearance", "dark"]); defer { l.end(); d.end() }
+        for s in [l, d] { try s.send(#"{"type":"advance","seconds":30}"#) }
+        let (sl, sd) = (try l.state(), try d.state())
+        #expect(sl["dock"]?["position"] == .string("bottom") && sl["dock"]?["icons"] == .number(8) && sl["dock"]?["frame"]?["w"] == .number(484))
+        #expect(sl["screen"]?["appearance"] == .string("light") && sd["screen"]?["appearance"] == .string("dark"))
+        #expect(sl["digest"] == sd["digest"], "appearance is render-only: the simulation is identical")
+        let cfg = try JSON.parse(Data(contentsOf: URL(fileURLWithPath: l.dir + "/config.json")))
+        #expect(cfg["dock"] == .string("bottom") && cfg["dockIcons"] == .number(8) && cfg["appearance"] == .string("light"))
+        func shot(_ s: Sess, _ dir: String) throws -> Data {
+            let r = try lab.run(["capture", "--id", s.id, "--dir", dir]); return try Data(contentsOf: URL(fileURLWithPath: try #require(arr(r.json?["result"]?["files"]).first?.string)))
+        }
+        let (d1, d2) = (tmp(), tmp())
+        let light = try shot(l, d1), dark = try shot(d, d1), dark2 = try shot(d, d2)
+        #expect(light != dark, "dark capture differs from light")
+        #expect(dark == dark2, "dark capture is repeatable")
+        // switching at run time re-prepares the frame: the light session turned dark captures exactly like the born-dark one
+        try l.send(#"{"type":"set_appearance","appearance":"dark"}"#)
+        #expect(try shot(l, tmp()).count > 5000 && l.state()["screen"]?["appearance"] == .string("dark"))
+        try l.send(#"{"type":"set_dock","position":"none"}"#)
+        #expect(try l.state()["dock"]?["position"] == .string("none"))
+        try l.fail(#"{"type":"set_dock","position":"top"}"#)
+        // replay carries dock options and the actions
+        let r = try start(lab, "dr", replay: l.dir); defer { r.end() }
+        #expect(try r.state() == l.state())
     }
 
     @Test func twoSessionsActSimultaneouslyAndShareNothing() throws {

@@ -1,6 +1,8 @@
 // AGENT HEADER - Sources/NeveLab/LabAdapter.swift
 // Role: `LabAdapter` = the NeveLabKit `SessionWorld` backed by the real NeveLabCore.LabWorld (JSON enum <-> String at the boundary; core LabError -> SessionError.invalid) plus the headless renderer (NeveRender, Metal).
-// Config mapping: SessionConfig(id, seed, width x height, dir, build) -> core LabConfig(seed, width, height); everything else stays core defaults (1280x800 scale 1, light, silent, fixed calendar day).
+// Config mapping: SessionConfig(id, seed, width x height, dir, build) -> core LabConfig(seed, width, height); dock / dockIcons / appearance (config + set_dock / set_appearance actions) as well; everything else stays core defaults (1280x800 scale 1, silent, fixed calendar day).
+// Appearance: the lab process owns the global `Palette.dark` (0 / 1, no fade), set from `core.dark` at init and in every `prepare` (so frame data and the encode uniform agree). Capture background / window colours follow it.
+// Dock in the PNG: rounded translucent bar + icon squares from state["dock"], drawn after the windows and before the snow (the app's overlay draws over the Dock).
 // Frame data: ONE `FrameData` per session, prepared by `core.prepareFrame` once per canonical step (inputs: contrast 0, effects on, shader time = step/60, no occluders / compact) and once more after an accepted action that did not
 //   step (so instant commands like fill_pile / create_window show up in the next capture); that is a function of the action history only, never of captures. `capture` never steps physics and never calls writePiles: it only `encode`s the
 //   already prepared data into an offscreen bgra8 texture of the session size, composites it over a CoreGraphics background (plain sky + window rectangles with title and id, back to front, BEHIND the snow) and writes <name>.png + <name>.json
@@ -27,6 +29,8 @@ final class LabAdapter: SessionWorld, @unchecked Sendable {
         self.config = config
         var c = NeveLabCore.LabConfig()
         c.seed = config.seed; c.width = Double(config.width); c.height = Double(config.height)
+        c.dock = config.dock == "bottom"; c.dockIcons = config.dockIcons; c.dark = config.appearance == "dark"
+        Palette.dark = c.dark ? 1 : 0; Palette.darkTarget = Palette.dark   // the palette is process-global: one process = one session, so the lab owns it
         let lc = NeveLabCore.LabWorld(config: c); core = lc
         let g = Gpu()
         gpu = g
@@ -42,6 +46,7 @@ final class LabAdapter: SessionWorld, @unchecked Sendable {
     private func prepare(step: Int) {
         guard let frame else { return }
         frame.inputs.time = Float((Double(step) / 60).truncatingRemainder(dividingBy: 1024))
+        Palette.dark = core.dark ? 1 : 0; Palette.darkTarget = Palette.dark   // appearance changes apply at once (no 0.5 s fade) and the Rig colours are re-prepared here
         frame.grow(for: core.field)
         frame.prepare(core.field)
     }
@@ -50,7 +55,7 @@ final class LabAdapter: SessionWorld, @unchecked Sendable {
         let before = core.step
         do {
             let r = try JSON.parse(core.apply(action.text))
-            if core.step == before { prepare(step: core.step) }
+            if core.step == before { prepare(step: core.step) }   // also after set_dock / set_appearance: frame data is re-prepared
             return r
         } catch let e as NeveLabCore.LabError { throw SessionError.invalid(e.message) }
     }
@@ -75,7 +80,7 @@ final class LabAdapter: SessionWorld, @unchecked Sendable {
 
         let st = state()
         let png = dir.appendingPathComponent(name + ".png"), js = dir.appendingPathComponent(name + ".json")
-        try writePNG(snow: snow, windows: st["windows"], to: png)
+        try writePNG(snow: snow, windows: st["windows"], dock: st["dock"], dark: core.dark, to: png)
         let meta = JSON.object(["step": .number(Double(core.step)), "digest": st["digest"] ?? .null, "config": (try? JSON.parse(JSONEncoder().encode(config))) ?? .null,
                                 "build": .object(config.build.mapValues { .string($0) }), "state": st])
         try meta.data().write(to: js)
@@ -83,26 +88,37 @@ final class LabAdapter: SessionWorld, @unchecked Sendable {
     }
 
     /// Background + windows (image coordinates, y down) drawn first, the premultiplied snow frame over them.
-    private func writePNG(snow: [UInt8], windows: JSON?, to url: URL) throws {
+    private func writePNG(snow: [UInt8], windows: JSON?, dock: JSON?, dark: Bool, to url: URL) throws {
         let w = config.width, h = config.height
         let cs = CGColorSpace(name: CGColorSpace.sRGB)!
         let bi = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: cs, bitmapInfo: bi) else { throw SessionError.io("CoreGraphics: no bitmap context") }
-        ctx.setFillColor(CGColor(red: 0.60, green: 0.68, blue: 0.78, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.setFillColor(dark ? CGColor(red: 0.07, green: 0.09, blue: 0.14, alpha: 1) : CGColor(red: 0.60, green: 0.68, blue: 0.78, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
         if case .array(let list) = windows {
             for win in list.reversed() where win["minimized"] != .bool(true) {   // z 0 = front, so draw from the back
                 guard let f = win["frame"], let x = f["x"]?.number, let y = f["y"]?.number, let ww = f["w"]?.number, let wh = f["h"]?.number else { continue }
                 let r = CGRect(x: x, y: Double(h) - y - wh, width: ww, height: wh)   // flip to CG's y-up
                 let bar = min(30, wh)
-                ctx.setFillColor(CGColor(red: 0.96, green: 0.96, blue: 0.97, alpha: 1)); ctx.fill(r)
-                ctx.setFillColor(CGColor(red: 0.84, green: 0.85, blue: 0.88, alpha: 1)); ctx.fill(CGRect(x: r.minX, y: r.maxY - bar, width: ww, height: bar))
+                ctx.setFillColor(dark ? CGColor(gray: 0.15, alpha: 1) : CGColor(red: 0.96, green: 0.96, blue: 0.97, alpha: 1)); ctx.fill(r)
+                ctx.setFillColor(dark ? CGColor(gray: 0.23, alpha: 1) : CGColor(red: 0.84, green: 0.85, blue: 0.88, alpha: 1)); ctx.fill(CGRect(x: r.minX, y: r.maxY - bar, width: ww, height: bar))
                 ctx.setStrokeColor(CGColor(red: 0.45, green: 0.47, blue: 0.52, alpha: 1)); ctx.stroke(r.insetBy(dx: 0.5, dy: 0.5))
                 let label = "\(win["title"]?.string ?? "") [id \(Int(win["id"]?.number ?? 0))]"
                 let font = CTFontCreateWithName("Helvetica" as CFString, 13, nil)
                 let attr = CFAttributedStringCreate(nil, label as CFString, [kCTFontAttributeName: font, kCTForegroundColorFromContextAttributeName: true] as CFDictionary)!
-                ctx.setFillColor(CGColor(gray: 0.1, alpha: 1))
+                ctx.setFillColor(CGColor(gray: dark ? 0.92 : 0.1, alpha: 1))
                 ctx.textPosition = CGPoint(x: r.minX + 8, y: r.maxY - bar / 2 - 5)
                 CTLineDraw(CTLineCreateWithAttributedString(attr), ctx)
+            }
+        }
+        if let f = dock?["frame"], let x = f["x"]?.number, let y = f["y"]?.number, let dw = f["w"]?.number, let dh = f["h"]?.number {   // the Dock draws above the windows, under the snow (the overlay sits above it)
+            let r = CGRect(x: x, y: Double(h) - y - dh, width: dw, height: dh), path = CGPath(roundedRect: r, cornerWidth: dh * 0.3, cornerHeight: dh * 0.3, transform: nil)
+            ctx.addPath(path); ctx.setFillColor(dark ? CGColor(gray: 0.35, alpha: 0.55) : CGColor(gray: 1, alpha: 0.45)); ctx.fillPath()
+            ctx.addPath(path); ctx.setStrokeColor(CGColor(gray: dark ? 0.8 : 1, alpha: 0.5)); ctx.setLineWidth(1); ctx.strokePath()
+            let n = Int(dock?["icons"]?.number ?? 0), slot = (dw - 20) / Double(max(n, 1)), side = min(slot - 6, 58)
+            for i in 0..<n {   // icon squares, hues cycle
+                let hue = CGFloat(i % 7) / 7
+                ctx.setFillColor(CGColor(red: 0.55 + 0.4 * sin(hue * 6.28), green: 0.55 + 0.4 * sin(hue * 6.28 + 2.1), blue: 0.55 + 0.4 * sin(hue * 6.28 + 4.2), alpha: 1))
+                ctx.addPath(CGPath(roundedRect: CGRect(x: r.minX + 10 + slot * (Double(i) + 0.5) - side / 2, y: r.minY + (dh - side) / 2, width: side, height: side), cornerWidth: side * 0.22, cornerHeight: side * 0.22, transform: nil)); ctx.fillPath()
             }
         }
         let provider = CGDataProvider(data: Data(snow) as CFData)!

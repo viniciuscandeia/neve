@@ -9,7 +9,7 @@ import Testing
 
 func quietWorld(seed: UInt64 = 7) -> LabWorld {
     var c = LabConfig()
-    c.seed = seed
+    c.seed = seed; c.dock = false   // these tests measure on the bare screen bottom (the Dock has its own file)
     c.prefs = [.visitors: false, .sleigh: false, .snowman: false, .walk: false]
     return LabWorld(config: c)
 }
@@ -35,7 +35,7 @@ let script = [
 ]
 
 @Test func sameSeedSameActionsSameWorld() throws {
-    func run() throws -> LabWorld { let w = LabWorld(config: { var c = LabConfig(); c.seed = 99; return c }()); for a in script { try w.apply(a) }; return w }
+    func run() throws -> LabWorld { let w = LabWorld(config: { var c = LabConfig(); c.seed = 99; c.dock = false; return c }()); for a in script { try w.apply(a) }; return w }
     let a = try run(), b = try run()
     #expect(a.state() == b.state())
     #expect(a.digest() == b.digest())

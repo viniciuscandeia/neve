@@ -1,7 +1,7 @@
 // AGENT HEADER - Sources/NeveLab/main.swift
-// Role: thin CLI over NeveLabKit. `NeveLab serve --id X [--seed N] [--size WxH] [--dir D] [--replay-from DIR]` runs ONE session in this process (foreground; replies to stop and exits);
+// Role: thin CLI over NeveLabKit. `NeveLab serve --id X [--seed N] [--size WxH] [--dir D] [--dock bottom|none] [--dock-icons N] [--appearance light|dark] [--replay-from DIR]` runs ONE session in this process (foreground; replies to stop and exits);
 // `create` (same flags) spawns `serve` detached (log: <dir>/serve.out) and waits for the socket; `send --id X '<action json>'`, `state --id X`, `capture --id X [--dir D]`, `stop --id X`,
-// `replay --from DIR --id NEW` (= create with --replay-from, seed/size taken from the source config) talk to a session over its socket. Common: `--timeout SECS` (default 30; a timeout is never retried: check `state`).
+// `replay --from DIR --id NEW` (= create with --replay-from, seed/size/dock/appearance taken from the source config) talk to a session over its socket. Common: `--timeout SECS` (default 30; a timeout is never retried: check `state`).
 // Output: the response JSON on stdout; exit 0 if ok, 1 on {"ok":false}, 2 on usage/connection errors. Session dir default build/lab/<id>/ (relative to cwd).
 // World: `LabAdapter` (LabAdapter.swift: NeveLabCore world + NeveRender capture) behind NeveLabKit's `SessionWorld`.
 import Foundation
@@ -25,7 +25,11 @@ while !args.isEmpty {
     guard size.count == 2, size.allSatisfy({ $0 > 0 }) else { die("bad --size (WxH)") }
     guard let seed = UInt64(opt["seed"] ?? "1") else { die("bad --seed") }
     let dir = URL(fileURLWithPath: opt["dir"] ?? "build/lab/\(id)").standardizedFileURL.path
-    return SessionConfig(id: id, seed: seed, width: size[0], height: size[1], dir: dir, socket: try LabPaths.socket(id: id), build: BuildIdentity.current(), replayedFrom: opt["replay-from"].map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    let dock = opt["dock"] ?? "bottom", appearance = opt["appearance"] ?? "light"
+    guard dock == "bottom" || dock == "none" else { die("bad --dock (bottom|none)") }
+    guard appearance == "light" || appearance == "dark" else { die("bad --appearance (light|dark)") }
+    guard let icons = Int(opt["dock-icons"] ?? "12"), (1...60).contains(icons) else { die("bad --dock-icons (1...60)") }
+    return SessionConfig(id: id, seed: seed, width: size[0], height: size[1], dir: dir, socket: try LabPaths.socket(id: id), build: BuildIdentity.current(), replayedFrom: opt["replay-from"].map { URL(fileURLWithPath: $0).standardizedFileURL.path }, dock: dock, dockIcons: icons, appearance: appearance)
 }
 
 @MainActor func send(_ req: JSON) -> Never {
@@ -52,12 +56,13 @@ do {
             guard let from = opt["from"] else { die("--from DIR required") }
             let src = try LabConfigFile.read(dir: from)
             opt["replay-from"] = from; opt["seed"] = String(src.seed); opt["size"] = "\(src.width)x\(src.height)"
+            opt["dock"] = src.dock; opt["dock-icons"] = String(src.dockIcons); opt["appearance"] = src.appearance
         }
         let cfg = try sessionConfig(id: id)
         try FileManager.default.createDirectory(atPath: cfg.dir, withIntermediateDirectories: true)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-        var a = ["serve", "--id", id, "--seed", String(cfg.seed), "--size", "\(cfg.width)x\(cfg.height)", "--dir", cfg.dir]
+        var a = ["serve", "--id", id, "--seed", String(cfg.seed), "--size", "\(cfg.width)x\(cfg.height)", "--dir", cfg.dir, "--dock", cfg.dock, "--dock-icons", String(cfg.dockIcons), "--appearance", cfg.appearance]
         if let r = cfg.replayedFrom { a += ["--replay-from", r] }
         p.arguments = a
         let outPath = cfg.dir + "/serve.out"
