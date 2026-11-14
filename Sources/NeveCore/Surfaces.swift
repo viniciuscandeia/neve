@@ -10,7 +10,7 @@
 // Stacking order only (`orderOnly`, same windows and frames, e.g. Cmd-Tab): the unmoved-window path rebuilds visibility / cap / walls / seams for drawing but trims, peels and sheds nothing (Pile.hold pins snow over the new limit; bins newly covered only by the order are `Pile.held`: draw-hidden but still `alive` for balls, gifts, figures, walkers, frost). A window missing from the poll (close, minimise, hide, zoom up to the menu bar) stays in `surfaces` as a GHOST (`pendingGone`: pile, balls, gifts, figures, tree in place and drawn; it returns clean-or-not by simply reappearing) and is knocked off only after `goneGrace` (0.6 s; an expired ghost forces a rebuild even on an unchanged list; the app guarantees a read after the deadline via PollScheduler.settleRead; tests via makeField set 0). knockOff then lets transportBalls/Gifts/Tree/Figures release what stood on it. Tests: StackOrderTests, WindowGoneTests.
 // Other API here: deposit(surface:bin:volume:powder:) (no-op when `landable` is false: window surfaces after a Space switch), spill (end overflow -> one debris lump carrying vol = the spilled volume; what addDebris refuses stays owed), `stepOverflow` (every 3rd 0.5 s tick: snow a full window pile could not keep in a middle bin, `Pile.owedL/R`, drips off the nearest end as one lump per end; the Dock bar / ground refuse it into `bankRefused`), stepPeel (drift excess lets go; in SnowField.step), `releasePiles` (outro),
 //   `sweep(from:to:radius:dt:)` = cursor plow (first acts on figures, balls, gifts and icicles regardless of prefs; then, only with pointerPush and not calm / silent, lifts snow within radius of the segment into a berm ahead / to both sides (blade radius Tuning.plowRadius 14 pt: below plowSlowSpeed 40 pt/s a hover dents plowHoverDepth 0.6 pt, else a push scoops ALL snow under the blade down to Tuning.plowFloor with soft edges)
-//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); Push feel: scooped bins keep a `gapT` (Tuning.plowSlumpTime): `stepSlump` settles the gap's walls to repose even while the blade moves (snow spills back in); a push faster than 300 pt/s holds back up to 15 % of the scooped snow as powder (debris from the blade front, + puffs; none in economy / Low Power; calm never sweeps); against the Dock bar a push >= Tuning.dockOverSpeed with the heap at the bar's top throws a speed-scaled share as arcing chunks that land on the Dock pile (slower: only heaps up to 40 pt over the bar); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris (pieces grow by debris.count / Tuning.sweepPieces once more than that many are aloft: fewer, larger, same volume); ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
+//   (cursor `berm`, not DockPush.berm; on the GROUND the Dock bar is an obstacle: `dockSpan`, the blade skips snow under the bar, the berm walk stops at the bar's side, banks a repose wedge (`bankWedge`, shared with the higher-window side) up to the Dock top and heaps the excess onto the Dock pile's near end via a recursive berm; a run ending at a seam, or at a higher window's side mid-pile (banks a wedge up its side to its top, the rest goes on its pile), continues onto the touching neighbour surface via `neighbor`, Seams.swift); Push feel: scooped bins keep a `gapT` (Tuning.plowSlumpTime): `stepSlump` settles the gap's walls to repose even while the blade moves (snow spills back in); a push faster than 300 pt/s holds back up to 15 % of the scooped snow as powder (debris from the blade front, + puffs; none in economy / Low Power; calm never sweeps); against the Dock bar a push >= Tuning.dockOverSpeed whose heap (plus a speed run-up, Tuning.dockRunup) reaches the bar's top throws a speed-scaled share (at most Tuning.dockCrestMax a segment) as arcing chunks (`Flake.freq` 1, may land at once) that heap on the Dock pile past its limit (`crestLand`; slower: only heaps up to 40 pt over the bar); the sweep gate looks at the surface's real tallest bin (the Dock bank stands above the plain limit); `stepSlump` (in SnowField.step) settles pushed heaps (compacted, Tuning.slope + moundSlope ~45 degrees; fixed 1/60 s substeps, at most 2 a frame) 0.25 s after the last sweep (`sweptAt`); only the overflow flies as debris via launchSweepDebris (pieces grow by debris.count / Tuning.sweepPieces once more than that many are aloft: fewer, larger, same volume); ignores the dragged window's pile), roundedUnderside (corner-following ceiling).
 // Time: per-window dt = own time since last sample via `stamps` and the monotonic `clock` (NOT sim time): a drag sampled at 25 Hz sheds the same as at 10 Hz.
 // Gotchas: window frames are LOCAL AppKit y-up pt; hot path during drags (surfaces rebuilt at poll rate, up to ~25-30/s): avoid whole-array copies of piles (`let s = surfaces[si]` copies heights on write: use index access);
 //   scene mode (NEVE_DEMO_VANISH) filters a window out here. Tests: SurfaceMapTests, DragOnlyRebuildTests, SpaceCarryTests, DockGapTests, SweepTests.
@@ -574,11 +574,11 @@ extension SnowField {
         breakIcicles(ax, ay, Float(b.x), Float(b.y), r, v)
         guard pointerPush, !calm, !silent else { return }   // Reduce Motion / silent: piles stay put (no overflow could fly off, so nothing may be cut)
         sweptAt = time; sweepSpeed = speed
-        defer { flushRuns(); for j in first..<debris.count { debris[j].phase = 0.5 } }
+        defer { flushRuns(); for j in first..<debris.count where debris[j].freq == 0 { debris[j].phase = 0.5 } }
         for si in surfaces.indices where surfaces[si].id != draggingID {
             let c = surfaces[si].c0, edgeY = surfaces[si].edgeY   // no `let s = surfaces[si]`: a live copy would force a copy of the heights on write
             guard hi >= edgeY - Tuning.maxPileHeight else { continue }
-            if lo > edgeY + Tuning.maxPileHeight, lo > edgeY + Tuning.maxPileHeight + (surfaces[si].pile.mound.max() ?? 0) { continue }   // a heap can stand far above the usual pile (looked up only when the cursor is above the plain pile)
+            if lo > edgeY + Tuning.maxPileHeight, lo > edgeY + Tuning.maxPileHeight + (surfaces[si].pile.heights.max() ?? 0) { continue }   // snow can stand far above the usual pile limit (a pushed heap, the ground bank beside the Dock up to the bar's top): look at the real tallest bin, only when the cursor is above the plain pile
             let b0 = max(0, Int((min(ax, ax + dx) - r) * invBin) - c), b1 = min(surfaces[si].pile.heights.count - 1, Int((max(ax, ax + dx) + r) * invBin) - c)
             guard b0 <= b1 else { continue }
             var removed: Float = 0, wx: Float = 0, wy: Float = 0
@@ -719,12 +719,13 @@ extension SnowField {
             var k = start + dir * m
             while wall(k) { k -= dir }
             let rise = surfaces[si].edgeY + surfaces[si].pile.base[k] + surfaces[si].pile.heights[k] - bar.top   // how far the heap against the bar already stands over its top
-            if sweepSpeed >= Tuning.dockOverSpeed, rise > -1 {   // fast and the heap is at the bar's top: a speed- and rise-scaled share crests over as a burst of chunks that land on the Dock pile (slower: it only heaps higher against the side)
-                let over = (area - banked) * min(1, 0.2 + (sweepSpeed - Tuning.dockOverSpeed) / (2 * Tuning.dockOverSpeed)) * min(1, 0.3 + max(rise, 0) / 20)
-                let n = min(6, Int(over / 3) + 1), per = over / Float(n), hy = bar.top + max(rise, 0)   // chunks leave from the crest of the heap
+            let eff = rise + max(sweepSpeed - Tuning.dockOverSpeed, 0) * Tuning.dockRunup   // the heap's reach: a fast push drives it up the bar's side beyond what stands (run-up, like a wave), so a heap a little short of the top still crests
+            if sweepSpeed >= Tuning.dockOverSpeed, eff > -1 {   // fast and the heap (with its run-up) is at the bar's top: a speed- and reach-scaled share crests over as a burst of chunks that land on the Dock pile (slower: it only heaps higher against the side)
+                let over = min((area - banked) * min(1, 0.2 + (sweepSpeed - Tuning.dockOverSpeed) / (2 * Tuning.dockOverSpeed)) * min(1, 0.3 + max(eff, 0) / 20), Tuning.dockCrestMax)
+                let n = min(10, Int(over / 6) + 1), per = over / Float(n), hy = bar.top + max(rise, 0)   // chunks leave from the crest of the heap
                 for _ in 0..<n {
                     debris.append(Flake(pos: [(dir > 0 ? bar.lower - 2 : bar.upper + 2) + Float.random(in: -4...4, using: &rng), hy + Float.random(in: 4...10, using: &rng)],
-                                        vx: Float(dir) * Float.random(in: 120...220, using: &rng), fall: -Float.random(in: 120...220, using: &rng), phase: 0.5, amp: 0, freq: 0,
+                                        vx: Float(dir) * Float.random(in: 120...220, using: &rng), fall: -Float.random(in: 120...220, using: &rng), phase: 0, amp: 0, freq: 1,
                                         size: per > 5 ? 4 : 3, alpha: 0.95, kind: .debris, seed: Float.random(in: 0..<1, using: &rng), fade: 1, spin: Float.random(in: -3...3, using: &rng), vol: per, shape: per > 5 ? 1 : 0, oz: spawnZ))
                     banked += per   // (appended past maxDebris on purpose: <= 6 chunks a call, dropping them would lose the snow)
                 }
@@ -734,6 +735,29 @@ extension SnowField {
         }
         end = binCenter(c + last); endY = surfaces[si].edgeY + surfaces[si].pile.base[last] + surfaces[si].pile.heights[last]
         return banked
+    }
+
+    /// A crest chunk (`freq` 1, from `berm`) landing on the Dock pile: the Dock pile near the bar's ends is usually full (limit ~20 pt) after a snowfall, so a plain landing would just overflow
+    /// back to the ground; a pushed throw heaps instead (1/4-1/2-1/4 over three bins up to `moundMax`, a window's `cap`, tracked as a mound so `stepSlump` relaxes it along the bar). False: it did not cross the Dock top here.
+    func crestLand(x: Float, prevY: Float, newY: Float, vol: Float) -> Bool {
+        guard let si = index[0] else { return false }
+        let b = column(x) - surfaces[si].c0, n = surfaces[si].pile.heights.count, edge = surfaces[si].edgeY
+        guard b >= 0, b < n, surfaces[si].pile.open(b), surfaces[si].pile.visible[b], prevY >= edge, newY < edge + surfaces[si].pile.heights[b] else { return false }
+        var banked: Float = 0
+        for (d, w) in [(-1, Float(0.25)), (0, 0.5), (1, 0.25)] {
+            let k = b + d
+            guard k >= 0, k < n, surfaces[si].pile.open(k), surfaces[si].pile.visible[k] else { continue }
+            let h = surfaces[si].pile.heights[k], nh = min(h + vol * w / Tuning.binWidth, max(min(surfaces[si].pile.cap[k], Tuning.moundMax), h))
+            guard nh > h else { continue }
+            surfaces[si].pile.heights[k] = nh; banked += (nh - h) * Tuning.binWidth
+            surfaces[si].pile.trackMound(k)
+        }
+        if banked > 0 {
+            surfaces[si].pile.settle(max(b - 4, 0), min(b + 4, n - 1)); pilesDirty = true; sweptAt = time
+            if surfaces[si].pile.spillL > 2 || surfaces[si].pile.spillR > 2 { spill(si) }   // a heap thrown at a bar end slides off it as debris, like any spill
+        }
+        if vol - banked > 0.01 { deposit(dock: si, bin: b, volume: (vol - banked) / Tuning.binWidth) }   // what has no room is an ordinary landing (overflow rules)
+        return true
     }
 
     /// Turns the owed volume into debris launched along the cursor: fine powder plus a few clumps (fast), or a gentle sift (slow hover).
